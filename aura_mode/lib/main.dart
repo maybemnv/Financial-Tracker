@@ -1,0 +1,26 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'app.dart';
+import 'core/supabase.dart';
+import 'core/theme.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await SupabaseService().init();
+  } catch (e) {
+    // Will show error state in UI
+  }
+
+  runApp(
+    const ProviderScope(
+      child: MaterialApp(
+        title: 'Aura Mode',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.darkTheme,
+        home: AppShell(),
+      ),
+    ),
+  );
+}
