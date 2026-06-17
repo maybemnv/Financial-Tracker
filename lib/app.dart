@@ -6,14 +6,14 @@ import 'features/goals/goals_screen.dart';
 import 'features/agent/agent_chat_screen.dart';
 import 'features/invoices/invoice_sidebar.dart';
 
-class AuraModeApp extends StatefulWidget {
-  const AuraModeApp({super.key});
+class AppTabs extends StatefulWidget {
+  const AppTabs({super.key});
 
   @override
-  State<AuraModeApp> createState() => _AuraModeAppState();
+  State<AppTabs> createState() => _AppTabsState();
 }
 
-class _AuraModeAppState extends State<AuraModeApp> {
+class _AppTabsState extends State<AppTabs> {
   int _currentIndex = 0;
 
   final _screens = const [
@@ -69,7 +69,7 @@ class AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       endDrawer: const InvoiceSidebar(),
-      body: const AuraModeApp(),
+      body: const AppTabs(),
     );
   }
 }

@@ -1,9 +1,9 @@
-# TODO — Aura Mode: Production Checklist
+# TODO: Production Checklist
 
 ## Phase 0: Project Setup
 
 ### Flutter Project Scaffold
-- [ ] Init Flutter project (`flutter create --org com.aura aura_mode`)
+- [ ] Init Flutter project (`flutter create --org com.finance finance_tracker`)
 - [ ] Set up folder structure: `lib/` with `features/`, `core/`, `models/`, `providers/`, `widgets/`
 - [ ] Add dependencies to `pubspec.yaml`:
   - [ ] `supabase_flutter`

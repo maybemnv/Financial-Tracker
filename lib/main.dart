@@ -16,7 +16,7 @@ void main() async {
   runApp(
     const ProviderScope(
       child: MaterialApp(
-        title: 'Aura Mode',
+        title: 'Finance Tracker',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
         home: AppShell(),

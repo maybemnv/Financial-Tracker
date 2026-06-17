@@ -1,17 +1,17 @@
-# Aura Mode — Personal UPI Finance Tracker
+# Finance Tracker
 
 Cross-platform (Android + Windows) personal finance app built with Flutter.
 
 ## Features
 
-- **📱 UPI SMS Capture** — Auto-parse UPI SMS from PhonePe, GPay, Paytm, etc.
-- **✏️ Manual Entry** — Add transactions manually on any device
-- **🔄 Real-time Sync** — Powered by Supabase Realtime
-- **📊 Dashboard** — Summary cards (Earned/Spent/Saved/Net) + category pie chart + trend chart
-- **🏷️ Smart Categorization** — Rule-based + Claude LLM fallback
-- **🎯 Goals** — Set savings goals with live progress tracking
-- **📄 Invoice Sidebar** — Track freelance invoices with 3 columns: Invoiced (USD), Received in PayPal, Received in Bank
-- **🤖 Finance Agent** — Claude-powered Q&A: "Can I afford X?", "What did I waste money on?"
+- UPI SMS Capture — Auto-parse UPI SMS from PhonePe, GPay, Paytm, etc.
+- Manual Entry — Add transactions manually on any device
+- Real-time Sync — Powered by Supabase Realtime
+- Dashboard — Summary cards (Earned/Spent/Saved/Net) + category pie chart + trend chart
+- Smart Categorization — Rule-based + Claude LLM fallback
+- Goals — Set savings goals with live progress tracking
+- Invoice Sidebar — Track freelance invoices with 3 columns: Invoiced (USD), Received in PayPal, Received in Bank
+- Finance Agent — Claude-powered Q&A: "Can I afford X?", "What did I waste money on?"
 
 ## Tech Stack
 

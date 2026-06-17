@@ -1,4 +1,4 @@
-# PRD: Personal UPI Finance Tracker — "Aura Mode"
+# PRD: Personal UPI Finance Tracker
 
 A cross-platform (Android + Windows) personal finance system. Built solo, fast, with strict deadlines, designed to compound into resume material and a self-knowledge tool.
 
