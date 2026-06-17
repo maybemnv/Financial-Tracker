@@ -17,6 +17,7 @@ A cross-platform (Android + Windows) personal finance system. Built solo, fast, 
 - Goals table: name, target_amount, allocated_amount, % funded
 - Dashboard: Earned / Spent / Saved / Net + category pie + trend chart
 - Finance agent (Claude-powered NL Q&A: "can I afford X?", "what did I waste money on?")
+- Invoice sidebar: collapsible side panel logging freelance invoices with columns — Invoiced Amount (USD), Received in PayPal, Amount in Bank — to track outstanding vs. realized income
 
 ### Tech Stack
 
@@ -101,11 +102,13 @@ Reference material to pull from when stuck — visit before reinventing:
 Finance Tracker
 ├── Data Capture
 │   ├── SMS listener (Android) → regex parser → transactions table
-│   └── Manual entry form (both platforms)
+│   ├── Manual entry form (both platforms)
+│   └── Invoice entry (manual) → invoices table
 ├── Storage (Supabase)
 │   ├── transactions
 │   ├── category_rules
-│   └── goals
+│   ├── goals
+│   └── invoices
 ├── Categorization
 │   ├── Rule match (VPA/keyword → category + tags)
 │   └── LLM fallback (Claude) for unmatched
@@ -130,15 +133,17 @@ Finance Tracker
 │ SMS Listener ────┼──┐      │                  │
 │ Manual Entry     │  │      │ Manual Entry     │
 │ Dashboard/Charts │  │      │ Dashboard/Charts │
-│ Goals UI         │  │      │ Goals UI         │
-│ Agent Chat       │  │      │ Agent Chat       │
+ │ Goals UI         │  │      │ Goals UI         │
+ │ Agent Chat       │  │      │ Agent Chat       │
+ │ Invoice Sidebar  │  │      │ Invoice Sidebar  │
 └────────┬─────────┘  │      └────────┬─────────┘
          │            │               │
          │      ┌─────▼───────────────▼─────┐
          └─────▶│   Supabase (Postgres)      │
                 │   - transactions            │
                 │   - category_rules          │
-                │   - goals                   │
+                 │   - goals                   │
+                 │   - invoices                │
                 │   Realtime subscriptions    │
                 └─────────────┬───────────────┘
                                │
@@ -188,6 +193,21 @@ Finance Tracker
 | allocated_amount | numeric     | default 0     |
 | created_at       | timestamptz | default now() |
 
+**invoices**
+
+| Column         | Type        | Notes                    |
+| -------------- | ----------- | ------------------------ |
+| id             | uuid PK     |                          |
+| client         | text        |                          |
+| description    | text        | nullable                 |
+| invoiced_usd   | numeric     | amount invoiced in USD   |
+| received_paypal| numeric     | amount received via PayPal|
+| received_bank  | numeric     | amount received in bank  |
+| status         | text        | pending / paid / partial |
+| invoice_date   | date        |                          |
+| created_at     | timestamptz | default now()            |
+| updated_at     | timestamptz | default now()            |
+
 ### Endpoints / Interactions (all via Supabase client SDK — no custom backend needed)
 
 | Action                            | Table          | Operation                                                |
@@ -204,7 +224,7 @@ Finance Tracker
 ### Pre-Build Decisions (lock now, no mid-build flip-flopping)
 
 - State management: **Riverpod**
-- Navigation: bottom nav bar — 4 tabs (Transactions, Dashboard, Goals, Agent)
+- Navigation: bottom nav bar — 4 tabs (Transactions, Dashboard, Goals, Agent); collapsible invoice sidebar accessible from any screen
 - No auth for v1 — single anon Supabase key, RLS open (acceptable for personal single-device-pair use)
 - Currency formatting: ₹, 2 decimals, locale en_IN
 
