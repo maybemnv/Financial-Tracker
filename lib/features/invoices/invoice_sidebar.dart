@@ -33,7 +33,21 @@ class InvoiceSidebar extends ConsumerWidget {
         ),
         body: invoicesAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error: $e')),
+          error: (e, _) => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: AppTheme.redAccent),
+                const SizedBox(height: 16),
+                Text('$e', style: const TextStyle(color: AppTheme.textSecondary)),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.read(invoiceProvider.notifier).load(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
           data: (invoices) {
             if (invoices.isEmpty) {
               return const EmptyState(
@@ -78,52 +92,128 @@ class InvoiceSidebar extends ConsumerWidget {
   }
 
   void _showAddInvoiceDialog(BuildContext context, WidgetRef ref) {
-    final clientCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final amountCtrl = TextEditingController();
-    final paypalCtrl = TextEditingController();
-    final bankCtrl = TextEditingController();
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Invoice'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: clientCtrl, decoration: const InputDecoration(labelText: 'Client')),
-              const SizedBox(height: 12),
-              TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Description')),
-              const SizedBox(height: 12),
-              TextField(controller: amountCtrl, decoration: const InputDecoration(labelText: 'Invoiced Amount (\$)'), keyboardType: TextInputType.number),
-              const SizedBox(height: 12),
-              TextField(controller: paypalCtrl, decoration: const InputDecoration(labelText: 'Received via PayPal (\$)'), keyboardType: TextInputType.number),
-              const SizedBox(height: 12),
-              TextField(controller: bankCtrl, decoration: const InputDecoration(labelText: 'Received in Bank (\$)'), keyboardType: TextInputType.number),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () async {
-              if (clientCtrl.text.isEmpty || amountCtrl.text.isEmpty) return;
-              await ref.read(invoiceProvider.notifier).add(Invoice(
-                client: clientCtrl.text,
-                description: descCtrl.text.isNotEmpty ? descCtrl.text : null,
-                invoicedUsd: double.parse(amountCtrl.text),
-                receivedPaypal: paypalCtrl.text.isNotEmpty ? double.parse(paypalCtrl.text) : 0,
-                receivedBank: bankCtrl.text.isNotEmpty ? double.parse(bankCtrl.text) : 0,
-                invoiceDate: DateTime.now(),
-              ));
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _AddInvoiceDialog(),
     );
+  }
+}
+
+class _AddInvoiceDialog extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_AddInvoiceDialog> createState() => _AddInvoiceDialogState();
+}
+
+class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
+  final _clientCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _amountCtrl = TextEditingController();
+  final _paypalCtrl = TextEditingController();
+  final _bankCtrl = TextEditingController();
+  DateTime _invoiceDate = DateTime.now();
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _clientCtrl.dispose();
+    _descCtrl.dispose();
+    _amountCtrl.dispose();
+    _paypalCtrl.dispose();
+    _bankCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _invoiceDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) setState(() => _invoiceDate = picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('New Invoice'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: _clientCtrl, decoration: const InputDecoration(labelText: 'Client *')),
+            const SizedBox(height: 12),
+            TextField(controller: _descCtrl, decoration: const InputDecoration(labelText: 'Description')),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _amountCtrl,
+              decoration: const InputDecoration(labelText: 'Invoiced Amount ($) *'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _paypalCtrl,
+              decoration: const InputDecoration(labelText: 'Received via PayPal ($)'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _bankCtrl,
+              decoration: const InputDecoration(labelText: 'Received in Bank ($)'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(labelText: 'Invoice Date'),
+                child: Text(DateFormat('dd MMM yyyy').format(_invoiceDate)),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _isSaving ? null : _submit,
+          child: _isSaving
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Save'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _submit() async {
+    if (_clientCtrl.text.isEmpty || _amountCtrl.text.isEmpty) return;
+    final invoiced = double.tryParse(_amountCtrl.text);
+    if (invoiced == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid invoiced amount')),
+      );
+      return;
+    }
+    setState(() => _isSaving = true);
+    try {
+      await ref.read(invoiceProvider.notifier).add(Invoice(
+        client: _clientCtrl.text,
+        description: _descCtrl.text.isNotEmpty ? _descCtrl.text : null,
+        invoicedUsd: invoiced,
+        receivedPaypal: double.tryParse(_paypalCtrl.text) ?? 0,
+        receivedBank: double.tryParse(_bankCtrl.text) ?? 0,
+        invoiceDate: _invoiceDate,
+      ));
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 }
 
