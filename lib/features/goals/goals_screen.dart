@@ -19,7 +19,21 @@ class GoalsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Goals')),
       body: goalsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: AppTheme.redAccent),
+              const SizedBox(height: 16),
+              Text('$e', style: const TextStyle(color: AppTheme.textSecondary)),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.read(goalProvider.notifier).load(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
         data: (goals) {
           if (goals.isEmpty) {
             return const EmptyState(
@@ -46,36 +60,83 @@ class GoalsScreen extends ConsumerWidget {
   }
 
   void _showAddGoalDialog(BuildContext context, WidgetRef ref) {
-    final nameCtrl = TextEditingController();
-    final amountCtrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Goal'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Goal Name')),
-            const SizedBox(height: 12),
-            TextField(controller: amountCtrl, decoration: const InputDecoration(labelText: 'Target Amount (₹)'), keyboardType: TextInputType.number),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () async {
-              if (nameCtrl.text.isEmpty || amountCtrl.text.isEmpty) return;
-              await ref.read(goalProvider.notifier).add(Goal(
-                name: nameCtrl.text,
-                targetAmount: double.parse(amountCtrl.text),
-              ));
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Create'),
+      builder: (ctx) => _AddGoalDialog(),
+    );
+  }
+}
+
+class _AddGoalDialog extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_AddGoalDialog> createState() => _AddGoalDialogState();
+}
+
+class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
+  final _nameCtrl = TextEditingController();
+  final _amountCtrl = TextEditingController();
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _amountCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('New Goal'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Goal Name *')),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _amountCtrl,
+            decoration: const InputDecoration(labelText: 'Target Amount (₹) *'),
+            keyboardType: TextInputType.number,
           ),
         ],
       ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _isSaving ? null : _submit,
+          child: _isSaving
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Create'),
+        ),
+      ],
     );
+  }
+
+  Future<void> _submit() async {
+    if (_nameCtrl.text.isEmpty || _amountCtrl.text.isEmpty) return;
+    final amount = double.tryParse(_amountCtrl.text);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid target amount')),
+      );
+      return;
+    }
+    setState(() => _isSaving = true);
+    try {
+      await ref.read(goalProvider.notifier).add(Goal(
+        name: _nameCtrl.text,
+        targetAmount: amount,
+      ));
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create goal: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 }
 
@@ -133,28 +194,68 @@ class _GoalCard extends ConsumerWidget {
   }
 
   void _showAllocateDialog(BuildContext context, WidgetRef ref) {
-    final ctrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Allocate Funds'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(labelText: 'Amount (₹)'),
-          keyboardType: TextInputType.number,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () async {
-              if (ctrl.text.isEmpty) return;
-              await ref.read(goalProvider.notifier).allocate(goal.id!, double.parse(ctrl.text));
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Allocate'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _AllocateDialog(goal: goal),
     );
+  }
+}
+
+class _AllocateDialog extends ConsumerStatefulWidget {
+  final Goal goal;
+  const _AllocateDialog({required this.goal});
+
+  @override
+  ConsumerState<_AllocateDialog> createState() => _AllocateDialogState();
+}
+
+class _AllocateDialogState extends ConsumerState<_AllocateDialog> {
+  final _ctrl = TextEditingController();
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Allocate Funds'),
+      content: TextField(
+        controller: _ctrl,
+        decoration: const InputDecoration(labelText: 'Amount (₹) *'),
+        keyboardType: TextInputType.number,
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _isSaving ? null : _submit,
+          child: _isSaving
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Allocate'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _submit() async {
+    if (_ctrl.text.isEmpty) return;
+    final amount = double.tryParse(_ctrl.text);
+    if (amount == null || amount <= 0) return;
+    setState(() => _isSaving = true);
+    try {
+      await ref.read(goalProvider.notifier).allocate(widget.goal.id!, amount);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Allocation failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 }

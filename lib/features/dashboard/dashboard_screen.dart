@@ -20,8 +20,25 @@ class DashboardScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Dashboard')),
       body: transactionsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (transactions) => _DashboardContent(transactions: transactions),
+        error: (e, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: AppTheme.redAccent),
+              const SizedBox(height: 16),
+              Text('$e', style: const TextStyle(color: AppTheme.textSecondary)),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.read(transactionProvider.notifier).load(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+        data: (transactions) => _DashboardContent(
+          transactions: transactions,
+          onRefresh: () => ref.read(transactionProvider.notifier).load(),
+        ),
       ),
     );
   }
@@ -29,7 +46,8 @@ class DashboardScreen extends ConsumerWidget {
 
 class _DashboardContent extends StatelessWidget {
   final List<Transaction> transactions;
-  const _DashboardContent({required this.transactions});
+  final Future<void> Function() onRefresh;
+  const _DashboardContent({required this.transactions, required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +71,7 @@ class _DashboardContent extends StatelessWidget {
     }
 
     return RefreshIndicator(
-      onRefresh: () async {},
+      onRefresh: onRefresh,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -69,7 +87,7 @@ class _DashboardContent extends StatelessWidget {
             children: [
               Expanded(child: SummaryCard(label: 'Saved', amount: currencyFormat.format(saved), color: saved >= 0 ? AppTheme.primaryGreen : AppTheme.redAccent, icon: Icons.savings)),
               const SizedBox(width: 12),
-              Expanded(child: SummaryCard(label: 'Net', amount: currencyFormat.format(earned), color: AppTheme.accentPurple, icon: Icons.account_balance)),
+              Expanded(child: SummaryCard(label: 'Net', amount: currencyFormat.format(earned - spent), color: AppTheme.accentPurple, icon: Icons.account_balance)),
             ],
           ),
           const SizedBox(height: 24),
