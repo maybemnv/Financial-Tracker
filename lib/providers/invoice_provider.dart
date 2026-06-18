@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase.dart';
 import '../models/invoice.dart';
 
 class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
-  StreamSubscription? _subscription;
+  RealtimeChannel? _channel;
 
   InvoiceNotifier() : super(const AsyncValue.loading());
 
@@ -27,7 +27,7 @@ class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
   }
 
   void subscribe() {
-    _subscription = SupabaseService()
+    _channel = SupabaseService()
         .client
         .channel('invoices')
         .onPostgresChanges(
@@ -39,7 +39,7 @@ class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
   }
 
   void unsubscribe() {
-    _subscription?.cancel();
+    _channel?.unsubscribe();
   }
 
   Future<void> add(Invoice inv) async {

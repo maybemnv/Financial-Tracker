@@ -147,19 +147,19 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
             const SizedBox(height: 12),
             TextField(
               controller: _amountCtrl,
-              decoration: const InputDecoration(labelText: 'Invoiced Amount ($) *'),
+              decoration: const InputDecoration(labelText: 'Invoiced Amount (USD) *'),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _paypalCtrl,
-              decoration: const InputDecoration(labelText: 'Received via PayPal ($)'),
+              decoration: const InputDecoration(labelText: 'Received via PayPal (USD)'),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _bankCtrl,
-              decoration: const InputDecoration(labelText: 'Received in Bank ($)'),
+              decoration: const InputDecoration(labelText: 'Received in Bank (USD)'),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),

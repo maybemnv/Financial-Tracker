@@ -173,8 +173,8 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     } catch (_) {}
 
     try {
-      final txCount = await supabase.from('transactions').select('id', count: CountOption.exact);
-      buffer.writeln('Total transactions: ${txCount.count}');
+      final txCount = await supabase.from('transactions').select('id').limit(1);
+      buffer.writeln('Total transactions: ${(txCount as List).length}+');
     } catch (_) {}
 
     try {

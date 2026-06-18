@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase.dart';
 import '../models/goal.dart';
 
 class GoalNotifier extends StateNotifier<AsyncValue<List<Goal>>> {
-  StreamSubscription? _subscription;
+  RealtimeChannel? _channel;
 
   GoalNotifier() : super(const AsyncValue.loading());
 
@@ -22,7 +22,7 @@ class GoalNotifier extends StateNotifier<AsyncValue<List<Goal>>> {
   }
 
   void subscribe() {
-    _subscription = SupabaseService()
+    _channel = SupabaseService()
         .client
         .channel('goals')
         .onPostgresChanges(
@@ -34,7 +34,7 @@ class GoalNotifier extends StateNotifier<AsyncValue<List<Goal>>> {
   }
 
   void unsubscribe() {
-    _subscription?.cancel();
+    _channel?.unsubscribe();
   }
 
   Future<void> add(Goal goal) async {
@@ -49,7 +49,7 @@ class GoalNotifier extends StateNotifier<AsyncValue<List<Goal>>> {
           .from('goals')
           .select()
           .eq('id', id)
-          .single() as Map<String, dynamic>;
+          .single();
       final existing = (current['allocated_amount'] as num?)?.toDouble() ?? 0;
       await SupabaseService()
           .client

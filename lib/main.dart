@@ -14,12 +14,12 @@ void main() async {
   }
 
   runApp(
-    const ProviderScope(
+    ProviderScope(
       child: MaterialApp(
         title: 'Finance Tracker',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: AppShell(),
+        home: const AppShell(),
       ),
     ),
   );

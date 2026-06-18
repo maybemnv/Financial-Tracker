@@ -41,8 +41,10 @@ class SmsParser {
       final amount = double.tryParse(amountStr.replaceAll(',', ''));
       if (amount == null) continue;
 
-      final action = def.actionGroup != null ? (match.group(def.actionGroup)?.toLowerCase() ?? '') : '';
-      final merchant = def.merchantGroup != null ? match.group(def.merchantGroup!) : null;
+      final actionGroup = def.actionGroup;
+      final merchantGroup = def.merchantGroup;
+      final action = actionGroup != null ? (match.group(actionGroup)?.toLowerCase() ?? '') : '';
+      final merchant = merchantGroup != null ? match.group(merchantGroup) : null;
 
       final isCredit = action.contains('credit') || action.contains('received');
       final type = isCredit ? 'credit' : 'debit';

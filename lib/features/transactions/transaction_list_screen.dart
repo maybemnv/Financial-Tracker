@@ -175,7 +175,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _category,
+                initialValue: _category,
                 decoration: const InputDecoration(labelText: 'Category'),
                 items: AppConstants.categories
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
