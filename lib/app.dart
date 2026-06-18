@@ -7,7 +7,8 @@ import 'features/agent/agent_chat_screen.dart';
 import 'features/invoices/invoice_sidebar.dart';
 
 class AppTabs extends StatefulWidget {
-  const AppTabs({super.key});
+  final VoidCallback onInvoiceTap;
+  const AppTabs({super.key, required this.onInvoiceTap});
 
   @override
   State<AppTabs> createState() => _AppTabsState();
@@ -34,7 +35,7 @@ class _AppTabsState extends State<AppTabs> {
         currentIndex: _currentIndex,
         onTap: (index) {
           if (index == 4) {
-            _openInvoiceSidebar();
+            widget.onInvoiceTap();
           } else {
             setState(() => _currentIndex = index);
           }
@@ -54,22 +55,37 @@ class _AppTabsState extends State<AppTabs> {
           ),
         ],
       ),
+      floatingActionButton: _currentIndex == 0
+          ? FloatingActionButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddTransactionScreen()),
+              ),
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
-  }
-
-  void _openInvoiceSidebar() {
-    Scaffold.of(context).openEndDrawer();
   }
 }
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       endDrawer: const InvoiceSidebar(),
-      body: const AppTabs(),
+      body: AppTabs(onInvoiceTap: () {
+        _scaffoldKey.currentState?.openEndDrawer();
+      }),
     );
   }
 }

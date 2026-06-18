@@ -58,5 +58,35 @@ CREATE TABLE invoices (
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all" ON invoices FOR ALL USING (true);
 
+-- Auto-update updated_at on row changes
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER set_transactions_updated_at
+  BEFORE UPDATE ON transactions
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER set_invoices_updated_at
+  BEFORE UPDATE ON invoices
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
 -- Enable Realtime for transactions
 ALTER PUBLICATION supabase_realtime ADD TABLE transactions;
+
+-- Helper function: current balance (credits - debits)
+CREATE OR REPLACE FUNCTION fn_current_balance()
+RETURNS NUMERIC AS $$
+DECLARE
+  total_credits NUMERIC;
+  total_debits NUMERIC;
+BEGIN
+  SELECT COALESCE(SUM(amount), 0) INTO total_credits FROM transactions WHERE type = 'credit';
+  SELECT COALESCE(SUM(amount), 0) INTO total_debits FROM transactions WHERE type = 'debit';
+  RETURN total_credits - total_debits;
+END;
+$$ LANGUAGE plpgsql;

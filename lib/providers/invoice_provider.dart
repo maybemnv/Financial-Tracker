@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/supabase.dart';
 import '../models/invoice.dart';
 
 class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
+  StreamSubscription? _subscription;
+
   InvoiceNotifier() : super(const AsyncValue.loading());
 
   Future<void> load() async {
@@ -12,7 +15,8 @@ class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
           .client
           .from('invoices')
           .select()
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .limit(100);
       final invoices = (data as List)
           .map((json) => Invoice.fromJson(json as Map<String, dynamic>))
           .toList();
@@ -22,12 +26,29 @@ class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
     }
   }
 
+  void subscribe() {
+    _subscription = SupabaseService()
+        .client
+        .channel('invoices')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          table: 'invoices',
+          callback: (_) => load(),
+        )
+        .subscribe();
+  }
+
+  void unsubscribe() {
+    _subscription?.cancel();
+  }
+
   Future<void> add(Invoice inv) async {
     await SupabaseService().client.from('invoices').insert(inv.toJson());
     await load();
   }
 
   Future<void> update(Invoice inv) async {
+    if (inv.id == null) return;
     await SupabaseService()
         .client
         .from('invoices')
@@ -40,11 +61,19 @@ class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
     await SupabaseService().client.from('invoices').delete().eq('id', id);
     await load();
   }
+
+  @override
+  void dispose() {
+    unsubscribe();
+    super.dispose();
+  }
 }
 
 final invoiceProvider =
     StateNotifierProvider<InvoiceNotifier, AsyncValue<List<Invoice>>>((ref) {
   final notifier = InvoiceNotifier();
   notifier.load();
+  notifier.subscribe();
+  ref.onDispose(() => notifier.unsubscribe());
   return notifier;
 });
