@@ -11,7 +11,7 @@ A cross-platform (Android + Windows) personal finance system. Built solo, fast, 
 - UPI transaction capture via SMS (Android)
 - Manual entry (both platforms)
 - Cross-device real-time sync (Supabase)
-- Categories: Food, Travel, Shopping, Work, Family, Health, Subscriptions
+- Categories: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other
 - Cross-cutting tags (e.g. "startup", "freelance", "gift")
 - Rule-based + LLM-fallback categorization
 - Goals table: name, target_amount, allocated_amount, % funded
@@ -127,31 +127,31 @@ Finance Tracker
 
 ```
 ┌─────────────────┐         ┌─────────────────┐
-│   Android App    │         │   Windows App    │
-│  (Flutter)       │         │  (Flutter)       │
-│                  │         │                  │
-│ SMS Listener ────┼──┐      │                  │
-│ Manual Entry     │  │      │ Manual Entry     │
-│ Dashboard/Charts │  │      │ Dashboard/Charts │
- │ Goals UI         │  │      │ Goals UI         │
- │ Agent Chat       │  │      │ Agent Chat       │
- │ Invoice Sidebar  │  │      │ Invoice Sidebar  │
-└────────┬─────────┘  │      └────────┬─────────┘
-         │            │               │
-         │      ┌─────▼───────────────▼─────┐
-         └─────▶│   Supabase (Postgres)      │
-                │   - transactions            │
-                │   - category_rules          │
-                 │   - goals                   │
-                 │   - invoices                │
-                │   Realtime subscriptions    │
-                └─────────────┬───────────────┘
-                               │
-                       ┌───────▼────────┐
-                       │  Claude API     │
-                       │  - categorize   │
-                       │  - agent Q&A    │
-                       └─────────────────┘
+│   Android App   │         │   Windows App   │
+│  (Flutter)      │         │  (Flutter)      │
+│                 │         │                 │
+│ SMS Listener ───┼──┐      │                 │
+│ Manual Entry    │  │      │ Manual Entry    │
+│ Dashboard/Charts│  │      │ Dashboard/Charts│
+│ Goals UI        │  │      │ Goals UI        │
+│ Agent Chat      │  │      │ Agent Chat      │
+│ Invoice Sidebar │  │      │ Invoice Sidebar │
+└────────┬────────┘  │      └────────┬────────┘
+         │           │               │
+         │      ┌────▼───────────────▼─────┐
+         └─────►│   Supabase (Postgres)     │
+                │   - transactions           │
+                │   - category_rules         │
+                │   - goals                  │
+                │   - invoices               │
+                │   Realtime subscriptions   │
+                └─────────────┬──────────────┘
+                              │
+                      ┌───────▼────────┐
+                      │  Claude API    │
+                      │  - categorize  │
+                      │  - agent Q&A   │
+                      └────────────────┘
 ```
 
 ### Database Schema (final — lock before coding)
@@ -224,7 +224,7 @@ Finance Tracker
 ### Pre-Build Decisions (lock now, no mid-build flip-flopping)
 
 - State management: **Riverpod**
-- Navigation: bottom nav bar — 4 tabs (Transactions, Dashboard, Goals, Agent); collapsible invoice sidebar accessible from any screen
+- Navigation: bottom nav bar -- 4 screen tabs (Transactions, Dashboard, Goals, Agent) + 5th Invoices tab that opens end drawer
 - No auth for v1 — single anon Supabase key, RLS open (acceptable for personal single-device-pair use)
 - Currency formatting: ₹, 2 decimals, locale en_IN
 
