@@ -18,6 +18,9 @@ A cross-platform (Android + Windows) personal finance system. Built solo, fast, 
 - Dashboard: Earned / Spent / Saved / Net + category pie + trend chart
 - Finance agent (Claude-powered NL Q&A: "can I afford X?", "what did I waste money on?")
 - Invoice sidebar: collapsible side panel logging freelance invoices with columns — Invoiced Amount (USD), Received in PayPal, Amount in Bank — to track outstanding vs. realized income
+- Net Worth Card: Net Worth = Cash + PayPal + Investments - Debt, displayed as a historical chart
+- Career Investment Tag: special tag applied to Keyboard, Claude, ChatGPT, Hosting, Domains, Courses — excluded from discretionary-spend calculations
+- Invoice Metrics: derived fields for PayPal fee loss, FX conversion loss, effective INR/USD rate; enables agent questions like "How much money did PayPal cost me this year?"
 
 ### Tech Stack
 
@@ -78,13 +81,6 @@ Reference material to pull from when stuck — visit before reinventing:
 
 - A working app on your phone and laptop that tracks every rupee, syncs live, and tells you what's going on with your money without manual spreadsheet work
 
-### Resume Pointers
-
-- "Built a cross-platform personal finance tracker (Flutter, Android + Windows) with real-time sync via Supabase/Postgres"
-- "Designed a hybrid rule-based + LLM categorization engine for unstructured transaction data"
-- "Implemented an agentic financial Q&A assistant using Claude tool-use over live SQL data"
-- "Built SMS-based transaction ingestion pipeline with regex parsing across multiple bank formats"
-
 ### Self-Oriented / Journey-Based Goals
 
 - Prove you can take a personal itch (no-tooling money tracking) and ship a real tool for yourself, end to end, without external pressure
@@ -120,7 +116,8 @@ Finance Tracker
 │   ├── Trend chart
 │   └── Goals progress bars
 └── Agent
-    └── Claude tool-use → query Supabase → aggregate → answer NL question
+    ├── Claude tool-use → query Supabase → aggregate → answer NL question
+    └── Context injected per query: current balance, monthly burn, goal progress, committed recurring spend
 ```
 
 ### System Architecture
@@ -170,6 +167,8 @@ Finance Tracker
 | tags       | text[]      | default '{}'               |
 | raw_sms    | text        | nullable                   |
 | source     | text        | sms / manual               |
+| note       | text        | nullable — user memo       |
+| usd_amount | numeric     | nullable — for forex txns  |
 | created_at | timestamptz | default now()              |
 | updated_at | timestamptz | default now()              |
 
@@ -207,6 +206,31 @@ Finance Tracker
 | invoice_date   | date        |                          |
 | created_at     | timestamptz | default now()            |
 | updated_at     | timestamptz | default now()            |
+
+### accounts
+
+| Column      | Type        | Notes                              |
+| ----------- | ----------- | ---------------------------------- |
+| id          | uuid PK     |                                    |
+| name        | text        | SBI, Kotak, PayPal, Cash           |
+| type        | text        | bank / wallet / paypal / cash      |
+| balance     | numeric     | current balance                    |
+| created_at  | timestamptz | default now()                      |
+
+> Every transaction belongs to an account.
+**recurring_expenses**
+
+| Column      | Type        | Notes                              |
+| ----------- | ----------- | ---------------------------------- |
+| id          | uuid PK     |                                    |
+| name        | text        | e.g. "Spotify", "SBI SIP"         |
+| amount      | numeric     |                                    |
+| frequency   | text        | monthly / weekly / yearly          |
+| category    | text        |                                    |
+| next_due    | date        | nullable                           |
+| created_at  | timestamptz | default now()                      |
+
+> Used by the agent to compute "committed money" — what's already spoken for before the month begins.
 
 ### Endpoints / Interactions (all via Supabase client SDK — no custom backend needed)
 
@@ -274,3 +298,70 @@ A standalone mini-challenge to stress-test the system end to end, run **after Ph
   **Win condition** : all three answers match manual verification, with zero manual fixes needed during the week (only logged + fixed _after_ ).
 
 This is the actual proof the system works — not the build, but a week of real use surviving contact with messy reality.
+
+---
+
+## 7. Future Features (Backlog — Do Not Touch Until Boss Battle Passes)
+
+Ordered roughly by value vs. effort. Everything here is post-v1.
+
+### Tier 1 — High value, low lift (ship these next)
+
+**Monthly Budget Envelopes**
+Set a per-category budget (e.g. Food = ₹8,000/month). Dashboard shows remaining per envelope in real time. A red indicator triggers when >80% spent. This directly fixes the "spent without tracking" problem.
+
+**Committed Money View**
+Uses the `recurring_expenses` table. Before the month begins, shows: income expected − committed spend (SIPs, subscriptions, recurring) = actually free money. Prevents the illusion of a healthy balance when SIPs haven't hit yet.
+
+**Weekly Digest Notification (Android)**
+Every Sunday, a local notification summarises: spent this week, top category, how far from nearest goal. No server needed — scheduled local notification on Android.
+
+**USD ↔ INR Forex Layer**
+Auto-fetch live exchange rate (free tier: exchangerate-api.com) when logging invoice receipts. Store `usd_amount` + `inr_equivalent` + `rate_at_time`. Lets the agent answer "how much did Vineet's payment actually land as in rupees."
+
+---
+
+### Tier 2 — High value, more effort
+
+**Investment Tracker (Manual)**
+A new `investments` table: SIP name, fund name, amount per month, start date, current NAV (manual update). Dashboard shows: total invested vs. current value, XIRR (computed client-side). No API needed in v1 — manual NAV entry is fine. This turns the app into your full money picture.
+
+**Savings Rate Card**
+One number on the dashboard: `(income − total spend) / income × 100`. Just a percentage. Turns abstract goals into a single metric you can move week over week. Target: 20%+.
+
+**Cash Transaction Support**
+Manual entry already exists but cash has no VPA/merchant. Add a "Cash" source type with optional location tag. Lets you log the Hauz Khas chai without it showing as uncategorized noise.
+
+**Export to CSV / PDF**
+One-tap monthly export. Useful for ITR filing as a contractor — all freelance income + categorized expenses in one file.
+
+---
+
+### Tier 3 — Future Manav problems
+
+**Liquid Fund Tracker**
+Once you start investing in liquid funds (post emergency fund), track units held + current NAV + redemption value. Needs manual NAV entry or a free MF API (mfapi.in — free, no auth).
+
+**SGB / Gold ETF Tracker**
+Log SGB units + purchase price. Auto-fetch current gold price and show P&L. Simple but satisfying once you hold any.
+
+**NPS Contribution Log**
+Track monthly NPS Tier 1 contributions + cumulative corpus. Simple table, no API. Mostly for tax clarity at year end — 80CCD(1B) ₹50,000 deduction is easy to forget.
+
+**Tax Summary View**
+End of financial year: total freelance income received (from invoices table), total 80C-eligible investments, estimated tax liability. Not financial advice — just a number to take to a CA or use for advance tax filing.
+
+**Agent Memory**
+Right now the agent has no memory between sessions. Future: store agent Q&A history in Supabase, inject last 5 exchanges as context. Makes "what did I ask last week" answerable and the agent feel genuinely persistent.
+
+**Multi-currency Invoice Support**
+If you ever take on non-INR clients beyond AD — GBP, EUR, etc. Extend `invoices` table with `currency` column, store raw foreign amount + INR equivalent at receipt date.
+
+---
+
+### Won't Do (log here so you stop reconsidering)
+
+- Auth / multi-user — this is a personal tool, single anon key is fine forever
+- Automated NAV/stock price fetch with paid APIs — free manual entry is good enough
+- Bank statement PDF import — too much regex hell for too little gain when SMS works
+- Notifications for every transaction — noise, not signal
