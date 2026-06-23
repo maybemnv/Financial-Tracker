@@ -254,6 +254,20 @@ Finance Tracker
 
 ---
 
+### Best Practices (lock now, no mid-build flip-flopping)
+
+1. **Never let AI modify money** — AI can categorize, summarize, answer questions. It should NEVER edit transactions, delete transactions, or move money. Those actions require explicit user confirmation.
+
+2. **Soft-delete everything** — Instead of deleting, use `is_deleted` boolean + `deleted_at` timestamp. One accidental swipe shouldn't erase six months of data.
+
+3. **Double-entry style transfers** — When money moves between accounts (SBI → Kotak), don't create an expense. Create a transfer out + transfer in. Otherwise spending reports become nonsense.
+
+4. **Immutable transaction history** — When a transaction changes, store old value, new value, and `edited_at`. Audit trail matters in compliance-heavy environments.
+
+5. **Make dashboards boring** — The metrics you'll actually check: Current Cash, Net Worth, Savings Rate, Monthly Spend, Emergency Fund Progress. Everything else (17 charts, AI insights, pie charts everywhere) is secondary.
+
+---
+
 ## 5. Execution — Strict Deadlines, Dopamine-Driven
 
 Rules of engagement:
