@@ -169,6 +169,7 @@ Finance Tracker
 | source     | text        | sms / manual               |
 | note       | text        | nullable — user memo       |
 | usd_amount | numeric     | nullable — for forex txns  |
+| linked_invoice_id | uuid | nullable — connects PayPal/bank receipt to the invoice it pays |
 | created_at | timestamptz | default now()              |
 | updated_at | timestamptz | default now()              |
 
@@ -188,6 +189,7 @@ Finance Tracker
 | ---------------- | ----------- | ------------- |
 | id               | uuid PK     |               |
 | name             | text        |               |
+| type             | text        | emergency_fund / custom |
 | target_amount    | numeric     |               |
 | allocated_amount | numeric     | default 0     |
 | created_at       | timestamptz | default now() |

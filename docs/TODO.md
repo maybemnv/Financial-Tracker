@@ -16,12 +16,13 @@
 - [x] Migration SQL written (`supabase/migrations/00001_init.sql`) — 4 tables + RLS + triggers + RPC
 - [ ] Create Supabase project and apply migration
 - [ ] Update migration to match current schema (do this while project is still empty — schema changes after data exists require migrations):
-  - [ ] Add `note`, `usd_amount`, `is_deleted`, `deleted_at`, `account_id`, `edit_history` (JSONB) to `transactions`
+  - [ ] Add `note`, `usd_amount`, `is_deleted`, `deleted_at`, `account_id`, `linked_invoice_id`, `transfer_group_id`, `edit_history` (JSONB) to `transactions`
   - [ ] Allow `type` = `'transfer'` and `'investment'` in `transactions` — SIP/index fund moves are not expenses
   - [ ] Create `accounts` table (id, name, type: cash/bank/paypal/investment, balance, created_at) — MVP, not future work
   - [ ] Create `recurring_expenses` table (name, amount, frequency, category, next_due)
   - [ ] Create `recurring_income` table (name, amount, frequency, source, next_expected) — enables "Expected July Income"
   - [ ] Create `monthly_snapshots` table (month, year, income, expenses, savings, net_worth, recorded_at) — cheaper than recalculating forever
+  - [ ] Add `type` column to `goals` (`emergency_fund`, `custom`) — dashboard detects emergency fund by type, not by name
   - [ ] Add `paypal_fee`, `fx_loss`, `fx_rate` columns to `invoices`
   - [ ] Remove `net_worth_history` table — replaced by `monthly_snapshots`
 - [ ] Enable Realtime on required tables
@@ -35,7 +36,11 @@
 - [x] `Transaction` model (fromJson/toJson/copyWith)
 - [x] `TransactionNotifier` — CRUD + Realtime subscription + pagination (200 limit)
 - [x] `Goal` model + `GoalNotifier` (load, add, allocate)
+- [ ] Update `Goal` model: add `type` field (`emergency_fund`, `custom`)
+- [ ] Update `Transaction` model: add `transferGroupId`, `linkedInvoiceId`, `accountId`
 - [x] `Invoice` model (computedStatus, outstanding, totalReceived) + `InvoiceNotifier`
+- [ ] Update `Invoice` model: add `paypalFee`, `fxLoss`, `fxRate` fields
+- [ ] Update `InvoiceProvider`: add `update`, `delete` methods
 - [x] `CategoryRule` model (match_pattern, category, tags, priority)
 - [ ] `Account` model + `AccountNotifier` (load, balance per account)
 - [ ] `RecurringIncome` model + provider (load, project next expected)
@@ -51,6 +56,7 @@
 - [x] Validation + loading state + error toast
 - [ ] Add account selector (which account is this from/to)
 - [ ] Add `investment` as a type option — with destination account field (e.g. "Nifty 50 fund")
+- [ ] Add `transfer` type — creates two linked rows with matching `transfer_group_id`
 
 ### Dashboard Screen
 - [x] Summary cards: Earned, Spent, Saved, Net (current month)
@@ -58,7 +64,7 @@
 - [x] Data from transactions table (client-side aggregation)
 - [ ] **Emergency Fund card — hero element, top of dashboard**
   - Progress bar: ₹X / ₹3,00,000 with % complete
-  - Pulls from Goals table (goal named "Emergency Fund")
+  - Pulls from Goals table by `type = 'emergency_fund'` — not by name
   - This is the number that matters most right now
 - [ ] Savings Rate card: `(income − spend) / income × 100` — single %, target 20%+
 - [ ] Per-account balance breakdown (SBI / Kotak / PayPal / Cash)
@@ -194,10 +200,11 @@ Questions to ask:
 
 - **AI never modifies money** — categorise/summarise/answer only. Edit/delete/move requires explicit user confirmation.
 - **Soft-delete everything** — `is_deleted` + `deleted_at` on all tables. Nothing is ever hard-deleted.
-- **Double-entry transfers** — transfer out + transfer in as two linked rows. Never a single expense.
+- **Double-entry transfers** — transfer out + transfer in as two rows linked by `transfer_group_id`. Never a single expense.
 - **Investments are not expenses** — `type = 'investment'` moves money from cash account to investment account. Net worth unchanged.
 - **Immutable history** — store old/new values and edited_at on every change.
 - **Boring dashboard first** — Emergency Fund progress, Savings Rate, Monthly Spend, Per-Account Balance before any fancy charts.
 - **Career Investment tag** — Keyboard, domains, hosting, Claude API costs, courses = tagged separately, excluded from discretionary spend reports.
 - **Invoice FX fields** — PayPal fee, FX loss, FX rate are derived display fields from received amounts. No manual entry needed.
 - **No streaming** — Claude responses appear after 2–4s. SSE removed from scope permanently.
+- **Transaction attachments** (backlog) — Invoice PDFs, receipts, and screenshots attached to transactions. Not in v1 scope. Noted here so future schema changes leave room.
