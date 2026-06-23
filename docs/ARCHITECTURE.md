@@ -174,7 +174,7 @@ sequenceDiagram
 
     User->>App: "Can I afford a new keyboard?"
     App->>App: Gather financial data
-    App->>Supabase: fn_current_balance()
+    App->>Supabase: fn_current_balance(accountId)
     App->>Supabase: SELECT transactions (30d sum)
     App->>Supabase: SELECT invoices (totals)
     App->>Supabase: SELECT goals (progress)

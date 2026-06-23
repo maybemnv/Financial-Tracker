@@ -100,12 +100,14 @@ SupabaseService().client.from('transactions').select();
 
 ## RPC Functions
 
-### `fn_current_balance()`
+### `fn_current_balance(p_account_id)`
 
-Returns net balance (all credits minus all debits, excluding transfers and investments, ignoring soft-deleted rows).
+Returns net balance for a specific account (all credits minus debits, excluding transfers and investments, ignoring soft-deleted rows). The account-scoped version replaced the original global version once multiple accounts existed.
 
 ```dart
-final balance = await SupabaseService().client.rpc('fn_current_balance');
+final balance = await SupabaseService()
+    .client
+    .rpc('fn_current_balance', params: {'p_account_id': accountId});
 ```
 
 Returns: `NUMERIC`
@@ -113,17 +115,16 @@ Returns: `NUMERIC`
 SQL:
 
 ```sql
-CREATE OR REPLACE FUNCTION fn_current_balance()
+CREATE OR REPLACE FUNCTION fn_current_balance(p_account_id uuid)
 RETURNS NUMERIC AS $$
-DECLARE
-  total_credits NUMERIC;
-  total_debits NUMERIC;
 BEGIN
-  SELECT COALESCE(SUM(amount), 0) INTO total_credits
-  FROM transactions WHERE type = 'credit' AND is_deleted = false;
-  SELECT COALESCE(SUM(amount), 0) INTO total_debits
-  FROM transactions WHERE type = 'debit' AND is_deleted = false;
-  RETURN total_credits - total_debits;
+  RETURN (
+    SELECT COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE -amount END), 0)
+    FROM transactions
+    WHERE account_id = p_account_id
+      AND type IN ('debit', 'credit')
+      AND is_deleted = false
+  );
 END;
 $$ LANGUAGE plpgsql;
 ```
@@ -213,7 +214,7 @@ Before each agent request, the app gathers context by calling Supabase:
 
 | Data point | Source |
 |---|---|
-| Current balance | `fn_current_balance()` RPC |
+| Current balance | `fn_current_balance(p_account_id)` RPC — one call per account |
 | 30d earned + spent | Two `SELECT SUM` queries on `transactions` |
 | Transaction count | `SELECT count(*)` on `transactions` |
 | Invoice summary | `SELECT` all invoices, compute totals client-side |
