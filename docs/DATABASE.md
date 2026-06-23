@@ -70,7 +70,7 @@ Financial accounts the user holds. Every transaction references one of these.
 | `id` | `uuid PK` | `gen_random_uuid()` | |
 | `name` | `text` | | Display name: `SBI`, `Kotak`, `PayPal`, `Cash`, `Nifty 50` |
 | `type` | `text` | | `cash`, `bank`, `paypal`, `investment` |
-| `balance` | `numeric` | `0` | Current balance (manually reconciled or computed) |
+| `balance` | `numeric` | `0` | Manually reconciled. **Not auto-updated by triggers** — inserting a transaction does not adjust this value. Future-you must reconcile periodically or add a trigger. |
 | `is_deleted` | `boolean` | `false` | Soft delete |
 | `deleted_at` | `timestamptz` | `nullable` | |
 | `created_at` | `timestamptz` | `now()` | |
@@ -220,8 +220,8 @@ Pre-computed monthly aggregates. Avoids recalculating from raw transactions ever
 | `income` | `numeric` | `0` | Total credits this month |
 | `expenses` | `numeric` | `0` | Total debits this month |
 | `investments` | `numeric` | `0` | Total investments this month |
-| `savings` | `numeric` | `0` | income - expenses |
-| `savings_rate` | `numeric` | `0` | (savings / income) * 100 |
+| `savings` | `numeric` | `0` | income - expenses. Computed client-side in the Flutter model, stored here for query convenience. Not independently updated — if income or expenses change, savings must be recomputed. |
+| `savings_rate` | `numeric` | `0` | (savings / income) * 100. Also computed client-side. See savings note. |
 | `net_worth` | `numeric` | `0` | End-of-month net worth |
 | `recorded_at` | `timestamptz` | `now()` | |
 
@@ -229,6 +229,7 @@ Pre-computed monthly aggregates. Avoids recalculating from raw transactions ever
 
 ```sql
 UNIQUE(month, year)
+-- No is_deleted / deleted_at: append-only by design. Rows are never modified after insertion.
 ```
 
 ### Indexes
@@ -257,22 +258,21 @@ $$ LANGUAGE plpgsql;
 
 Applied to: `transactions`, `invoices`
 
-### `fn_current_balance()`
+### `fn_current_balance(p_account_id uuid)`
 
-Returns total credits minus total debits across all transactions (excluding transfers and investments).
+Returns total credits minus total debits for a given account (excluding transfers and investments, ignoring soft-deleted rows). Accepts an `account_id` parameter — the old no-arg version was removed because it returned a meaningless global number once multiple accounts exist.
 
 ```sql
-CREATE OR REPLACE FUNCTION fn_current_balance()
+CREATE OR REPLACE FUNCTION fn_current_balance(p_account_id uuid)
 RETURNS NUMERIC AS $$
-DECLARE
-  total_credits NUMERIC;
-  total_debits NUMERIC;
 BEGIN
-  SELECT COALESCE(SUM(amount), 0) INTO total_credits
-  FROM transactions WHERE type = 'credit' AND is_deleted = false;
-  SELECT COALESCE(SUM(amount), 0) INTO total_debits
-  FROM transactions WHERE type = 'debit' AND is_deleted = false;
-  RETURN total_credits - total_debits;
+  RETURN (
+    SELECT COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE -amount END), 0)
+    FROM transactions
+    WHERE account_id = p_account_id
+      AND type IN ('debit', 'credit')
+      AND is_deleted = false
+  );
 END;
 $$ LANGUAGE plpgsql;
 ```
@@ -304,7 +304,7 @@ ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all" ON <table> FOR ALL USING (true);
 ```
 
-Applied to: `transactions`, `category_rules`, `goals`, `invoices`
+Applied to: `transactions`, `category_rules`, `goals`, `invoices`, `accounts`, `recurring_expenses`, `recurring_income`, `monthly_snapshots`
 
 ---
 
