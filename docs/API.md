@@ -37,11 +37,11 @@ SupabaseService().client.from('transactions').select();
 | List (paginated) | `SELECT` | `.from('transactions').select().order('created_at', ascending: false).limit(200)` |
 | Insert | `INSERT` | `.from('transactions').insert(tx.toJson()).select()` |
 | Update | `UPDATE` | `.from('transactions').update(tx.toJson()).eq('id', id)` |
-| Soft delete | `UPDATE` | `.from('transactions').update({'is_deleted': true, 'deleted_at': 'now()'}).eq('id', id)` |
+| Soft delete | `UPDATE` | `.from('transactions').update({'is_deleted': true, 'deleted_at': DateTime.now().toIso8601String()}).eq('id', id)` |
 | Filter by account | `SELECT` | `.from('transactions').select().eq('account_id', accountId)` |
 | Filter by invoice | `SELECT` | `.from('transactions').select().eq('linked_invoice_id', invoiceId)` |
 | Sum by type (30d) | `SELECT` | `.from('transactions').select('amount').eq('type', 'credit').gte('created_at', date)` |
-| Duplicate check | `SELECT` | `.from('transactions').select('id').eq('raw_sms', rawText).maybeSingle()` |
+| Duplicate check | `SELECT` | `.from('transactions').select('id').eq('raw_sms_hash', sha256(rawText)).maybeSingle()` |
 
 ### `goals`
 
@@ -100,14 +100,14 @@ SupabaseService().client.from('transactions').select();
 
 ## RPC Functions
 
-### `fn_current_balance(p_account_id)`
+### `fn_account_balance(p_account_id)`
 
-Returns net balance for a specific account (all credits minus debits, excluding transfers and investments, ignoring soft-deleted rows). The account-scoped version replaced the original global version once multiple accounts existed.
+Returns the derived current balance for an account: `opening_balance + SUM(credits) - SUM(debits)` for all transactions after `opening_date`. Excludes transfers and investments, ignores soft-deleted rows.
 
 ```dart
 final balance = await SupabaseService()
     .client
-    .rpc('fn_current_balance', params: {'p_account_id': accountId});
+    .rpc('fn_account_balance', params: {'p_account_id': accountId});
 ```
 
 Returns: `NUMERIC`
@@ -115,16 +115,49 @@ Returns: `NUMERIC`
 SQL:
 
 ```sql
-CREATE OR REPLACE FUNCTION fn_current_balance(p_account_id uuid)
+CREATE OR REPLACE FUNCTION fn_account_balance(p_account_id uuid)
 RETURNS NUMERIC AS $$
+DECLARE
+  ob NUMERIC;
+  od DATE;
+  tx_total NUMERIC;
 BEGIN
-  RETURN (
-    SELECT COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE -amount END), 0)
-    FROM transactions
-    WHERE account_id = p_account_id
-      AND type IN ('debit', 'credit')
-      AND is_deleted = false
-  );
+  SELECT opening_balance, opening_date INTO ob, od
+  FROM accounts WHERE id = p_account_id;
+
+  SELECT COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE -amount END), 0)
+  INTO tx_total
+  FROM transactions
+  WHERE account_id = p_account_id
+    AND type IN ('debit', 'credit')
+    AND is_deleted = false
+    AND (od IS NULL OR created_at >= od);
+
+  RETURN ob + tx_total;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### `fn_net_worth()`
+
+Returns sum of `fn_account_balance()` across all accounts. One call, no client-side aggregation needed.
+
+```dart
+final netWorth = await SupabaseService().client.rpc('fn_net_worth');
+```
+
+Returns: `NUMERIC`
+
+```sql
+CREATE OR REPLACE FUNCTION fn_net_worth()
+RETURNS NUMERIC AS $$
+DECLARE
+  total NUMERIC;
+BEGIN
+  SELECT COALESCE(SUM(fn_account_balance(id)), 0) INTO total
+  FROM accounts
+  WHERE is_deleted = false;
+  RETURN total;
 END;
 $$ LANGUAGE plpgsql;
 ```
@@ -214,14 +247,14 @@ Before each agent request, the app gathers context by calling Supabase:
 
 | Data point | Source |
 |---|---|
-| Current balance | `fn_current_balance(p_account_id)` RPC — one call per account |
+| Per-account balance | `fn_account_balance(account_id)` RPC |
+| Net worth | `fn_net_worth()` RPC |
 | 30d earned + spent | Two `SELECT SUM` queries on `transactions` |
 | Transaction count | `SELECT count(*)` on `transactions` |
 | Invoice summary | `SELECT` all invoices, compute totals client-side |
 | Goal progress | `SELECT` all goals, compute percentages client-side |
 | Recurring expenses | `SELECT` from `recurring_expenses` (v2) |
 | Expected income | `SELECT` from `recurring_income` (v2) |
-| Per-account balances | `SELECT` from `accounts` (v2) |
 
 The gathered data is serialised into a text block and injected as context. No tool-use pattern yet — Claude receives the data pre-fetched.
 
@@ -257,6 +290,7 @@ Each Dart model maps its fields to snake_case JSON for Supabase.
 | `invoicedUsd` | `invoiced_usd` | `500.00` |
 | `receivedPaypal` | `received_paypal` | `485.00` |
 | `matchPattern` | `match_pattern` | `"swiggy"` |
+| `rawSmsHash` | `raw_sms_hash` | `sha256-hash-string` |
 | `linkedInvoiceId` | `linked_invoice_id` | `uuid-string` |
 | `transferGroupId` | `transfer_group_id` | `uuid-string` |
 | `isDeleted` | `is_deleted` | `false` |

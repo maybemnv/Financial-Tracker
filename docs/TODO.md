@@ -16,15 +16,17 @@
 - [x] Migration SQL written (`supabase/migrations/00001_init.sql`) — 4 tables + RLS + triggers + RPC
 - [ ] Create Supabase project and apply migration
 - [ ] Update migration to match current schema (do this while project is still empty — schema changes after data exists require migrations):
-  - [ ] Add `note`, `usd_amount`, `is_deleted`, `deleted_at`, `account_id`, `linked_invoice_id`, `transfer_group_id`, `edit_history` (JSONB) to `transactions`
+  - [ ] Add `note`, `usd_amount`, `is_deleted`, `deleted_at`, `account_id`, `linked_invoice_id`, `transfer_group_id`, `raw_sms_hash`, `edit_history` (JSONB) to `transactions`
   - [ ] Allow `type` = `'transfer'` and `'investment'` in `transactions` — SIP/index fund moves are not expenses
-  - [ ] Create `accounts` table (id, name, type: cash/bank/paypal/investment, balance, created_at) — MVP, not future work
+  - [ ] Create `accounts` table (id, name, type, opening_balance, opening_date) — no `balance` column, derived from transactions via `fn_account_balance()`
   - [ ] Create `recurring_expenses` table (name, amount, frequency, category, next_due)
   - [ ] Create `recurring_income` table (name, amount, frequency, source, next_expected) — enables "Expected July Income"
   - [ ] Create `monthly_snapshots` table (month, year, income, expenses, savings, net_worth, recorded_at) — cheaper than recalculating forever
   - [ ] Add `type` column to `goals` (`emergency_fund`, `custom`) — dashboard detects emergency fund by type, not by name
   - [ ] Add `paypal_fee`, `fx_loss`, `fx_rate` columns to `invoices`
   - [ ] Remove `net_worth_history` table — replaced by `monthly_snapshots`
+  - [ ] Create `fn_account_balance(account_id)` RPC — opens with opening_balance + SUM(credits) - SUM(debits)
+  - [ ] Create `fn_net_worth()` RPC — SUM of fn_account_balance across all accounts
 - [ ] Enable Realtime on required tables
 - [ ] Verify RLS policies (open for v1, single anon key)
 
@@ -129,10 +131,10 @@
 ### Claude API Integration
 - [x] HTTP client configured (`http` package)
 - [x] API key loaded from `.env` via flutter_dotenv
-- [x] Data gathering before sending: balance (RPC), tx summary, invoices, goals
+- [x] Data gathering before sending: accounts (fn_account_balance), tx summary, invoices, goals
 - [ ] Proper Claude tool-use (tool definitions, tool call execution loop)
 - [ ] Conversation history maintenance (multi-turn context)
-- [ ] Structured context injected per query: current balance per account, monthly burn, goal progress, committed recurring spend, expected income
+- [ ] Structured context injected per query: balance per account via `fn_account_balance`, monthly burn, goal progress, committed recurring spend, expected income
 
 ### Agent Chat UI
 - [x] Chat bubble UI (user left, agent right)
@@ -169,6 +171,8 @@
 
 ### Security
 - [x] Keys loaded from `.env` (gitignored), not hardcoded
+- [ ] Fix soft delete: pass `DateTime.now().toIso8601String()` not `'now()'` string literal in all providers
+- [ ] Add `raw_sms_hash` to SMS pipeline: compute SHA-256 on insert, check hash for duplicates
 - [ ] Verify no keys in crash logs or error stack traces
 - [ ] RLS review before any public exposure
 
@@ -204,6 +208,7 @@ Questions to ask:
 - **Investments are not expenses** — `type = 'investment'` moves money from cash account to investment account. Net worth unchanged.
 - **Immutable history** — store old/new values and edited_at on every change.
 - **Boring dashboard first** — Emergency Fund progress, Savings Rate, Monthly Spend, Per-Account Balance before any fancy charts.
+- **Balances are derived, not stored** — `accounts` has `opening_balance` + `opening_date`. Current balance is `fn_account_balance()`. No `balance` column to drift.
 - **Career Investment tag** — Keyboard, domains, hosting, Claude API costs, courses = tagged separately, excluded from discretionary spend reports.
 - **Invoice FX fields** — PayPal fee, FX loss, FX rate are derived display fields from received amounts. No manual entry needed.
 - **No streaming** — Claude responses appear after 2–4s. SSE removed from scope permanently.

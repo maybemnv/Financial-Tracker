@@ -19,7 +19,8 @@ Core ledger. Every financial event lives here — debits, credits, transfers, an
 | `bank` | `text` | `nullable` | Bank name from SMS |
 | `category` | `text` | `nullable` | One of: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other, or null until categorized |
 | `tags` | `text[]` | `'{}'` | Cross-cutting labels. `career_investment` is a reserved tag — excluded from discretionary spending reports. |
-| `raw_sms` | `text` | `nullable` | Raw SMS text for audit trail. Used for deduplication. |
+| `raw_sms` | `text` | `nullable` | Raw SMS text for audit trail. |
+| `raw_sms_hash` | `text` | `nullable` | `digest(raw_sms, 'sha256')` — used for duplicate detection instead of comparing full SMS text. |
 | `source` | `text` | `'manual'` | `sms` or `manual` |
 | `note` | `text` | `nullable` | User memo |
 | `usd_amount` | `numeric` | `nullable` | Original USD amount if this was a forex transaction |
@@ -56,7 +57,7 @@ CREATE INDEX idx_transactions_type ON transactions(type);
 CREATE INDEX idx_transactions_created_at ON transactions(created_at DESC);
 CREATE INDEX idx_transactions_category ON transactions(category);
 CREATE INDEX idx_transactions_is_deleted ON transactions(is_deleted) WHERE is_deleted = false;
-CREATE INDEX idx_transactions_raw_sms_hash ON transactions(digest(raw_sms, 'sha256')) WHERE raw_sms IS NOT NULL;
+CREATE INDEX idx_transactions_raw_sms_hash ON transactions(raw_sms_hash) WHERE raw_sms_hash IS NOT NULL;
 ```
 
 ---
@@ -66,11 +67,12 @@ CREATE INDEX idx_transactions_raw_sms_hash ON transactions(digest(raw_sms, 'sha2
 Financial accounts the user holds. Every transaction references one of these.
 
 | Column | Type | Default | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `id` | `uuid PK` | `gen_random_uuid()` | |
 | `name` | `text` | | Display name: `SBI`, `Kotak`, `PayPal`, `Cash`, `Nifty 50` |
 | `type` | `text` | | `cash`, `bank`, `paypal`, `investment` |
-| `balance` | `numeric` | `0` | Manually reconciled. **Not auto-updated by triggers** — inserting a transaction does not adjust this value. Future-you must reconcile periodically or add a trigger. |
+| `opening_balance` | `numeric` | `0` | Balance on `opening_date`. Source of truth is transactions — `balance` is intentionally absent to avoid drift between derived and stored values. |
+| `opening_date` | `date` | | Date the opening balance was set. Transactions before this date are excluded from derived balance. |
 | `is_deleted` | `boolean` | `false` | Soft delete |
 | `deleted_at` | `timestamptz` | `nullable` | |
 | `created_at` | `timestamptz` | `now()` | |
@@ -258,21 +260,48 @@ $$ LANGUAGE plpgsql;
 
 Applied to: `transactions`, `invoices`
 
-### `fn_current_balance(p_account_id uuid)`
+### `fn_account_balance(p_account_id uuid)`
 
-Returns total credits minus total debits for a given account (excluding transfers and investments, ignoring soft-deleted rows). Accepts an `account_id` parameter — the old no-arg version was removed because it returned a meaningless global number once multiple accounts exist.
+Returns the derived current balance for an account: `opening_balance + SUM(credits) - SUM(debits)` for transactions after `opening_date`. Excludes transfers and investments, ignores soft-deleted rows.
 
 ```sql
-CREATE OR REPLACE FUNCTION fn_current_balance(p_account_id uuid)
+CREATE OR REPLACE FUNCTION fn_account_balance(p_account_id uuid)
 RETURNS NUMERIC AS $$
+DECLARE
+  ob NUMERIC;
+  od DATE;
+  tx_total NUMERIC;
 BEGIN
-  RETURN (
-    SELECT COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE -amount END), 0)
-    FROM transactions
-    WHERE account_id = p_account_id
-      AND type IN ('debit', 'credit')
-      AND is_deleted = false
-  );
+  SELECT opening_balance, opening_date INTO ob, od
+  FROM accounts WHERE id = p_account_id;
+
+  SELECT COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE -amount END), 0)
+  INTO tx_total
+  FROM transactions
+  WHERE account_id = p_account_id
+    AND type IN ('debit', 'credit')
+    AND is_deleted = false
+    AND (od IS NULL OR created_at >= od);
+
+  RETURN ob + tx_total;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### `fn_net_worth()`
+
+Returns sum of all account balances (opening + transaction deltas) for cash/bank/paypal accounts minus investment accounts. Uses `fn_account_balance` per account.
+
+```sql
+CREATE OR REPLACE FUNCTION fn_net_worth()
+RETURNS NUMERIC AS $$
+DECLARE
+  total NUMERIC;
+BEGIN
+  SELECT COALESCE(SUM(fn_account_balance(id)), 0) INTO total
+  FROM accounts
+  WHERE is_deleted = false;
+  RETURN total;
 END;
 $$ LANGUAGE plpgsql;
 ```
@@ -318,6 +347,7 @@ These are enforced at the application layer (not in SQL constraints):
 | **Immutable history** | Every update appends to `edit_history` JSONB. Previous values are never overwritten silently. |
 | **Double-entry transfers** | A transfer creates two rows in `transactions` — one `debit` from source account, one `credit` to destination account — linked by `transfer_group_id`. |
 | **Investments are not expenses** | `type = 'investment'` decreases cash balance but does not count as spending in reports. Net worth is unchanged. |
+| **Balances are derived, not stored** | `accounts` has `opening_balance` + `opening_date`. Current balance is computed by `fn_account_balance()` as `opening + SUM(credits) - SUM(debits)` on transactions after the opening date. No `balance` column to drift out of sync. |
 | **AI never modifies data** | No agent function can `UPDATE`, `DELETE`, or `INSERT` transactions. Agent is read-only + categorization-only. |
 
 ---

@@ -159,13 +159,14 @@ Finance Tracker
 | ---------- | ----------- | -------------------------- |
 | id         | uuid PK     | default gen_random_uuid()  |
 | amount     | numeric     |                            |
-| type       | text        | debit / credit             |
+| type       | text        | debit / credit / transfer / investment |
 | vpa        | text        | nullable                   |
 | merchant   | text        | nullable                   |
 | bank       | text        | nullable                   |
 | category   | text        | nullable until categorized |
 | tags       | text[]      | default '{}'               |
 | raw_sms    | text        | nullable                   |
+| raw_sms_hash | text      | nullable — sha256 for dedup |
 | source     | text        | sms / manual               |
 | note       | text        | nullable — user memo       |
 | usd_amount | numeric     | nullable — for forex txns  |
@@ -216,7 +217,8 @@ Finance Tracker
 | id          | uuid PK     |                                    |
 | name        | text        | SBI, Kotak, PayPal, Cash           |
 | type        | text        | bank / wallet / paypal / cash      |
-| balance     | numeric     | current balance                    |
+| opening_balance | numeric | balance at opening_date |
+| opening_date | date       | when tracking started |
 | created_at  | timestamptz | default now()                      |
 
 > Every transaction belongs to an account.
