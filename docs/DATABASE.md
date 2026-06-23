@@ -108,7 +108,7 @@ CREATE INDEX idx_category_rules_priority ON category_rules(priority);
 Savings goals with manual allocation tracking.
 
 | Column | Type | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- |
 | `id` | `uuid PK` | `gen_random_uuid()` | |
 | `name` | `text` | | Goal name, e.g. `Emergency Fund`, `Phone`, `Keyboard` |
 | `type` | `text` | `'custom'` | `emergency_fund`, `custom`. Agent and dashboard use this, not the name — renaming "Emergency Fund" to "Oh Shit Fund" won't break anything. |
