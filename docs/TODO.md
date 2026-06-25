@@ -14,7 +14,7 @@
 
 ### Supabase Setup
 - [x] Migration SQL written (`supabase/migrations/00001_init.sql`) — 4 tables + RLS + triggers + RPC
-- [ ] Create Supabase project and apply migration
+- [x] Create Supabase project and apply migration (`supabase/migrations/00001_init.sql` run successfully)
 - [x] Update migration to match current schema (do this while project is still empty — schema changes after data exists require migrations):
   - [x] Add `note`, `usd_amount`, `is_deleted`, `deleted_at`, `account_id`, `linked_invoice_id`, `transfer_group_id`, `raw_sms_hash`, `edit_history` (JSONB) to `transactions`
   - [x] Allow `type` = `'transfer'` and `'investment'` in `transactions` — SIP/index fund moves are not expenses
@@ -28,7 +28,7 @@
   - [x] Create `fn_account_balance(account_id)` RPC — opens with opening_balance + SUM(credits) - SUM(debits)
   - [x] Create `fn_net_worth()` RPC — SUM of fn_account_balance across all accounts
 - [x] Enable Realtime on required tables (transactions, goals, invoices, accounts)
-- [ ] Verify RLS policies (open for v1, single anon key)
+- [x] Verify RLS policies (open for v1, single anon key — `CREATE POLICY "anon_all" ON ... FOR ALL USING (true)` for all 8 tables)
 
 ---
 
