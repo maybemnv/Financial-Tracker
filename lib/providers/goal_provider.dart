@@ -11,7 +11,11 @@ class GoalNotifier extends StateNotifier<AsyncValue<List<Goal>>> {
   Future<void> load() async {
     state = const AsyncValue.loading();
     try {
-      final data = await SupabaseService().client.from('goals').select().limit(100);
+      final data = await SupabaseService().client
+          .from('goals')
+          .select()
+          .eq('is_deleted', false)
+          .limit(100);
       final goals = (data as List)
           .map((json) => Goal.fromJson(json as Map<String, dynamic>))
           .toList();
@@ -60,6 +64,15 @@ class GoalNotifier extends StateNotifier<AsyncValue<List<Goal>>> {
     } catch (e) {
       state = AsyncValue.error(e, StackTrace.current);
     }
+  }
+
+  /// SOFT delete — never a hard `DELETE`.
+  Future<void> delete(String id) async {
+    await SupabaseService().client.from('goals').update({
+      'is_deleted': true,
+      'deleted_at': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+    await load();
   }
 
   @override

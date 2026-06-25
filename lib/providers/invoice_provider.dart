@@ -15,6 +15,7 @@ class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
           .client
           .from('invoices')
           .select()
+          .eq('is_deleted', false)
           .order('created_at', ascending: false)
           .limit(100);
       final invoices = (data as List)
@@ -57,8 +58,12 @@ class InvoiceNotifier extends StateNotifier<AsyncValue<List<Invoice>>> {
     await load();
   }
 
+  /// SOFT delete — never a hard `DELETE`.
   Future<void> delete(String id) async {
-    await SupabaseService().client.from('invoices').delete().eq('id', id);
+    await SupabaseService().client.from('invoices').update({
+      'is_deleted': true,
+      'deleted_at': DateTime.now().toIso8601String(),
+    }).eq('id', id);
     await load();
   }
 
