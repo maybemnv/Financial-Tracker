@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
+import '../../models/goal.dart';
 import '../../models/transaction.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/goal_provider.dart';
@@ -188,14 +189,14 @@ class _DashboardContent extends ConsumerWidget {
 /// Hero card: progress to the emergency-fund target. Found by goal type, not
 /// name, so renaming won't break it.
 class _EmergencyFundCard extends StatelessWidget {
-  final dynamic goal; // Goal
+  final Goal goal;
   const _EmergencyFundCard({required this.goal});
 
   @override
   Widget build(BuildContext context) {
-    final allocated = goal.allocatedAmount as double;
-    final target = goal.targetAmount as double;
-    final pct = goal.fundedPercent as double;
+    final allocated = goal.allocatedAmount;
+    final target = goal.targetAmount;
+    final pct = goal.fundedPercent;
     return Card(
       color: AppTheme.darkCard,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../core/constants.dart';
+import '../../models/account.dart';
 import '../../models/transaction.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/transaction_provider.dart';
@@ -240,7 +241,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   @override
   Widget build(BuildContext context) {
     final accountsAsync = ref.watch(accountProvider);
-    final accounts = accountsAsync.maybeWhen(data: (a) => a, orElse: () => <dynamic>[]);
+    final accounts = accountsAsync.maybeWhen(data: (a) => a, orElse: () => <Account>[]);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Add Transaction')),
@@ -284,7 +285,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                           : 'Account',
                 ),
                 items: accounts
-                    .map((a) => DropdownMenuItem(value: a.id as String, child: Text(a.name as String)))
+                    .map((a) => DropdownMenuItem(value: a.id ?? '', child: Text(a.name)))
                     .toList(),
                 onChanged: (v) => setState(() => _accountId = v),
                 validator: (v) => v == null || v.isEmpty ? 'Select an account' : null,
@@ -297,7 +298,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                     labelText: _type == 'transfer' ? 'To account' : 'Destination (e.g. Nifty 50 fund)',
                   ),
                   items: accounts
-                      .map((a) => DropdownMenuItem(value: a.id as String, child: Text(a.name as String)))
+                .map((a) => DropdownMenuItem(value: a.id ?? '', child: Text(a.name)))
                       .toList(),
                   onChanged: (v) => setState(() => _destAccountId = v),
                   validator: (v) => v == null || v.isEmpty ? 'Select an account' : null,

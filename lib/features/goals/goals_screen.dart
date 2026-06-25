@@ -42,13 +42,14 @@ class GoalsScreen extends ConsumerWidget {
               subtitle: 'Set a savings goal to track your progress',
             );
           }
+          final sorted = _sorted(goals);
           return RefreshIndicator(
             onRefresh: () => ref.read(goalProvider.notifier).load(),
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
               // Emergency fund is always pinned to the top.
-              itemCount: _sorted(goals).length,
-              itemBuilder: (context, index) => _GoalCard(goal: _sorted(goals)[index]),
+              itemCount: sorted.length,
+              itemBuilder: (context, index) => _GoalCard(goal: sorted[index]),
             ),
           );
         },

@@ -1,4 +1,4 @@
-import '../core/supabase.dart';
+import 'supabase.dart';
 import '../models/monthly_snapshot.dart';
 
 /// Backfills the previous month's aggregate into `monthly_snapshots` on first
