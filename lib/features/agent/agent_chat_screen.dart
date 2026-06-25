@@ -159,26 +159,46 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     final supabase = SupabaseService().client;
     final buffer = StringBuffer();
 
+    final since = DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
+
+    // Per-account balances (fn_account_balance) + net worth (fn_net_worth)
     try {
-      final balance = await supabase.rpc('fn_current_balance');
-      buffer.writeln('Current balance: $balance');
+      final accounts = await supabase
+          .from('accounts')
+          .select('id, name')
+          .eq('is_deleted', false);
+      for (final a in (accounts as List)) {
+        final acc = a as Map;
+        try {
+          final bal = await supabase.rpc('fn_account_balance',
+              params: {'p_account_id': acc['id']});
+          buffer.writeln('Account "${acc['name']}": $bal');
+        } catch (_) {}
+      }
+      try {
+        final netWorth = await supabase.rpc('fn_net_worth');
+        buffer.writeln('Net worth: $netWorth');
+      } catch (_) {}
     } catch (_) {}
 
     try {
-      final earned = await supabase.from('transactions').select('amount').eq('type', 'credit').gte('created_at', DateTime.now().subtract(const Duration(days: 30)).toIso8601String());
-      final spent = await supabase.from('transactions').select('amount').eq('type', 'debit').gte('created_at', DateTime.now().subtract(const Duration(days: 30)).toIso8601String());
+      final earned = await supabase.from('transactions').select('amount').eq('type', 'credit').gte('created_at', since);
+      final spent = await supabase.from('transactions').select('amount').eq('type', 'debit').gte('created_at', since);
       final earnedSum = (earned as List).fold(0.0, (s, t) => s + ((t as Map)['amount'] as num).toDouble());
       final spentSum = (spent as List).fold(0.0, (s, t) => s + ((t as Map)['amount'] as num).toDouble());
       buffer.writeln('Last 30 days - Earned: $earnedSum, Spent: $spentSum');
     } catch (_) {}
 
     try {
-      final txCount = await supabase.from('transactions').select('id').limit(1);
+      final txCount = await supabase.from('transactions').select('id').eq('is_deleted', false).limit(1);
       buffer.writeln('Total transactions: ${(txCount as List).length}+');
     } catch (_) {}
 
     try {
-      final invoices = await supabase.from('invoices').select('invoiced_usd, received_paypal, received_bank');
+      final invoices = await supabase
+          .from('invoices')
+          .select('invoiced_usd, received_paypal, received_bank')
+          .eq('is_deleted', false);
       double totalInvoiced = 0, totalReceived = 0;
       for (final inv in (invoices as List)) {
         final i = inv as Map;
@@ -190,10 +210,15 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     } catch (_) {}
 
     try {
-      final goals = await supabase.from('goals').select('name, target_amount, allocated_amount');
+      final goals = await supabase
+          .from('goals')
+          .select('name, target_amount, allocated_amount')
+          .eq('is_deleted', false);
       for (final g in (goals as List)) {
         final goal = g as Map;
-        final pct = ((goal['allocated_amount'] as num?)?.toDouble() ?? 0) / ((goal['target_amount'] as num).toDouble()) * 100;
+        final target = (goal['target_amount'] as num).toDouble();
+        final allocated = (goal['allocated_amount'] as num?)?.toDouble() ?? 0;
+        final pct = target == 0 ? 0.0 : (allocated / target) * 100;
         buffer.writeln('Goal "${goal['name']}": ${pct.toStringAsFixed(0)}% funded');
       }
     } catch (_) {}

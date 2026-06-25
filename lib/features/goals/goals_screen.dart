@@ -46,8 +46,9 @@ class GoalsScreen extends ConsumerWidget {
             onRefresh: () => ref.read(goalProvider.notifier).load(),
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: goals.length,
-              itemBuilder: (context, index) => _GoalCard(goal: goals[index]),
+              // Emergency fund is always pinned to the top.
+              itemCount: _sorted(goals).length,
+              itemBuilder: (context, index) => _GoalCard(goal: _sorted(goals)[index]),
             ),
           );
         },
@@ -62,12 +63,24 @@ class GoalsScreen extends ConsumerWidget {
   void _showAddGoalDialog(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
-      builder: (ctx) => _AddGoalDialog(),
+      builder: (ctx) => const _AddGoalDialog(),
     );
+  }
+
+  /// Emergency fund first, then the rest in creation order.
+  List<Goal> _sorted(List<Goal> goals) {
+    final copy = [...goals];
+    copy.sort((a, b) {
+      if (a.isEmergencyFund && !b.isEmergencyFund) return -1;
+      if (!a.isEmergencyFund && b.isEmergencyFund) return 1;
+      return 0;
+    });
+    return copy;
   }
 }
 
 class _AddGoalDialog extends ConsumerStatefulWidget {
+  const _AddGoalDialog();
   @override
   ConsumerState<_AddGoalDialog> createState() => _AddGoalDialogState();
 }
@@ -75,6 +88,7 @@ class _AddGoalDialog extends ConsumerStatefulWidget {
 class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
   final _nameCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
+  String _type = 'custom';
   bool _isSaving = false;
 
   @override
@@ -97,6 +111,16 @@ class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
             controller: _amountCtrl,
             decoration: const InputDecoration(labelText: 'Target Amount (₹) *'),
             keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 12),
+          // Goal type drives dashboard detection — not the name.
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'custom', label: Text('Custom')),
+              ButtonSegment(value: 'emergency_fund', label: Text('Emergency Fund')),
+            ],
+            selected: {_type},
+            onSelectionChanged: (v) => setState(() => _type = v.first),
           ),
         ],
       ),
@@ -126,6 +150,7 @@ class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
       await ref.read(goalProvider.notifier).add(Goal(
         name: _nameCtrl.text,
         targetAmount: amount,
+        type: _type,
       ));
       if (mounted) Navigator.pop(context);
     } catch (e) {

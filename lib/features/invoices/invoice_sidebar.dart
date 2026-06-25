@@ -7,6 +7,7 @@ import '../../providers/invoice_provider.dart';
 import '../../widgets/empty_state.dart';
 
 final usdFormat = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+final currencyFormat = NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
 
 class InvoiceSidebar extends ConsumerWidget {
   const InvoiceSidebar({super.key});
@@ -282,6 +283,22 @@ class _InvoiceCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text('Outstanding: ${usdFormat.format(invoice.outstanding)}', style: const TextStyle(color: AppTheme.redAccent, fontSize: 12, fontWeight: FontWeight.w600)),
             ],
+            // Derived FX fields — display only, computed from received amounts.
+            if (invoice.fxRate != null || invoice.paypalFee != null || invoice.fxLoss != null) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                children: [
+                  if (invoice.fxRate != null)
+                    _FxChip(label: 'FX Rate', value: '₹${invoice.fxRate!.toStringAsFixed(2)}/\$'),
+                  if (invoice.paypalFee != null)
+                    _FxChip(label: 'PayPal Fee', value: usdFormat.format(invoice.paypalFee!)),
+                  if (invoice.fxLoss != null)
+                    _FxChip(label: 'FX Loss', value: currencyFormat.format(invoice.fxLoss!)),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -312,6 +329,24 @@ class _RowItem extends StatelessWidget {
         const SizedBox(height: 2),
         Text(amount, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
       ],
+    );
+  }
+}
+
+class _FxChip extends StatelessWidget {
+  final String label;
+  final String value;
+  const _FxChip({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.darkBg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text('$label: $value', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
     );
   }
 }
