@@ -1,3 +1,8 @@
+/// Freelance invoice with a 3-column payout breakdown.
+///
+/// [paypalFee], [fxLoss], [fxRate] are derived display fields computed from the
+/// received amounts — no manual entry needed. [computedStatus] mirrors the
+/// SQL-free client-side status derivation.
 class Invoice {
   final String? id;
   final String client;
@@ -5,8 +10,13 @@ class Invoice {
   final double invoicedUsd;
   final double receivedPaypal;
   final double receivedBank;
+  final double? paypalFee;
+  final double? fxLoss;
+  final double? fxRate;
   final String status;
   final DateTime? invoiceDate;
+  final bool isDeleted;
+  final DateTime? deletedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -17,8 +27,13 @@ class Invoice {
     required this.invoicedUsd,
     this.receivedPaypal = 0,
     this.receivedBank = 0,
+    this.paypalFee,
+    this.fxLoss,
+    this.fxRate,
     this.status = 'pending',
     this.invoiceDate,
+    this.isDeleted = false,
+    this.deletedAt,
     this.createdAt,
     this.updatedAt,
   });
@@ -40,10 +55,23 @@ class Invoice {
       invoicedUsd: (json['invoiced_usd'] as num).toDouble(),
       receivedPaypal: (json['received_paypal'] as num?)?.toDouble() ?? 0,
       receivedBank: (json['received_bank'] as num?)?.toDouble() ?? 0,
+      paypalFee: (json['paypal_fee'] as num?)?.toDouble(),
+      fxLoss: (json['fx_loss'] as num?)?.toDouble(),
+      fxRate: (json['fx_rate'] as num?)?.toDouble(),
       status: json['status'] as String? ?? 'pending',
-      invoiceDate: json['invoice_date'] != null ? DateTime.parse(json['invoice_date'] as String) : null,
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : null,
+      invoiceDate: json['invoice_date'] != null
+          ? DateTime.parse(json['invoice_date'] as String)
+          : null,
+      isDeleted: json['is_deleted'] as bool? ?? false,
+      deletedAt: json['deleted_at'] != null
+          ? DateTime.parse(json['deleted_at'] as String)
+          : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : null,
     );
   }
 
@@ -55,6 +83,9 @@ class Invoice {
       'invoiced_usd': invoicedUsd,
       'received_paypal': receivedPaypal,
       'received_bank': receivedBank,
+      'paypal_fee': paypalFee,
+      'fx_loss': fxLoss,
+      'fx_rate': fxRate,
       'status': status,
       'invoice_date': invoiceDate?.toIso8601String(),
     };
