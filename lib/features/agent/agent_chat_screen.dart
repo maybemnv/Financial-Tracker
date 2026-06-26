@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import '../../core/constants.dart';
-import '../../core/supabase.dart';
 import '../../core/theme.dart';
+import 'claude_service.dart';
 
 class AgentChatScreen extends StatefulWidget {
   const AgentChatScreen({super.key});
@@ -16,6 +13,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   final _messages = <_ChatMessage>[];
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  final _claude = ClaudeService();
   bool _isLoading = false;
 
   @override
@@ -28,7 +26,46 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Finance Agent')),
+      appBar: AppBar(
+        title: const Text('Finance Agent'),
+        actions: [
+          PopupMenuButton<ClaudeModel>(
+            icon: const Icon(Icons.settings),
+            onSelected: (m) => setState(() => _claude.model = m),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: ClaudeModel.sonnet4,
+                child: Row(
+                  children: [
+                    Icon(Icons.check, size: 16, color: _claude.model == ClaudeModel.sonnet4 ? AppTheme.primaryGreen : Colors.transparent),
+                    const SizedBox(width: 8),
+                    const Text('Sonnet 4 (best)'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: ClaudeModel.haiku35,
+                child: Row(
+                  children: [
+                    Icon(Icons.check, size: 16, color: _claude.model == ClaudeModel.haiku35 ? AppTheme.primaryGreen : Colors.transparent),
+                    const SizedBox(width: 8),
+                    const Text('Haiku 3.5 (fast)'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              setState(() {
+                _messages.clear();
+                _claude.reset();
+              });
+            },
+          ),
+        ],
+      ),
       body: Column(
         children: [
           if (_messages.isEmpty)
@@ -43,15 +80,18 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                       const SizedBox(height: 16),
                       const Text('Ask me anything about your finances', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
                       const SizedBox(height: 24),
+                      Text('Model: ${_claude.model.apiName}', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                      const SizedBox(height: 16),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
                         alignment: WrapAlignment.center,
                         children: [
-                          _suggestionChip('Can I afford a new keyboard?'),
-                          _suggestionChip('What did I spend most on?'),
-                          _suggestionChip('How much did I earn this month?'),
-                          _suggestionChip('What are my outstanding invoices?'),
+                          _suggestion('Can I afford a new keyboard?'),
+                          _suggestion('What did I spend most on?'),
+                          _suggestion('How much did I earn this month?'),
+                          _suggestion('What are my outstanding invoices?'),
+                          _suggestion('Am I on track for my emergency fund?'),
                         ],
                       ),
                     ],
@@ -119,7 +159,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     );
   }
 
-  Widget _suggestionChip(String text) {
+  Widget _suggestion(String text) {
     return ActionChip(
       label: Text(text, style: const TextStyle(fontSize: 12)),
       onPressed: _isLoading ? null : () => _sendMessage(text),
@@ -137,119 +177,28 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     _inputCtrl.clear();
 
     try {
-      final data = await _gatherFinancialData();
-      final response = await _queryClaude(text, data);
-      setState(() {
-        _messages.add(_ChatMessage(text: response, isUser: false));
-      });
+      final response = await _claude.ask(text);
+      if (mounted) {
+        setState(() {
+          _messages.add(_ChatMessage(text: response, isUser: false));
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollCtrl.animateTo(
+            _scrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        });
+      }
     } catch (e) {
-      setState(() {
-        _messages.add(_ChatMessage(text: 'Sorry, I could not process that: $e', isUser: false));
-      });
+      if (mounted) {
+        setState(() {
+          _messages.add(_ChatMessage(text: 'Sorry, I could not process that: $e', isUser: false));
+        });
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollCtrl.animateTo(_scrollCtrl.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-    });
-  }
-
-  Future<String> _gatherFinancialData() async {
-    final supabase = SupabaseService().client;
-    final buffer = StringBuffer();
-
-    final since = DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
-
-    // Per-account balances (fn_account_balance) + net worth (fn_net_worth)
-    try {
-      final accounts = await supabase
-          .from('accounts')
-          .select('id, name')
-          .eq('is_deleted', false);
-      for (final a in (accounts as List)) {
-        final acc = a as Map;
-        try {
-          final bal = await supabase.rpc('fn_account_balance',
-              params: {'p_account_id': acc['id']});
-          buffer.writeln('Account "${acc['name']}": $bal');
-        } catch (_) {}
-      }
-      try {
-        final netWorth = await supabase.rpc('fn_net_worth');
-        buffer.writeln('Net worth: $netWorth');
-      } catch (_) {}
-    } catch (_) {}
-
-    try {
-      final earned = await supabase.from('transactions').select('amount').eq('type', 'credit').gte('created_at', since);
-      final spent = await supabase.from('transactions').select('amount').eq('type', 'debit').gte('created_at', since);
-      final earnedSum = (earned as List).fold(0.0, (s, t) => s + ((t as Map)['amount'] as num).toDouble());
-      final spentSum = (spent as List).fold(0.0, (s, t) => s + ((t as Map)['amount'] as num).toDouble());
-      buffer.writeln('Last 30 days - Earned: $earnedSum, Spent: $spentSum');
-    } catch (_) {}
-
-    try {
-      final txCount = await supabase.from('transactions').select('id').eq('is_deleted', false).limit(1);
-      buffer.writeln('Total transactions: ${(txCount as List).length}+');
-    } catch (_) {}
-
-    try {
-      final invoices = await supabase
-          .from('invoices')
-          .select('invoiced_usd, received_paypal, received_bank')
-          .eq('is_deleted', false);
-      double totalInvoiced = 0, totalReceived = 0;
-      for (final inv in (invoices as List)) {
-        final i = inv as Map;
-        totalInvoiced += (i['invoiced_usd'] as num).toDouble();
-        totalReceived += (i['received_paypal'] as num?)?.toDouble() ?? 0;
-        totalReceived += (i['received_bank'] as num?)?.toDouble() ?? 0;
-      }
-      buffer.writeln('Invoices - Total invoiced: \$$totalInvoiced, Total received: \$$totalReceived');
-    } catch (_) {}
-
-    try {
-      final goals = await supabase
-          .from('goals')
-          .select('name, target_amount, allocated_amount')
-          .eq('is_deleted', false);
-      for (final g in (goals as List)) {
-        final goal = g as Map;
-        final target = (goal['target_amount'] as num).toDouble();
-        final allocated = (goal['allocated_amount'] as num?)?.toDouble() ?? 0;
-        final pct = target == 0 ? 0.0 : (allocated / target) * 100;
-        buffer.writeln('Goal "${goal['name']}": ${pct.toStringAsFixed(0)}% funded');
-      }
-    } catch (_) {}
-
-    return buffer.toString();
-  }
-
-  Future<String> _queryClaude(String question, String context) async {
-    final response = await http.post(
-      Uri.parse(AppConstants.claudeApiUrl),
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': AppConstants.claudeApiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: jsonEncode({
-        'model': 'claude-sonnet-4-20250514',
-        'max_tokens': 1024,
-        'system': 'You are a financial assistant. The user has provided their financial data below. Answer their question using only this data. Be concise and specific.',
-        'messages': [
-          {'role': 'user', 'content': 'Here is my current financial data:\n\n$context\n\nQuestion: $question'},
-        ],
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final content = data['content'] as List<dynamic>;
-      return content.map((c) => (c as Map<String, dynamic>)['text'] as String).join('\n');
-    }
-    return 'Error: ${response.statusCode} ${response.body}';
   }
 }
 
