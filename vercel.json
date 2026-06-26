@@ -1,0 +1,6 @@
+{
+  "buildCommand": "flutter build web",
+  "outputDirectory": "build/web",
+  "framework": "flutter",
+  "devCommand": "flutter run -d web"
+}
