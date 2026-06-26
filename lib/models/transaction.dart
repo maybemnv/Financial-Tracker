@@ -24,6 +24,7 @@ class Transaction {
   final bool isDeleted;
   final DateTime? deletedAt;
   final List<Map<String, dynamic>> editHistory;
+  final DateTime? transactedAt; // when the money actually moved (user-set)
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -47,9 +48,14 @@ class Transaction {
     this.isDeleted = false,
     this.deletedAt,
     this.editHistory = const [],
+    this.transactedAt,
     this.createdAt,
     this.updatedAt,
   });
+
+  /// The date/time used for display and grouping. Prefers transactedAt (user-set),
+  /// falls back to createdAt (server timestamp), then now() as a last resort.
+  DateTime get effectiveDate => transactedAt ?? createdAt ?? DateTime.now();
 
   bool get isCredit => type == 'credit';
   bool get isTransfer => type == 'transfer';
@@ -81,6 +87,9 @@ class Transaction {
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           const [],
+      transactedAt: json['transacted_at'] != null
+          ? DateTime.parse(json['transacted_at'] as String)
+          : null,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -109,6 +118,7 @@ class Transaction {
       'usd_amount': usdAmount,
       'linked_invoice_id': linkedInvoiceId,
       'transfer_group_id': transferGroupId,
+      if (transactedAt != null) 'transacted_at': transactedAt!.toIso8601String(),
     };
   }
 
@@ -132,6 +142,7 @@ class Transaction {
     bool? isDeleted,
     DateTime? deletedAt,
     List<Map<String, dynamic>>? editHistory,
+    DateTime? transactedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -155,6 +166,7 @@ class Transaction {
       isDeleted: isDeleted ?? this.isDeleted,
       deletedAt: deletedAt ?? this.deletedAt,
       editHistory: editHistory ?? this.editHistory,
+      transactedAt: transactedAt ?? this.transactedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

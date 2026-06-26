@@ -34,22 +34,22 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
             onSelected: (m) => setState(() => _claude.model = m),
             itemBuilder: (_) => [
               PopupMenuItem(
+                value: ClaudeModel.haiku45,
+                child: Row(
+                  children: [
+                    Icon(Icons.check, size: 16, color: _claude.model == ClaudeModel.haiku45 ? AppTheme.primaryGreen : Colors.transparent),
+                    const SizedBox(width: 8),
+                    const Text('Haiku 4.5 (default)'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
                 value: ClaudeModel.sonnet4,
                 child: Row(
                   children: [
                     Icon(Icons.check, size: 16, color: _claude.model == ClaudeModel.sonnet4 ? AppTheme.primaryGreen : Colors.transparent),
                     const SizedBox(width: 8),
                     const Text('Sonnet 4 (best)'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: ClaudeModel.haiku35,
-                child: Row(
-                  children: [
-                    Icon(Icons.check, size: 16, color: _claude.model == ClaudeModel.haiku35 ? AppTheme.primaryGreen : Colors.transparent),
-                    const SizedBox(width: 8),
-                    const Text('Haiku 3.5 (fast)'),
                   ],
                 ),
               ),

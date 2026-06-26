@@ -132,6 +132,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     required String toAccountId,
     required double amount,
     String? note,
+    DateTime? transactedAt,
   }) async {
     final groupId = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
     final legs = [
@@ -142,6 +143,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
         note: note,
         transferGroupId: groupId,
         source: 'manual',
+        transactedAt: transactedAt,
       ),
       Transaction(
         accountId: toAccountId,
@@ -150,6 +152,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
         note: note,
         transferGroupId: groupId,
         source: 'manual',
+        transactedAt: transactedAt,
       ),
     ];
     await SupabaseService().client.from('transactions').insert(

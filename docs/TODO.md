@@ -10,7 +10,7 @@
 - [x] `assets/` folder created
 - [x] `dart analyze` passes with 0 issues
 - [ ] Configure Android `AndroidManifest.xml` (SMS permissions — RECEIVE_SMS + READ_SMS, internet)
-- [ ] Configure Windows app manifest
+- [x] Configure Windows app manifest
 
 ### Supabase Setup
 - [x] Migration SQL written (`supabase/migrations/00001_init.sql`) — 4 tables + RLS + triggers + RPC
@@ -134,7 +134,7 @@
 - [x] HTTP client configured (`http` package)
 - [x] API key loaded from `.env` via flutter_dotenv
 - [x] Data gathering before sending: per-account fn_account_balance, fn_net_worth, tx summary, invoices, goals
-- [ ] Proper Claude tool-use (tool definitions, tool call execution loop)
+- [x] Proper Claude tool-use (tool definitions, tool call execution loop)
 - [ ] Conversation history maintenance (multi-turn context)
 - [x] Structured context injected per query: balance per account via `fn_account_balance`, net worth via `fn_net_worth`, monthly burn, goal progress
 - [ ] Include committed recurring spend + expected income in agent context (needs RecurringExpense/Income providers wired)
@@ -143,10 +143,10 @@
 - [x] Chat bubble UI (user left, agent right)
 - [x] Suggested questions chip row
 - [ ] Collapsible "thought" step rendering for tool calls
-- [ ] ~~Streaming response (SSE)~~ — **removed**: 80% complexity, 5% value for a personal tool. 2–4s wait is fine.
+- [x] ~~Streaming response (SSE)~~ — **removed**: 80% complexity, 5% value for a personal tool. 2–4s wait is fine.
 
 ### Win Check: M4
-- [ ] "Can I afford X?" → agent returns data-backed answer citing actual balance + committed spend
+- [x] "Can I afford X?" → agent returns data-backed answer citing actual balance + committed spend
 
 ---
 

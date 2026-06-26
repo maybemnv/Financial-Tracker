@@ -4,17 +4,17 @@ import '../../core/constants.dart';
 import '../../core/supabase.dart';
 
 enum ClaudeModel {
+  haiku45,
   sonnet4,
-  haiku35,
 }
 
 extension ClaudeModelName on ClaudeModel {
   String get apiName {
     switch (this) {
+      case ClaudeModel.haiku45:
+        return 'claude-haiku-4-5-20251001';
       case ClaudeModel.sonnet4:
         return 'claude-sonnet-4-20250514';
-      case ClaudeModel.haiku35:
-        return 'claude-haiku-3-5-20241022';
     }
   }
 }
@@ -99,7 +99,7 @@ class ClaudeService {
 
   final supabase = SupabaseService().client;
   final List<Map<String, dynamic>> _messages = [];
-  ClaudeModel model = ClaudeModel.sonnet4;
+  ClaudeModel model = ClaudeModel.haiku45;
 
   void reset() => _messages.clear();
 
