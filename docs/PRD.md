@@ -28,7 +28,7 @@ A cross-platform (Android + Windows) personal finance system. Built solo, fast, 
 - **Backend/DB** : Supabase (Postgres, Realtime, REST via `supabase_flutter`)
 - **SMS parsing** : `another_telephony` / `flutter_sms_inbox` + regex
 - **Charts** : `fl_chart`
-- **Agent/LLM** : Anthropic API (Claude) — categorization fallback + NL query agent
+- **Agent/LLM** : Anthropic API (Claude) — categorization fallback + NL query agent via tool-use (8 tools)
 - **State management** : Riverpod (locked, no mid-build flip-flopping)
 
 ### Concepts Touched (resume-relevant)
@@ -158,19 +158,25 @@ Finance Tracker
 | Column     | Type        | Notes                      |
 | ---------- | ----------- | -------------------------- |
 | id         | uuid PK     | default gen_random_uuid()  |
+| account_id | uuid FK     | references accounts.id     |
 | amount     | numeric     |                            |
 | type       | text        | debit / credit / transfer / investment |
 | vpa        | text        | nullable                   |
 | merchant   | text        | nullable                   |
 | bank       | text        | nullable                   |
 | category   | text        | nullable until categorized |
-| tags       | text[]      | default '{}'               |
+| tags       | text[]      | default '{}' — custom free-form tags |
 | raw_sms    | text        | nullable                   |
 | raw_sms_hash | text      | nullable — sha256 for dedup |
 | source     | text        | sms / manual               |
 | note       | text        | nullable — user memo       |
 | usd_amount | numeric     | nullable — for forex txns  |
 | linked_invoice_id | uuid | nullable — connects PayPal/bank receipt to the invoice it pays |
+| transfer_group_id | uuid | nullable — links the two rows in a transfer |
+| transacted_at | timestamptz | nullable — when the money actually moved (user-set); falls back to created_at |
+| is_deleted | boolean     | default false               |
+| deleted_at | timestamptz | nullable                    |
+| edit_history | jsonb     | default '[]' — immutable audit trail |
 | created_at | timestamptz | default now()              |
 | updated_at | timestamptz | default now()              |
 
@@ -255,6 +261,9 @@ Finance Tracker
 - Navigation: bottom nav bar -- 4 screen tabs (Transactions, Dashboard, Goals, Agent) + 5th Invoices tab that opens end drawer
 - No auth for v1 — single anon Supabase key, RLS open (acceptable for personal single-device-pair use)
 - Currency formatting: ₹, 2 decimals, locale en_IN
+- Transaction dates: `transacted_at` is user-set (when money moved); falls back to `created_at` (server timestamp). Display and balance calculation use `COALESCE(transacted_at, created_at)`.
+- Agent model: Haiku 4.5 (default) + Sonnet 4 (switcher in settings). Both support tool-use.
+- Time format: 24hr clock (HH:mm) throughout the app
 
 ---
 

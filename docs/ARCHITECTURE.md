@@ -169,25 +169,39 @@ sequenceDiagram
 sequenceDiagram
     actor User
     participant App as AgentChatScreen
+    participant CS as ClaudeService
     participant Supabase
     participant Claude
 
     User->>App: "Can I afford a new keyboard?"
-    App->>App: Gather financial data
-    App->>Supabase: fn_account_balance(accountId) + fn_net_worth()
-    App->>Supabase: SELECT transactions (30d sum)
-    App->>Supabase: SELECT invoices (totals)
-    App->>Supabase: SELECT goals (progress)
-    App->>Supabase: SELECT recurring_expenses (committed)
-    Supabase-->>App: all data
+    App->>CS: sendMessage(question)
+    CS->>Claude: POST /v1/messages (with tool definitions)
 
-    App->>Claude: POST /v1/messages
-    Note over App,Claude: system: "Answer using only this data"<br/>context: balance, tx summary, goals, invoices<br/>question: user question
-    Claude-->>App: text response
-    App-->>User: render answer bubble
+    loop Tool-use loop (up to 10 rounds)
+        Claude-->>CS: tool_use: get_net_worth
+        CS->>Supabase: fn_net_worth() RPC
+        Supabase-->>CS: 45000
+        CS->>Claude: tool_result: 45000
+
+        Claude-->>CS: tool_use: get_transactions
+        CS->>Supabase: SELECT transactions (30d)
+        Supabase-->>CS: filtered list
+        CS->>Claude: tool_result: [transactions...]
+
+        opt More tools needed
+            Claude-->>CS: tool_use: get_goals / get_recurring_expenses
+            CS->>Supabase: SELECT from relevant table
+            Supabase-->>CS: data
+            CS->>Claude: tool_result: data
+        end
+    end
+
+    Claude-->>CS: text response
+    CS-->>App: render answer bubble
+    App-->>User: answer with data citations
 ```
 
-Current implementation uses **context injection** — data is gathered client-side and sent as context. Future upgrade to **tool-use pattern** where Claude decides which queries to run.
+Agent uses **tool-use pattern** — Claude decides which tools to call at each turn. Model switcher: Haiku 4.5 (default, `claude-haiku-4-5-20251001`) or Sonnet 4 (`claude-sonnet-4-20250514`). Both support tool-use.
 
 ---
 
@@ -249,6 +263,8 @@ flowchart LR
 | Invoice access | End drawer via 5th nav item | No dedicated screen needed |
 | Data sync | Supabase Realtime (PostgresChanges) | Sub-second cross-device, no polling |
 | SMS integration | Stub + plugin | Real device needed, deferred |
-| Agent approach | Context injection (v1) | Simpler than tool-use, ships faster |
+| Agent approach | Claude tool-use (8 tools) | Claude decides which queries to run per turn — no pre-fetching, smarter context selection |
+| Agent models | Haiku 4.5 (default) + Sonnet 4 | Switcher in settings menu; both support tool-use |
+| Transaction dates | `transacted_at` (user-set) + `created_at` (server) | `transacted_at` is the actual money-move date; falls back to `created_at` for display/balance calculation |
 | No auth | Single anon key | Personal tool, 2 devices max |
 | Charts | fl_chart | Pie + line, battle-tested Flutter lib |

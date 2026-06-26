@@ -102,7 +102,7 @@ SupabaseService().client.from('transactions').select();
 
 ### `fn_account_balance(p_account_id)`
 
-Returns the derived current balance for an account: `opening_balance + SUM(credits) - SUM(debits)` for all transactions after `opening_date`. Excludes transfers and investments, ignores soft-deleted rows.
+Returns the derived current balance for an account: `opening_balance + SUM(credits) - SUM(debits)` for all transactions after `opening_date`. Uses `COALESCE(transacted_at, created_at)` for the date filter so backdated entries count correctly. Excludes transfers and investments, ignores soft-deleted rows.
 
 ```dart
 final balance = await SupabaseService()
@@ -131,9 +131,9 @@ BEGIN
   WHERE account_id = p_account_id
     AND type IN ('debit', 'credit')
     AND is_deleted = false
-    AND (od IS NULL OR created_at >= od);
+    AND (od IS NULL OR COALESCE(transacted_at, created_at) >= od);
 
-  RETURN ob + tx_total;
+  RETURN COALESCE(ob, 0) + tx_total;
 END;
 $$ LANGUAGE plpgsql;
 ```
@@ -216,13 +216,55 @@ anthropic-version: 2023-06-01
 
 ```json
 {
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-haiku-4-5-20251001",
   "max_tokens": 1024,
-  "system": "You are a financial assistant. The user has provided their financial data below. Answer their question using only this data. Be concise and specific.",
+  "system": "You are a financial assistant. You have access to tools that query the user's financial database. Use them to answer questions accurately. Be concise and specific.",
+  "tools": [
+    {
+      "name": "get_accounts",
+      "description": "Get all accounts with their current balances",
+      "input_schema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "get_net_worth",
+      "description": "Get total net worth across all accounts",
+      "input_schema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "get_transactions",
+      "description": "Get recent transactions. Optional filters: account_id, type, category, limit, offset",
+      "input_schema": { ... }
+    },
+    {
+      "name": "get_category_breakdown",
+      "description": "Get spending breakdown by category for a given period",
+      "input_schema": { ... }
+    },
+    {
+      "name": "get_goals",
+      "description": "Get all savings goals with progress",
+      "input_schema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "get_invoices",
+      "description": "Get all freelance invoices with status",
+      "input_schema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "get_recurring_expenses",
+      "description": "Get committed recurring outflows",
+      "input_schema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "get_monthly_snapshots",
+      "description": "Get pre-computed monthly aggregates",
+      "input_schema": { "type": "object", "properties": {} }
+    }
+  ],
   "messages": [
     {
       "role": "user",
-      "content": "Here is my current financial data:\n\nCurrent balance: 45000\nLast 30 days - Earned: 120000, Spent: 85000\nTotal transactions: 47+\nInvoices - Total invoiced: $3200, Total received: $2800\nGoal \"Emergency Fund\": 15% funded\n\nQuestion: Can I afford a new keyboard?"
+      "content": "Can I afford a new keyboard?"
     }
   ]
 }
@@ -241,22 +283,22 @@ anthropic-version: 2023-06-01
 }
 ```
 
-### Data Gathering (Client-Side)
+### Data Gathering (Tool-Use Pattern)
 
-Before each agent request, the app gathers context by calling Supabase:
+The agent uses Claude's tool-use API. Instead of pre-fetching all data and injecting it as context, Claude decides which tools to call at each turn based on the user's question. The client executes the tool calls against Supabase and returns results.
 
-| Data point | Source |
-|---|---|
-| Per-account balance | `fn_account_balance(account_id)` RPC |
-| Net worth | `fn_net_worth()` RPC |
-| 30d earned + spent | Two `SELECT SUM` queries on `transactions` |
-| Transaction count | `SELECT count(*)` on `transactions` |
-| Invoice summary | `SELECT` all invoices, compute totals client-side |
-| Goal progress | `SELECT` all goals, compute percentages client-side |
-| Recurring expenses | `SELECT` from `recurring_expenses` (v2) |
-| Expected income | `SELECT` from `recurring_income` (v2) |
+| Tool Name | Supabase Call | Returns |
+|---|---|---|
+| `get_accounts` | `SELECT * FROM accounts` + `fn_account_balance()` per account | List of accounts with balances |
+| `get_net_worth` | `fn_net_worth()` RPC | Single numeric total |
+| `get_transactions` | `SELECT * FROM transactions` (with optional filters) | Filtered transaction list |
+| `get_category_breakdown` | Client-side aggregation from transactions | Category → amount map |
+| `get_goals` | `SELECT * FROM goals` | List of goals with progress |
+| `get_invoices` | `SELECT * FROM invoices` | Invoice list with status |
+| `get_recurring_expenses` | `SELECT * FROM recurring_expenses` | List of committed outflows |
+| `get_monthly_snapshots` | `SELECT * FROM monthly_snapshots` | Monthly aggregates |
 
-The gathered data is serialised into a text block and injected as context. No tool-use pattern yet — Claude receives the data pre-fetched.
+The tool loop runs up to 10 rounds per message. The model switcher in the UI lets the user choose between Haiku 4.5 (default, fast/cheap) and Sonnet 4 (best quality). Both support tool-use.
 
 ---
 
@@ -293,5 +335,6 @@ Each Dart model maps its fields to snake_case JSON for Supabase.
 | `rawSmsHash` | `raw_sms_hash` | `sha256-hash-string` |
 | `linkedInvoiceId` | `linked_invoice_id` | `uuid-string` |
 | `transferGroupId` | `transfer_group_id` | `uuid-string` |
+| `transactedAt` | `transacted_at` | `2026-06-27T14:30:00Z` or null |
 | `isDeleted` | `is_deleted` | `false` |
 | `editHistory` | `edit_history` | `[{"old":{...},"new":{...}}]` |

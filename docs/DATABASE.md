@@ -26,6 +26,7 @@ Core ledger. Every financial event lives here — debits, credits, transfers, an
 | `usd_amount` | `numeric` | `nullable` | Original USD amount if this was a forex transaction |
 | `linked_invoice_id` | `uuid FK` | `nullable` | References `invoices.id`. Connects a PayPal/bank receipt transaction to the invoice it pays. Null for non-freelance transactions. |
 | `transfer_group_id` | `uuid` | `nullable` | Links the two rows in a transfer (out + in). Both rows share this value. Queryable — find all legs of a transfer by this ID. |
+| `transacted_at` | `timestamptz` | `nullable` | When the money actually moved. User-set via date/time picker in the add form. Falls back to `created_at` for display/balance calculation if null. |
 | `is_deleted` | `boolean` | `false` | Soft delete flag |
 | `deleted_at` | `timestamptz` | `nullable` | When soft-deleted |
 | `edit_history` | `jsonb` | `'[]'` | Immutable audit trail: `[{"old": {...}, "new": {...}, "edited_at": "..."}]` |
@@ -58,6 +59,7 @@ CREATE INDEX idx_transactions_created_at ON transactions(created_at DESC);
 CREATE INDEX idx_transactions_category ON transactions(category);
 CREATE INDEX idx_transactions_is_deleted ON transactions(is_deleted) WHERE is_deleted = false;
 CREATE INDEX idx_transactions_raw_sms_hash ON transactions(raw_sms_hash) WHERE raw_sms_hash IS NOT NULL;
+CREATE INDEX idx_transactions_transacted_at ON transactions(transacted_at DESC NULLS LAST);
 ```
 
 ---
@@ -262,7 +264,7 @@ Applied to: `transactions`, `invoices`
 
 ### `fn_account_balance(p_account_id uuid)`
 
-Returns the derived current balance for an account: `opening_balance + SUM(credits) - SUM(debits)` for transactions after `opening_date`. Excludes transfers and investments, ignores soft-deleted rows.
+Returns the derived current balance for an account: `opening_balance + SUM(credits) - SUM(debits)` for transactions after `opening_date`. Uses `COALESCE(transacted_at, created_at)` for the date filter so backdated entries count correctly. Excludes transfers and investments, ignores soft-deleted rows.
 
 ```sql
 CREATE OR REPLACE FUNCTION fn_account_balance(p_account_id uuid)
@@ -281,9 +283,9 @@ BEGIN
   WHERE account_id = p_account_id
     AND type IN ('debit', 'credit')
     AND is_deleted = false
-    AND (od IS NULL OR created_at >= od);
+    AND (od IS NULL OR COALESCE(transacted_at, created_at) >= od);
 
-  RETURN ob + tx_total;
+  RETURN COALESCE(ob, 0) + tx_total;
 END;
 $$ LANGUAGE plpgsql;
 ```
@@ -360,8 +362,8 @@ These are enforced at the application layer (not in SQL constraints):
 | `CategoryRule` | `lib/models/category_rule.dart` | `category_rules` |
 | `Goal` | `lib/models/goal.dart` | `goals` |
 | `Invoice` | `lib/models/invoice.dart` | `invoices` |
-| `Account` | _not yet created_ | `accounts` |
-| `RecurringExpense` | _not yet created_ | `recurring_expenses` |
-| `RecurringIncome` | _not yet created_ | `recurring_income` |
-| `MonthlySnapshot` | _not yet created_ | `monthly_snapshots` |
+| `Account` | `lib/models/account.dart` | `accounts` |
+| `RecurringExpense` | `lib/models/recurring_expense.dart` | `recurring_expenses` |
+| `RecurringIncome` | `lib/models/recurring_income.dart` | `recurring_income` |
+| `MonthlySnapshot` | `lib/models/monthly_snapshot.dart` | `monthly_snapshots` |
 | (attachments) | _backlog_ | Invoice PDFs, receipts, screenshots attached to transactions — not in schema yet. |

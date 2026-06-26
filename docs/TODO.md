@@ -54,6 +54,7 @@
 - [x] Realtime subscription (new transactions appear without refresh)
 - [x] Pagination limit (200 items, no incremental loading)
 - [x] Filter by account (chip row — "All" + per-account chips)
+- [x] Paytm-style date grouping — "Today", "Yesterday", or "Fri, 27 Jun 2026" section headers, 24hr time on each row
 
 ### Add Transaction Form
 - [x] Manual entry: amount, type (debit/credit), category, VPA, merchant
@@ -61,6 +62,8 @@
 - [x] Add account selector (source + destination for transfers/investments)
 - [x] Add `investment` as a type option — with destination account field (e.g. "Nifty 50 fund")
 - [x] Add `transfer` type — creates two linked rows with matching `transfer_group_id`
+- [x] Date & time picker — user-set `transacted_at` field (Paytm-style row, defaults to "Now")
+- [x] Custom tag input — free-form chip builder, type + Enter to add, tap × to remove
 
 ### Dashboard Screen
 - [x] Summary cards: Earned, Spent, Saved, Net (current month)
@@ -134,7 +137,8 @@
 - [x] HTTP client configured (`http` package)
 - [x] API key loaded from `.env` via flutter_dotenv
 - [x] Data gathering before sending: per-account fn_account_balance, fn_net_worth, tx summary, invoices, goals
-- [x] Proper Claude tool-use (tool definitions, tool call execution loop)
+- [x] Proper Claude tool-use (8 tool definitions, tool call execution loop up to 10 rounds)
+- [x] Model switcher: Haiku 4.5 (default cheap/fast) + Sonnet 4 (best quality)
 - [ ] Conversation history maintenance (multi-turn context)
 - [x] Structured context injected per query: balance per account via `fn_account_balance`, net worth via `fn_net_worth`, monthly burn, goal progress
 - [ ] Include committed recurring spend + expected income in agent context (needs RecurringExpense/Income providers wired)
