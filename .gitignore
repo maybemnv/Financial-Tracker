@@ -13,3 +13,9 @@ windows/runner/Release/
 *.keystore
 key.properties
 .env
+.flutter-plugins-dependencies
+ios/
+linux/
+macos/
+web/
+android/finance_tracker_android.iml
