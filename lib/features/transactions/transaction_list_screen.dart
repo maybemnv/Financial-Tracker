@@ -206,7 +206,7 @@ class _TransactionCard extends ConsumerWidget {
 
     final sign = isCredit ? '+' : '-';
 
-    final timeStr = DateFormat('hh:mm a').format(tx.effectiveDate);
+        final timeStr = DateFormat('HH:mm').format(tx.effectiveDate);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -357,7 +357,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   String _category = 'Other';
   String? _accountId;
   String? _destAccountId;
-  DateTime _transactedAt = DateTime.now();
+  DateTime? _transactedAt; // null = "Now" (server default); only set when user explicitly picks
   final List<String> _tags = [];
   bool _isSaving = false;
 
@@ -391,7 +391,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     // Step 1: pick date
     final date = await showDatePicker(
       context: context,
-      initialDate: _transactedAt,
+      initialDate: _transactedAt ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
@@ -406,7 +406,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     // Step 2: pick time
     final time = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(_transactedAt),
+      initialTime: TimeOfDay.fromDateTime(_transactedAt ?? DateTime.now()),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
           colorScheme: const ColorScheme.dark(primary: AppTheme.primaryGreen),
@@ -430,12 +430,13 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     final accounts = accountsAsync.maybeWhen(data: (a) => a, orElse: () => <Account>[]);
 
     final now = DateTime.now();
-    final isToday = _transactedAt.year == now.year &&
-        _transactedAt.month == now.month &&
-        _transactedAt.day == now.day;
-    final dateLabel = isToday
-        ? 'Today, ${DateFormat('hh:mm a').format(_transactedAt)}'
-        : DateFormat('dd MMM yyyy, hh:mm a').format(_transactedAt);
+    final dateLabel = _transactedAt == null
+        ? 'Now (tap to set)'
+        : (_transactedAt!.year == now.year &&
+                _transactedAt!.month == now.month &&
+                _transactedAt!.day == now.day)
+            ? 'Today, ${DateFormat('HH:mm').format(_transactedAt!)}'
+            : DateFormat('dd MMM yyyy, HH:mm').format(_transactedAt!);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Add Transaction')),
