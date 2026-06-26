@@ -9,17 +9,20 @@ import 'core/theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await dotenv.load(fileName: '.env');
+  String? initError;
 
-  SupabaseService(); // ensure singleton
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    initError = 'dotenv: $e';
+  }
+
+  SupabaseService();
   try {
     await SupabaseService().init();
-    // Best-effort: backfill last month's snapshot on launch of a new month.
-    // Never blocks or crashes the app on failure.
     MonthlySnapshotJob.runIfNeeded();
   } catch (e) {
-    // Initialization failure surfaces as an error state in the UI.
-    debugPrint('Supabase init failed: $e');
+    initError ??= 'Supabase: $e';
   }
 
   runApp(
@@ -28,8 +31,44 @@ void main() async {
         title: 'Finance Tracker',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const AppShell(),
+        home: initError != null
+            ? _ErrorScreen(initError)
+            : const AppShell(),
       ),
     ),
   );
+}
+
+class _ErrorScreen extends StatelessWidget {
+  final String message;
+  const _ErrorScreen(this.message);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D0D),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+              const SizedBox(height: 16),
+              const Text(
+                'Initialization failed',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                style: const TextStyle(color: Colors.grey, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
