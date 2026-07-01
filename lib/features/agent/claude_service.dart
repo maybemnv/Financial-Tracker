@@ -19,6 +19,16 @@ extension ClaudeModelName on ClaudeModel {
   }
 }
 
+class ClaudeVisibleMessage {
+  final String text;
+  final bool isUser;
+
+  const ClaudeVisibleMessage({
+    required this.text,
+    required this.isUser,
+  });
+}
+
 class ClaudeService {
   static const _tools = [
     {
@@ -99,11 +109,42 @@ class ClaudeService {
 
   final supabase = SupabaseService().client;
   final List<Map<String, dynamic>> _messages = [];
+  late final Future<void> _loadFuture = _loadLastSession();
+  String? _sessionId;
   ClaudeModel model = ClaudeModel.haiku45;
 
-  void reset() => _messages.clear();
+  Future<void> get ready => _loadFuture;
+
+  List<ClaudeVisibleMessage> visibleMessages() {
+    final visible = <ClaudeVisibleMessage>[];
+    for (final message in _messages) {
+      final role = message['role'];
+      final content = message['content'];
+      if (role == 'user' && content is String) {
+        visible.add(ClaudeVisibleMessage(text: content, isUser: true));
+      } else if (role == 'assistant' && content is List) {
+        final text = content
+            .whereType<Map>()
+            .where((block) => block['type'] == 'text')
+            .map((block) => block['text'] as String? ?? '')
+            .where((text) => text.isNotEmpty)
+            .join('\n');
+        if (text.isNotEmpty) {
+          visible.add(ClaudeVisibleMessage(text: text, isUser: false));
+        }
+      }
+    }
+    return visible;
+  }
+
+  Future<void> reset() async {
+    await _loadFuture;
+    _messages.clear();
+    await _persistMessages();
+  }
 
   Future<String> ask(String question) async {
+    await _loadFuture;
     _messages.add({'role': 'user', 'content': question});
 
     for (int turn = 0; turn < 10; turn++) {
@@ -145,6 +186,7 @@ class ClaudeService {
             .where((c) => (c as Map)['type'] == 'text')
             .map((c) => (c as Map)['text'] as String)
             .join('\n');
+        await _persistMessages();
         return texts;
       }
 
@@ -182,7 +224,53 @@ class ClaudeService {
       break;
     }
 
+    await _persistMessages();
     return 'I could not complete that request. Please try rephrasing.';
+  }
+
+  Future<void> _loadLastSession() async {
+    try {
+      // Single-anon-key app (no auth) — chat_sessions is global, like every
+      // other table. Load the most recently updated session so the agent
+      // resumes with prior context after a restart.
+      final session = await supabase
+          .from('chat_sessions')
+          .select('id, messages')
+          .order('updated_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (session == null) return;
+      _sessionId = session['id'] as String?;
+      final stored = session['messages'];
+      if (stored is List) {
+        _messages
+          ..clear()
+          ..addAll(stored.map((m) => Map<String, dynamic>.from(m as Map)));
+      }
+    } catch (_) {
+      // Persistence must never block the agent if the migration is not applied.
+    }
+  }
+
+  Future<void> _persistMessages() async {
+    try {
+      if (_sessionId == null) {
+        final inserted = await supabase
+            .from('chat_sessions')
+            .insert({'messages': _messages})
+            .select('id')
+            .single();
+        _sessionId = inserted['id'] as String?;
+        return;
+      }
+
+      await supabase
+          .from('chat_sessions')
+          .update({'messages': _messages}).eq('id', _sessionId!);
+    } catch (_) {
+      // Chat persistence is best-effort; tool answers should still work.
+    }
   }
 
   Future<String> _executeTool(String name, Map<String, dynamic> input) async {

@@ -244,6 +244,25 @@ CREATE INDEX idx_monthly_snapshots_year_month ON monthly_snapshots(year DESC, mo
 
 ---
 
+## Table: `chat_sessions`
+
+Persists the Claude agent's message history so context survives app restarts. Consistent with the single-anon-key, no-auth design (see ARCHITECTURE.md), this table is global like every other table — there is **no `user_id`**. The client keeps one rolling session: it loads the most recently updated row on launch and rewrites it after each completed turn.
+
+| Column | Type | Default | Notes |
+|---|---|---|---|
+| `id` | `uuid PK` | `gen_random_uuid()` | |
+| `messages` | `jsonb` | `'[]'` | Claude API message array, including tool-use turns needed for context continuity. |
+| `created_at` | `timestamptz` | `now()` | |
+| `updated_at` | `timestamptz` | `now()` | Auto-updated by trigger |
+
+### Indexes
+
+```sql
+CREATE INDEX idx_chat_sessions_updated ON chat_sessions(updated_at DESC);
+```
+
+---
+
 ## Helper Functions
 
 ### `update_updated_at()`
@@ -260,7 +279,7 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
-Applied to: `transactions`, `invoices`
+Applied to: `transactions`, `invoices`, `chat_sessions`
 
 ### `fn_account_balance(p_account_id uuid)`
 
@@ -335,7 +354,7 @@ ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all" ON <table> FOR ALL USING (true);
 ```
 
-Applied to: `transactions`, `category_rules`, `goals`, `invoices`, `accounts`, `recurring_expenses`, `recurring_income`, `monthly_snapshots`
+Applied to: `transactions`, `category_rules`, `goals`, `invoices`, `accounts`, `recurring_expenses`, `recurring_income`, `monthly_snapshots`, `chat_sessions`
 
 ---
 

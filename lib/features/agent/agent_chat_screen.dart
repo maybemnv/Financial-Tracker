@@ -17,10 +17,31 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   bool _isLoading = false;
 
   @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  @override
   void dispose() {
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    await _claude.ready;
+    if (!mounted) return;
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(_claude.visibleMessages().map(
+              (message) => _ChatMessage(
+                text: message.text,
+                isUser: message.isUser,
+              ),
+            ));
+    });
   }
 
   @override
@@ -57,11 +78,11 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
+            onPressed: () async {
               setState(() {
                 _messages.clear();
-                _claude.reset();
               });
+              await _claude.reset();
             },
           ),
         ],
