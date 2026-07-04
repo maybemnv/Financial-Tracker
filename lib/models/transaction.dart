@@ -1,14 +1,15 @@
 import 'dart:convert';
 
-/// A single ledger entry: debit, credit, transfer leg, or investment.
+/// A single ledger entry: debit, credit, transfer leg, or investment leg.
 ///
-/// Transfers are double-entry — two rows linked by [transferGroupId]. Net worth
-/// is unaffected by transfers and investments (money moves between accounts).
+/// [type] captures the semantic kind of transaction for reporting. [direction]
+/// captures whether the row adds to or subtracts from the account balance.
 class Transaction {
   final String? id;
   final String? accountId;
   final double amount;
   final String type; // debit | credit | transfer | investment
+  final String? direction; // inflow | outflow
   final String? vpa;
   final String? merchant;
   final String? bank;
@@ -33,6 +34,7 @@ class Transaction {
     this.accountId,
     required this.amount,
     required this.type,
+    this.direction,
     this.vpa,
     this.merchant,
     this.bank,
@@ -60,6 +62,9 @@ class Transaction {
   bool get isCredit => type == 'credit';
   bool get isTransfer => type == 'transfer';
   bool get isInvestment => type == 'investment';
+  bool get isInflow =>
+      direction != null ? direction == 'inflow' : type == 'credit';
+  bool get isOutflow => !isInflow;
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
@@ -67,11 +72,14 @@ class Transaction {
       accountId: json['account_id'] as String?,
       amount: (json['amount'] as num).toDouble(),
       type: json['type'] as String,
+      direction: json['direction'] as String?,
       vpa: json['vpa'] as String?,
       merchant: json['merchant'] as String?,
       bank: json['bank'] as String?,
       category: json['category'] as String?,
-      tags: (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
+      tags:
+          (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+              const [],
       rawSms: json['raw_sms'] as String?,
       rawSmsHash: json['raw_sms_hash'] as String?,
       source: json['source'] as String? ?? 'manual',
@@ -106,6 +114,7 @@ class Transaction {
       if (accountId != null) 'account_id': accountId,
       'amount': amount,
       'type': type,
+      if (direction != null) 'direction': direction,
       'vpa': vpa,
       'merchant': merchant,
       'bank': bank,
@@ -118,7 +127,8 @@ class Transaction {
       'usd_amount': usdAmount,
       'linked_invoice_id': linkedInvoiceId,
       'transfer_group_id': transferGroupId,
-      if (transactedAt != null) 'transacted_at': transactedAt!.toIso8601String(),
+      if (transactedAt != null)
+        'transacted_at': transactedAt!.toIso8601String(),
     };
   }
 
@@ -127,6 +137,7 @@ class Transaction {
     String? accountId,
     double? amount,
     String? type,
+    String? direction,
     String? vpa,
     String? merchant,
     String? bank,
@@ -151,6 +162,7 @@ class Transaction {
       accountId: accountId ?? this.accountId,
       amount: amount ?? this.amount,
       type: type ?? this.type,
+      direction: direction ?? this.direction,
       vpa: vpa ?? this.vpa,
       merchant: merchant ?? this.merchant,
       bank: bank ?? this.bank,

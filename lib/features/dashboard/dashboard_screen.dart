@@ -1,7 +1,8 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+
 import '../../core/theme.dart';
 import '../../models/goal.dart';
 import '../../models/transaction.dart';
@@ -10,7 +11,8 @@ import '../../providers/goal_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../widgets/summary_card.dart';
 
-final currencyFormat = NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
+final currencyFormat =
+    NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -31,7 +33,7 @@ class DashboardScreen extends ConsumerWidget {
         data: (transactions) {
           final emergencyFund = goalsAsync.maybeWhen(
             data: (goals) => goals.where((g) => g.isEmergencyFund).toList(),
-            orElse: () => [],
+            orElse: () => <Goal>[],
           );
           return _DashboardContent(
             transactions: transactions,
@@ -45,22 +47,21 @@ class DashboardScreen extends ConsumerWidget {
 }
 
 class _DashboardContent extends ConsumerWidget {
-  final List<Transaction> transactions;
-  final List emergencyFund; // List<Goal>
-  final Future<void> Function() onRefresh;
   const _DashboardContent({
     required this.transactions,
     required this.emergencyFund,
     required this.onRefresh,
   });
 
+  final List<Transaction> transactions;
+  final List<Goal> emergencyFund;
+  final Future<void> Function() onRefresh;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final now = DateTime.now();
-    final thisMonth = transactions.where((t) =>
-        t.createdAt != null &&
-        t.createdAt!.month == now.month &&
-        t.createdAt!.year == now.year).toList();
+    final thisMonth =
+        transactions.where((t) => _isSameMonth(t.effectiveDate, now)).toList();
 
     final earned = thisMonth
         .where((t) => t.type == 'credit')
@@ -72,8 +73,10 @@ class _DashboardContent extends ConsumerWidget {
     final savingsRate = earned > 0 ? (saved / earned) * 100 : 0.0;
 
     final categoryMap = <String, double>{};
-    for (final t in thisMonth.where((t) => t.type == 'debit' && t.category != null)) {
-      categoryMap.update(t.category!, (v) => v + t.amount, ifAbsent: () => t.amount);
+    for (final t
+        in thisMonth.where((t) => t.type == 'debit' && t.category != null)) {
+      categoryMap.update(t.category!, (v) => v + t.amount,
+          ifAbsent: () => t.amount);
     }
 
     return RefreshIndicator(
@@ -81,40 +84,74 @@ class _DashboardContent extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Emergency Fund — hero element, top of dashboard.
           if (emergencyFund.isNotEmpty) ...[
             _EmergencyFundCard(goal: emergencyFund.first),
             const SizedBox(height: 16),
           ] else
             ..._emptyEmergencyFund(),
-          // Savings Rate — single %, target 20%+.
-          _SavingsRateCard(rate: savingsRate, saved: saved),
+          _SavingsRateCard(rate: savingsRate),
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: SummaryCard(label: 'Earned', amount: currencyFormat.format(earned), color: AppTheme.primaryGreen, icon: Icons.arrow_downward)),
+              Expanded(
+                child: SummaryCard(
+                  label: 'Earned',
+                  amount: currencyFormat.format(earned),
+                  color: AppTheme.primaryGreen,
+                  icon: Icons.arrow_downward,
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: SummaryCard(label: 'Spent', amount: currencyFormat.format(spent), color: AppTheme.redAccent, icon: Icons.arrow_upward)),
+              Expanded(
+                child: SummaryCard(
+                  label: 'Spent',
+                  amount: currencyFormat.format(spent),
+                  color: AppTheme.redAccent,
+                  icon: Icons.arrow_upward,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: SummaryCard(label: 'Saved', amount: currencyFormat.format(saved), color: saved >= 0 ? AppTheme.primaryGreen : AppTheme.redAccent, icon: Icons.savings)),
+              Expanded(
+                child: SummaryCard(
+                  label: 'Saved',
+                  amount: currencyFormat.format(saved),
+                  color:
+                      saved >= 0 ? AppTheme.primaryGreen : AppTheme.redAccent,
+                  icon: Icons.savings,
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: SummaryCard(label: 'Net', amount: currencyFormat.format(earned - spent), color: AppTheme.accentPurple, icon: Icons.account_balance)),
+              Expanded(
+                child: SummaryCard(
+                  label: 'Net',
+                  amount: currencyFormat.format(earned - spent),
+                  color: AppTheme.accentPurple,
+                  icon: Icons.account_balance,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 24),
-          // Per-account balance breakdown (SBI / Kotak / PayPal / Cash...).
-          _AccountBalancesSection(),
+          const _AccountBalancesSection(),
           const SizedBox(height: 24),
-          const Text('Spending by Category', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text(
+            'Spending by Category',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 16),
           SizedBox(
             height: 220,
             child: categoryMap.isEmpty
-                ? const Center(child: Text('No spending this month', style: TextStyle(color: AppTheme.textSecondary)))
+                ? const Center(
+                    child: Text(
+                      'No spending this month',
+                      style: TextStyle(color: AppTheme.textSecondary),
+                    ),
+                  )
                 : PieChart(
                     PieChartData(
                       sections: _buildPieSections(categoryMap),
@@ -123,21 +160,36 @@ class _DashboardContent extends ConsumerWidget {
                     ),
                   ),
           ),
-          ...categoryMap.entries.map((e) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Container(width: 12, height: 12, decoration: BoxDecoration(color: _categoryColor(e.key), borderRadius: BorderRadius.circular(3))),
-                const SizedBox(width: 8),
-                Expanded(child: Text(e.key)),
-                Text(currencyFormat.format(e.value), style: const TextStyle(fontWeight: FontWeight.w600)),
-              ],
+          ...categoryMap.entries.map(
+            (e) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: _categoryColor(e.key),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(e.key)),
+                  Text(
+                    currencyFormat.format(e.value),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
             ),
-          )),
+          ),
         ],
       ),
     );
   }
+
+  bool _isSameMonth(DateTime date, DateTime other) =>
+      date.year == other.year && date.month == other.month;
 
   List<Widget> _emptyEmergencyFund() {
     return [
@@ -145,7 +197,8 @@ class _DashboardContent extends ConsumerWidget {
         child: ListTile(
           leading: Icon(Icons.shield_outlined, color: AppTheme.textSecondary),
           title: Text('No Emergency Fund goal'),
-          subtitle: Text('Set a goal of type "emergency_fund" to track it here'),
+          subtitle:
+              Text('Set a goal of type "emergency_fund" to track it here'),
         ),
       ),
       const SizedBox(height: 16),
@@ -155,18 +208,27 @@ class _DashboardContent extends ConsumerWidget {
   List<PieChartSectionData> _buildPieSections(Map<String, double> data) {
     final total = data.values.fold(0.0, (a, b) => a + b);
     final colors = [
-      AppTheme.primaryGreen, AppTheme.redAccent, AppTheme.accentPurple,
-      AppTheme.accentGold, Colors.cyanAccent, Colors.orangeAccent,
-      Colors.pinkAccent, Colors.lightBlueAccent,
+      AppTheme.primaryGreen,
+      AppTheme.redAccent,
+      AppTheme.accentPurple,
+      AppTheme.accentGold,
+      Colors.cyanAccent,
+      Colors.orangeAccent,
+      Colors.pinkAccent,
+      Colors.lightBlueAccent,
     ];
-    int i = 0;
+    var i = 0;
     return data.entries.map((e) {
       final pct = (e.value / total * 100).toStringAsFixed(0);
       return PieChartSectionData(
         value: e.value,
         color: colors[i++ % colors.length],
         title: '$pct%',
-        titleStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+        titleStyle: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
         radius: 50,
       );
     }).toList();
@@ -186,11 +248,10 @@ class _DashboardContent extends ConsumerWidget {
   }
 }
 
-/// Hero card: progress to the emergency-fund target. Found by goal type, not
-/// name, so renaming won't break it.
 class _EmergencyFundCard extends StatelessWidget {
-  final Goal goal;
   const _EmergencyFundCard({required this.goal});
+
+  final Goal goal;
 
   @override
   Widget build(BuildContext context) {
@@ -209,9 +270,19 @@ class _EmergencyFundCard extends StatelessWidget {
               children: [
                 const Icon(Icons.shield, color: AppTheme.primaryGreen),
                 const SizedBox(width: 8),
-                const Text('Emergency Fund', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Emergency Fund',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
                 const Spacer(),
-                Text('${pct.toStringAsFixed(0)}%', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.primaryGreen)),
+                Text(
+                  '${pct.toStringAsFixed(0)}%',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryGreen,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -221,17 +292,22 @@ class _EmergencyFundCard extends StatelessWidget {
                 value: (pct / 100).clamp(0.0, 1.0),
                 minHeight: 14,
                 backgroundColor: AppTheme.darkBg,
-                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
               ),
             ),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('${currencyFormat.format(allocated)} saved',
-                    style: const TextStyle(color: AppTheme.textSecondary)),
-                Text('Target: ${currencyFormat.format(target)}',
-                    style: const TextStyle(color: AppTheme.textSecondary)),
+                Text(
+                  '${currencyFormat.format(allocated)} saved',
+                  style: const TextStyle(color: AppTheme.textSecondary),
+                ),
+                Text(
+                  'Target: ${currencyFormat.format(target)}',
+                  style: const TextStyle(color: AppTheme.textSecondary),
+                ),
               ],
             ),
           ],
@@ -242,9 +318,9 @@ class _EmergencyFundCard extends StatelessWidget {
 }
 
 class _SavingsRateCard extends StatelessWidget {
+  const _SavingsRateCard({required this.rate});
+
   final double rate;
-  final double saved;
-  const _SavingsRateCard({required this.rate, required this.saved});
 
   @override
   Widget build(BuildContext context) {
@@ -260,19 +336,28 @@ class _SavingsRateCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Savings Rate', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                  const Text(
+                    'Savings Rate',
+                    style:
+                        TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     '${rate.toStringAsFixed(0)}%',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
-                      color: onTrack ? AppTheme.primaryGreen : AppTheme.redAccent,
+                      color:
+                          onTrack ? AppTheme.primaryGreen : AppTheme.redAccent,
                     ),
                   ),
                   Text(
                     onTrack ? 'On track (target 20%+)' : 'Below target (20%+)',
-                    style: TextStyle(color: onTrack ? AppTheme.primaryGreen : AppTheme.redAccent, fontSize: 12),
+                    style: TextStyle(
+                      color:
+                          onTrack ? AppTheme.primaryGreen : AppTheme.redAccent,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -289,8 +374,9 @@ class _SavingsRateCard extends StatelessWidget {
   }
 }
 
-/// Per-account balance breakdown via the fn_account_balance RPC.
 class _AccountBalancesSection extends ConsumerWidget {
+  const _AccountBalancesSection();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accountsAsync = ref.watch(accountProvider);
@@ -301,11 +387,15 @@ class _AccountBalancesSection extends ConsumerWidget {
       error: (_, __) => const SizedBox.shrink(),
       data: (accounts) {
         if (accounts.isEmpty) return const SizedBox.shrink();
-        final balances = balancesAsync.maybeWhen(data: (b) => b, orElse: () => <String, double>{});
+        final balances = balancesAsync.maybeWhen(
+            data: (b) => b, orElse: () => <String, double>{});
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Account Balances', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              'Account Balances',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 10,
@@ -323,9 +413,10 @@ class _AccountBalancesSection extends ConsumerWidget {
 }
 
 class _AccountChip extends StatelessWidget {
+  const _AccountChip({required this.name, required this.balance});
+
   final String name;
   final double balance;
-  const _AccountChip({required this.name, required this.balance});
 
   @override
   Widget build(BuildContext context) {
@@ -338,10 +429,15 @@ class _AccountChip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(name, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          Text(
+            name,
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+          ),
           const SizedBox(height: 4),
-          Text(currencyFormat.format(balance),
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          Text(
+            currencyFormat.format(balance),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
         ],
       ),
     );
@@ -349,9 +445,10 @@ class _AccountChip extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.error, required this.onRetry});
+
   final String error;
   final VoidCallback onRetry;
-  const _ErrorState({required this.error, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {

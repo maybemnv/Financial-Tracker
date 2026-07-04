@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../core/dedup.dart';
 import '../core/supabase.dart';
 import '../models/transaction.dart';
@@ -8,17 +11,19 @@ import '../models/transaction.dart';
 ///
 /// Hardening: [add] dedups SMS-sourced rows by `raw_sms_hash`; [delete] is a
 /// SOFT delete (`is_deleted = true`, never `DELETE`); [update] appends an
-/// `{old, new, edited_at}` entry to the immutable `edit_history` JSONB. A
-/// transfer inserts two linked rows sharing a `transfer_group_id`.
+/// `{old, new, edited_at}` entry to the immutable `edit_history` JSONB.
 class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
-  RealtimeChannel? _channel;
-
   TransactionNotifier() : super(const AsyncValue.loading());
+
+  static final Random _random = Random.secure();
+
+  RealtimeChannel? _channel;
 
   Future<void> load() async {
     state = const AsyncValue.loading();
     try {
-      final data = await SupabaseService().client
+      final data = await SupabaseService()
+          .client
           .from('transactions')
           .select()
           .eq('is_deleted', false)
@@ -63,7 +68,10 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
       if (dup != null) return false;
     }
 
-    final payload = (hash != null) ? tx.copyWith(rawSmsHash: hash) : tx;
+    final payload = tx.copyWith(
+      rawSmsHash: hash ?? tx.rawSmsHash,
+      direction: tx.direction ?? _defaultDirectionForType(tx.type),
+    );
     final response = await SupabaseService()
         .client
         .from('transactions')
@@ -72,7 +80,9 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     final inserted = (response as List?)?.firstOrNull;
     if (inserted != null) {
       state = state.whenData(
-          (list) => [Transaction.fromJson(inserted as Map<String, dynamic>), ...list]);
+        (list) =>
+            [Transaction.fromJson(inserted as Map<String, dynamic>), ...list],
+      );
     } else {
       await load();
     }
@@ -87,7 +97,8 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
 
     final existing = await client
         .from('transactions')
-        .select('amount, type, category, merchant, vpa, tags, note, account_id, edit_history')
+        .select(
+            'amount, type, direction, category, merchant, vpa, tags, note, account_id, edit_history')
         .eq('id', tx.id!)
         .maybeSingle();
     if (existing != null) {
@@ -96,18 +107,14 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
               .toList() ??
           [];
       history.add({
-        'old': existing
-          ..remove('edit_history'),
+        'old': existing..remove('edit_history'),
         'new': tx.toJson(),
         'edited_at': DateTime.now().toIso8601String(),
       });
-      await client
-          .from('transactions')
-          .update({
-            ...tx.toJson(),
-            'edit_history': history,
-          })
-          .eq('id', tx.id!);
+      await client.from('transactions').update({
+        ...tx.toJson(),
+        'edit_history': history,
+      }).eq('id', tx.id!);
     } else {
       await client.from('transactions').update(tx.toJson()).eq('id', tx.id!);
     }
@@ -124,9 +131,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     await load();
   }
 
-  /// Records a double-entry transfer: one debit from [fromAccountId], one
-  /// credit to [toAccountId], both sharing a generated `transfer_group_id`.
-  /// Net worth is unchanged — money only moves between accounts.
+  /// Records a double-entry transfer with explicit outflow and inflow legs.
   Future<void> addTransfer({
     required String fromAccountId,
     required String toAccountId,
@@ -134,12 +139,49 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     String? note,
     DateTime? transactedAt,
   }) async {
-    final groupId = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+    await _addAccountMove(
+      type: 'transfer',
+      fromAccountId: fromAccountId,
+      toAccountId: toAccountId,
+      amount: amount,
+      note: note,
+      transactedAt: transactedAt,
+    );
+  }
+
+  /// Records an investment move out of a cash/bank account into an investment account.
+  Future<void> addInvestment({
+    required String fromAccountId,
+    required String toAccountId,
+    required double amount,
+    String? note,
+    DateTime? transactedAt,
+  }) async {
+    await _addAccountMove(
+      type: 'investment',
+      fromAccountId: fromAccountId,
+      toAccountId: toAccountId,
+      amount: amount,
+      note: note,
+      transactedAt: transactedAt,
+    );
+  }
+
+  Future<void> _addAccountMove({
+    required String type,
+    required String fromAccountId,
+    required String toAccountId,
+    required double amount,
+    String? note,
+    DateTime? transactedAt,
+  }) async {
+    final groupId = _generateGroupId();
     final legs = [
       Transaction(
         accountId: fromAccountId,
         amount: amount,
-        type: 'transfer',
+        type: type,
+        direction: 'outflow',
         note: note,
         transferGroupId: groupId,
         source: 'manual',
@@ -148,7 +190,8 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
       Transaction(
         accountId: toAccountId,
         amount: amount,
-        type: 'transfer',
+        type: type,
+        direction: 'inflow',
         note: note,
         transferGroupId: groupId,
         source: 'manual',
@@ -161,6 +204,33 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     await load();
   }
 
+  String _defaultDirectionForType(String type) {
+    switch (type) {
+      case 'credit':
+        return 'inflow';
+      case 'debit':
+      case 'transfer':
+      case 'investment':
+      default:
+        return 'outflow';
+    }
+  }
+
+  String _generateGroupId() {
+    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    final buffer = StringBuffer();
+    for (var i = 0; i < bytes.length; i++) {
+      if (i == 4 || i == 6 || i == 8 || i == 10) {
+        buffer.write('-');
+      }
+      buffer.write(bytes[i].toRadixString(16).padLeft(2, '0'));
+    }
+    return buffer.toString();
+  }
+
   @override
   void dispose() {
     unsubscribe();
@@ -169,7 +239,8 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
 }
 
 final transactionProvider =
-    StateNotifierProvider<TransactionNotifier, AsyncValue<List<Transaction>>>((ref) {
+    StateNotifierProvider<TransactionNotifier, AsyncValue<List<Transaction>>>(
+        (ref) {
   final notifier = TransactionNotifier();
   notifier.load();
   notifier.subscribe();

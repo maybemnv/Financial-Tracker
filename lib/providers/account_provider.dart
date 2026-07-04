@@ -1,17 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../core/supabase.dart';
 import '../models/account.dart';
+import 'transaction_provider.dart';
 
 class AccountNotifier extends StateNotifier<AsyncValue<List<Account>>> {
-  RealtimeChannel? _channel;
-
   AccountNotifier() : super(const AsyncValue.loading());
+
+  RealtimeChannel? _channel;
 
   Future<void> load() async {
     state = const AsyncValue.loading();
     try {
-      final data = await SupabaseService().client
+      final data = await SupabaseService()
+          .client
           .from('accounts')
           .select()
           .eq('is_deleted', false)
@@ -62,11 +65,11 @@ final accountProvider =
   return notifier;
 });
 
-/// Derived balance per account — `opening_balance + credits - debits` via the
-/// `fn_account_balance` RPC. Exposes `{accountId: balance}`. Refreshed on
-/// demand; balances are never stored on the model.
-final accountBalancesProvider = FutureProvider<Map<String, double>>((ref) async {
-  // Re-run whenever the account list changes.
+/// Derived balance per account via the `fn_account_balance` RPC. Watches the
+/// transaction feed so balances refresh whenever money moves.
+final accountBalancesProvider =
+    FutureProvider<Map<String, double>>((ref) async {
+  ref.watch(transactionProvider);
   final accountsAsync = ref.watch(accountProvider);
   return accountsAsync.maybeWhen(
     data: (accounts) async {
@@ -88,9 +91,11 @@ final accountBalancesProvider = FutureProvider<Map<String, double>>((ref) async 
   );
 });
 
-/// Net worth across all accounts — single `fn_net_worth()` RPC.
+/// Net worth across all accounts via `fn_net_worth()`. Watches transactions so
+/// the figure refreshes after edits, transfers, and investment moves.
 final netWorthProvider = FutureProvider<double>((ref) async {
-  ref.watch(accountProvider); // refresh when accounts change
+  ref.watch(accountProvider);
+  ref.watch(transactionProvider);
   try {
     final value = await SupabaseService().client.rpc('fn_net_worth');
     return (value as num?)?.toDouble() ?? 0;

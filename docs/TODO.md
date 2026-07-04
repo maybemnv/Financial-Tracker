@@ -1,4 +1,4 @@
-# TODO: Production Checklist
+﻿# TODO: Production Checklist
 
 ## Phase 0: Project Setup
 
@@ -9,34 +9,34 @@
 - [x] `analysis_options.yaml` with strict linting (prefer_const_constructors+declarations)
 - [x] `assets/` folder created
 - [x] `dart analyze` passes with 0 issues
-- [ ] Configure Android `AndroidManifest.xml` (SMS permissions — RECEIVE_SMS + READ_SMS, internet)
+- [x] Configure Android `AndroidManifest.xml` (SMS permissions — RECEIVE_SMS + READ_SMS, internet)
 - [x] Configure Windows app manifest
 
 ### Supabase Setup
-- [x] Migration SQL written (`supabase/migrations/00001_init.sql`) — 4 tables + RLS + triggers + RPC
+- [x] Migration SQL written (`supabase/migrations/00001_init.sql`) â€” 4 tables + RLS + triggers + RPC
 - [x] Create Supabase project and apply migration (`supabase/migrations/00001_init.sql` run successfully)
-- [x] Update migration to match current schema (do this while project is still empty — schema changes after data exists require migrations):
+- [x] Update migration to match current schema (do this while project is still empty â€” schema changes after data exists require migrations):
   - [x] Add `note`, `usd_amount`, `is_deleted`, `deleted_at`, `account_id`, `linked_invoice_id`, `transfer_group_id`, `raw_sms_hash`, `edit_history` (JSONB) to `transactions`
-  - [x] Allow `type` = `'transfer'` and `'investment'` in `transactions` — SIP/index fund moves are not expenses
-  - [x] Create `accounts` table (id, name, type, opening_balance, opening_date) — no `balance` column, derived from transactions via `fn_account_balance()`
+  - [x] Allow `type` = `'transfer'` and `'investment'` in `transactions` â€” SIP/index fund moves are not expenses
+  - [x] Create `accounts` table (id, name, type, opening_balance, opening_date) â€” no `balance` column, derived from transactions via `fn_account_balance()`
   - [x] Create `recurring_expenses` table (name, amount, frequency, category, next_due)
-  - [x] Create `recurring_income` table (name, amount, frequency, source, next_expected) — enables "Expected July Income"
-  - [x] Create `monthly_snapshots` table (month, year, income, expenses, savings, net_worth, recorded_at) — cheaper than recalculating forever
-  - [x] Add `type` column to `goals` (`emergency_fund`, `custom`) — dashboard detects emergency fund by type, not by name
+  - [x] Create `recurring_income` table (name, amount, frequency, source, next_expected) â€” enables "Expected July Income"
+  - [x] Create `monthly_snapshots` table (month, year, income, expenses, savings, net_worth, recorded_at) â€” cheaper than recalculating forever
+  - [x] Add `type` column to `goals` (`emergency_fund`, `custom`) â€” dashboard detects emergency fund by type, not by name
   - [x] Add `paypal_fee`, `fx_loss`, `fx_rate` columns to `invoices`
-  - [x] Remove `net_worth_history` table — replaced by `monthly_snapshots`
-  - [x] Create `fn_account_balance(account_id)` RPC — opens with opening_balance + SUM(credits) - SUM(debits)
-  - [x] Create `fn_net_worth()` RPC — SUM of fn_account_balance across all accounts
+  - [x] Remove `net_worth_history` table â€” replaced by `monthly_snapshots`
+  - [x] Create `fn_account_balance(account_id)` RPC â€” opens with opening_balance + SUM(credits) - SUM(debits)
+  - [x] Create `fn_net_worth()` RPC â€” SUM of fn_account_balance across all accounts
 - [x] Enable Realtime on required tables (transactions, goals, invoices, accounts)
-- [x] Verify RLS policies (open for v1, single anon key — `CREATE POLICY "anon_all" ON ... FOR ALL USING (true)` for all 8 tables)
+- [x] Verify RLS policies (open for v1, single anon key â€” `CREATE POLICY "anon_all" ON ... FOR ALL USING (true)` for all 8 tables)
 
 ---
 
-## Phase 1: MVP — Manual Entry + Cross-Device Sync
+## Phase 1: MVP â€” Manual Entry + Cross-Device Sync
 
 ### Core Models & Providers
 - [x] `Transaction` model (fromJson/toJson/copyWith)
-- [x] `TransactionNotifier` — CRUD + Realtime subscription + pagination (200 limit)
+- [x] `TransactionNotifier` â€” CRUD + Realtime subscription + pagination (200 limit)
 - [x] `Goal` model + `GoalNotifier` (load, add, allocate)
 - [x] Update `Goal` model: add `type` field (`emergency_fund`, `custom`)
 - [x] Update `Transaction` model: add `transferGroupId`, `linkedInvoiceId`, `accountId`, `editHistory`, `isDeleted`
@@ -45,7 +45,7 @@
 - [x] Update `InvoiceProvider`: add soft-delete method
 - [x] `CategoryRule` model (match_pattern, category, tags, priority)
 - [x] `Account` model + `AccountNotifier` (load, balance per account via fn_account_balance RPC)
-- [x] `RecurringExpense` model + provider (load recurring outflows — agent committed-money context)
+- [x] `RecurringExpense` model + provider (load recurring outflows â€” agent committed-money context)
 - [x] `RecurringIncome` model + provider (load, project next expected)
 - [x] `accountBalancesProvider` + `netWorthProvider` (derived balances, never stored)
 
@@ -53,27 +53,27 @@
 - [x] Transaction list with pull-to-refresh
 - [x] Realtime subscription (new transactions appear without refresh)
 - [x] Pagination limit (200 items, no incremental loading)
-- [x] Filter by account (chip row — "All" + per-account chips)
-- [x] Paytm-style date grouping — "Today", "Yesterday", or "Fri, 27 Jun 2026" section headers, 24hr time on each row
+- [x] Filter by account (chip row â€” "All" + per-account chips)
+- [x] Paytm-style date grouping â€” "Today", "Yesterday", or "Fri, 27 Jun 2026" section headers, 24hr time on each row
 
 ### Add Transaction Form
 - [x] Manual entry: amount, type (debit/credit), category, VPA, merchant
 - [x] Validation + loading state + error toast
 - [x] Add account selector (source + destination for transfers/investments)
-- [x] Add `investment` as a type option — with destination account field (e.g. "Nifty 50 fund")
-- [x] Add `transfer` type — creates two linked rows with matching `transfer_group_id`
-- [x] Date & time picker — user-set `transacted_at` field (Paytm-style row, defaults to "Now")
-- [x] Custom tag input — free-form chip builder, type + Enter to add, tap × to remove
+- [x] Add `investment` as a type option â€” with destination account field (e.g. "Nifty 50 fund")
+- [x] Add `transfer` type â€” creates two linked rows with matching `transfer_group_id`
+- [x] Date & time picker â€” user-set `transacted_at` field (Paytm-style row, defaults to "Now")
+- [x] Custom tag input â€” free-form chip builder, type + Enter to add, tap Ã— to remove
 
 ### Dashboard Screen
 - [x] Summary cards: Earned, Spent, Saved, Net (current month)
 - [x] Category pie chart (fl_chart)
 - [x] Data from transactions table (client-side aggregation)
-- [x] **Emergency Fund card — hero element, top of dashboard**
-  - Progress bar: ₹X / ₹3,00,000 with % complete
-  - Pulls from Goals table by `type = 'emergency_fund'` — not by name
+- [x] **Emergency Fund card â€” hero element, top of dashboard**
+  - Progress bar: â‚¹X / â‚¹3,00,000 with % complete
+  - Pulls from Goals table by `type = 'emergency_fund'` â€” not by name
   - This is the number that matters most right now
-- [x] Savings Rate card: `(income − spend) / income × 100` — single %, target 20%+
+- [x] Savings Rate card: `(income âˆ’ spend) / income Ã— 100` â€” single %, target 20%+
 - [x] Per-account balance breakdown (SBI / Kotak / PayPal / Cash)
 
 ### Invoice Sidebar
@@ -87,7 +87,7 @@
 - [x] FAB on Transactions tab only
 
 ### Win Check: M1
-- [ ] Add transaction on phone — appears on Windows within 2s (needs live Supabase project)
+- [ ] Add transaction on phone â€” appears on Windows within 2s (needs live Supabase project)
 
 ---
 
@@ -95,18 +95,18 @@
 
 ### SMS Listener Service
 - [x] `SmsListener` stub class (singleton with StreamController)
-- [ ] Integrate `another_telephony` / `flutter_sms_inbox`
-- [ ] Request SMS permission on Android 13+ (runtime prompt, not just manifest)
-- [ ] Register SMS receiver and wire to SmsListener
+- [x] Integrate `another_telephony` / `flutter_sms_inbox`
+- [x] Request SMS permission on Android 13+ (runtime prompt, not just manifest)
+- [x] Register SMS receiver and wire to SmsListener
 
 ### SMS Parser (Regex Engine)
 - [x] 4 pattern defs extracting amount, type, merchant from UPI SMS
-- [x] Parse result → `Transaction` object (returns null on no match)
-- [ ] Collect 5 real SMS samples from PSB + Kotak inbox before finalising regex — don't guess formats
+- [x] Parse result â†’ `Transaction` object (returns null on no match)
+- [ ] Collect 5 real SMS samples from PSB + Kotak inbox before finalising regex â€” don't guess formats
 
 ### SMS-to-Transaction Pipeline
-- [ ] Wire SmsListener → SmsParser.parse → TransactionNotifier.add
-- [ ] Show toast: "Transaction added: ₹X at Merchant"
+- [x] Wire SmsListener → SmsParser.parse → TransactionNotifier.add
+- [x] Show toast: "Transaction added: ₹X at Merchant"
 - [x] Duplicate detection (SHA-256 hash raw_sms before insert via Dedup utility)
 
 ### Win Check: M2
@@ -139,18 +139,18 @@
 - [x] Data gathering before sending: per-account fn_account_balance, fn_net_worth, tx summary, invoices, goals
 - [x] Proper Claude tool-use (8 tool definitions, tool call execution loop up to 10 rounds)
 - [x] Model switcher: Haiku 4.5 (default cheap/fast) + Sonnet 4 (best quality)
-- [ ] Conversation history maintenance (multi-turn context)
+- [x] Conversation history maintenance (multi-turn context)
 - [x] Structured context injected per query: balance per account via `fn_account_balance`, net worth via `fn_net_worth`, monthly burn, goal progress
-- [ ] Include committed recurring spend + expected income in agent context (needs RecurringExpense/Income providers wired)
+- [x] Include committed recurring spend + expected income in agent context
 
 ### Agent Chat UI
 - [x] Chat bubble UI (user left, agent right)
 - [x] Suggested questions chip row
 - [ ] Collapsible "thought" step rendering for tool calls
-- [x] ~~Streaming response (SSE)~~ — **removed**: 80% complexity, 5% value for a personal tool. 2–4s wait is fine.
+- [x] ~~Streaming response (SSE)~~ â€” **removed**: 80% complexity, 5% value for a personal tool. 2â€“4s wait is fine.
 
 ### Win Check: M4
-- [x] "Can I afford X?" → agent returns data-backed answer citing actual balance + committed spend
+- [x] "Can I afford X?" â†’ agent returns data-backed answer citing actual balance + committed spend
 
 ---
 
@@ -158,23 +158,23 @@
 
 ### Soft Deletion
 - [x] `is_deleted` / `deleted_at` handling in all providers (filter in queries, skip in UI)
-- [x] Confirm delete dialog — AI never deletes, user must confirm (long-press → AlertDialog)
+- [x] Confirm delete dialog â€” AI never deletes, user must confirm (long-press â†’ AlertDialog)
 
 ### Immutable Audit Trail
 - [x] Store edit history (old_value, new_value, edited_at) on transaction updates via `edit_history` JSONB
 
 ### Monthly Snapshot Job
 - [x] On first open of a new month, write a row to `monthly_snapshots` with prior month totals
-- [ ] Use snapshots for trend chart instead of recalculating from raw transactions (deferred — backfill logic done)
+- [ ] Use snapshots for trend chart instead of recalculating from raw transactions (deferred â€” backfill logic done)
 
 ### Error Handling & Resilience
 - [ ] Graceful degradation when Supabase is down (local cache or offline state)
-- [ ] Retry logic for Claude API failures (no streaming to manage)
+- [x] Retry logic for Claude API failures (no streaming to manage)
 - [x] Duplicate transaction prevention (raw_sms hash via Dedup utility, checked in TransactionNotifier.add)
 
 ### Performance
 - [ ] Incremental pagination (20 items per page, load more on scroll)
-- [ ] Lazy load charts — only render when tab is visible
+- [ ] Lazy load charts â€” only render when tab is visible
 
 ### Security
 - [x] Keys loaded from `.env` (gitignored), not hardcoded
@@ -185,7 +185,7 @@
 
 ### Testing
 - [ ] Unit tests for SMS regex parsers (use real masked SMS strings from your inbox)
-- [ ] Unit tests for model serialization (fromJson/toJson roundtrip)
+- [x] Unit tests for model serialization (fromJson/toJson roundtrip)
 - [ ] Widget tests for each screen (empty, populated, error states)
 
 ### Build & Release
@@ -194,10 +194,10 @@
 
 ---
 
-## Phase 6: Boss Battle — "Survive a Week"
+## Phase 6: Boss Battle â€” "Survive a Week"
 
 - [ ] 7 days capturing all transactions (auto SMS + manual for cash)
-- [ ] Day 7: ask agent 3 questions cold — verify answers manually against raw data
+- [ ] Day 7: ask agent 3 questions cold â€” verify answers manually against raw data
 - [ ] All 3 match = production ready
 
 Questions to ask:
@@ -207,16 +207,16 @@ Questions to ask:
 
 ---
 
-## Design Constraints (locked — no code changes, document only)
+## Design Constraints (locked â€” no code changes, document only)
 
-- **AI never modifies money** — categorise/summarise/answer only. Edit/delete/move requires explicit user confirmation.
-- **Soft-delete everything** — `is_deleted` + `deleted_at` on all tables. Nothing is ever hard-deleted.
-- **Double-entry transfers** — transfer out + transfer in as two rows linked by `transfer_group_id`. Never a single expense.
-- **Investments are not expenses** — `type = 'investment'` moves money from cash account to investment account. Net worth unchanged.
-- **Immutable history** — store old/new values and edited_at on every change.
-- **Boring dashboard first** — Emergency Fund progress, Savings Rate, Monthly Spend, Per-Account Balance before any fancy charts.
-- **Balances are derived, not stored** — `accounts` has `opening_balance` + `opening_date`. Current balance is `fn_account_balance()`. No `balance` column to drift.
-- **Career Investment tag** — Keyboard, domains, hosting, Claude API costs, courses = tagged separately, excluded from discretionary spend reports.
-- **Invoice FX fields** — PayPal fee, FX loss, FX rate are derived display fields from received amounts. No manual entry needed.
-- **No streaming** — Claude responses appear after 2–4s. SSE removed from scope permanently.
-- **Transaction attachments** (backlog) — Invoice PDFs, receipts, and screenshots attached to transactions. Not in v1 scope. Noted here so future schema changes leave room.
+- **AI never modifies money** â€” categorise/summarise/answer only. Edit/delete/move requires explicit user confirmation.
+- **Soft-delete everything** â€” `is_deleted` + `deleted_at` on all tables. Nothing is ever hard-deleted.
+- **Double-entry transfers** â€” transfer out + transfer in as two rows linked by `transfer_group_id`. Never a single expense.
+- **Investments are not expenses** â€” `type = 'investment'` moves money from cash account to investment account. Net worth unchanged.
+- **Immutable history** â€” store old/new values and edited_at on every change.
+- **Boring dashboard first** â€” Emergency Fund progress, Savings Rate, Monthly Spend, Per-Account Balance before any fancy charts.
+- **Balances are derived, not stored** â€” `accounts` has `opening_balance` + `opening_date`. Current balance is `fn_account_balance()`. No `balance` column to drift.
+- **Career Investment tag** â€” Keyboard, domains, hosting, Claude API costs, courses = tagged separately, excluded from discretionary spend reports.
+- **Invoice FX fields** â€” PayPal fee, FX loss, FX rate are derived display fields from received amounts. No manual entry needed.
+- **No streaming** â€” Claude responses appear after 2â€“4s. SSE removed from scope permanently.
+- **Transaction attachments** (backlog) â€” Invoice PDFs, receipts, and screenshots attached to transactions. Not in v1 scope. Noted here so future schema changes leave room.

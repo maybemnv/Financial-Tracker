@@ -1,5 +1,5 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:finance_tracker/models/transaction.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Transaction.effectiveDate', () {
@@ -35,6 +35,66 @@ void main() {
         reason:
             'effectiveDate must prefer transactedAt because it is the actual money-move date.',
       );
+    });
+  });
+
+  group('Transaction flow direction', () {
+    test('infers inflow for legacy credit rows without explicit direction', () {
+      final tx = Transaction(amount: 100, type: 'credit');
+
+      expect(tx.isInflow, isTrue,
+          reason:
+              'Legacy credit rows must still behave like inflows before every stored row has direction populated.');
+      expect(tx.isOutflow, isFalse);
+    });
+
+    test('uses explicit direction for transfer and investment legs', () {
+      final transferIn = Transaction(
+        amount: 300,
+        type: 'transfer',
+        direction: 'inflow',
+      );
+      final investmentOut = Transaction(
+        amount: 300,
+        type: 'investment',
+        direction: 'outflow',
+      );
+
+      expect(transferIn.isInflow, isTrue,
+          reason:
+              'Transfer legs need explicit flow direction to balance accounts correctly.');
+      expect(investmentOut.isOutflow, isTrue,
+          reason:
+              'Investment source legs must reduce the source account balance.');
+    });
+  });
+
+  group('Transaction serialization', () {
+    test('round-trips direction, tags, and transactedAt', () {
+      final original = Transaction(
+        accountId: 'cash',
+        amount: 499.99,
+        type: 'investment',
+        direction: 'outflow',
+        merchant: 'Index Fund',
+        tags: const ['sip', 'long_term'],
+        source: 'manual',
+        transferGroupId: '123e4567-e89b-12d3-a456-426614174000',
+        transactedAt: DateTime(2026, 7, 5, 20, 15),
+      );
+
+      final json = original.toJson();
+      final roundTrip = Transaction.fromJson({
+        ...json,
+        'id': 'tx-1',
+        'created_at': '2026-07-05T20:16:00.000Z',
+      });
+
+      expect(roundTrip.direction, 'outflow');
+      expect(roundTrip.type, 'investment');
+      expect(roundTrip.tags, ['sip', 'long_term']);
+      expect(roundTrip.transferGroupId, original.transferGroupId);
+      expect(roundTrip.transactedAt, original.transactedAt);
     });
   });
 }

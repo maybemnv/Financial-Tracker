@@ -25,13 +25,13 @@ class _MockFnAccountBalanceRpc {
       }
 
       final amount = row['amount'] as double;
-      switch (row['type']) {
-        case 'credit':
-          balance += amount;
-          break;
-        case 'debit':
-          balance -= amount;
-          break;
+      final direction = row['direction'] as String?;
+      final type = row['type'] as String?;
+      if (direction == 'inflow' || (direction == null && type == 'credit')) {
+        balance += amount;
+      } else if (direction == 'outflow' ||
+          (direction == null && type == 'debit')) {
+        balance -= amount;
       }
     }
     return balance;
@@ -39,7 +39,7 @@ class _MockFnAccountBalanceRpc {
 }
 
 void main() {
-  group('fn_account_balance mocked COALESCE behavior', () {
+  group('fn_account_balance mocked effective-date and direction behavior', () {
     test('uses transacted_at before created_at when filtering RPC rows', () {
       final rpc = _MockFnAccountBalanceRpc(
         openingBalance: 1000,
@@ -83,6 +83,39 @@ void main() {
         1500,
         reason:
             'Mocked fn_account_balance must fall back to created_at for legacy rows where transacted_at is null.',
+      );
+    });
+
+    test(
+        'uses explicit inflow and outflow directions for transfer and investment legs',
+        () {
+      final rpc = _MockFnAccountBalanceRpc(
+        openingBalance: 1000,
+        from: DateTime(2026, 7),
+        to: DateTime(2026, 8),
+        rows: [
+          {
+            'amount': 250.0,
+            'type': 'transfer',
+            'direction': 'outflow',
+            'created_at': DateTime(2026, 7, 3),
+            'transacted_at': DateTime(2026, 7, 3),
+          },
+          {
+            'amount': 400.0,
+            'type': 'investment',
+            'direction': 'inflow',
+            'created_at': DateTime(2026, 7, 4),
+            'transacted_at': DateTime(2026, 7, 4),
+          },
+        ],
+      );
+
+      expect(
+        rpc(),
+        1150,
+        reason:
+            'Transfer and investment legs need explicit direction because their semantic type alone does not say whether the account gains or loses money.',
       );
     });
   });

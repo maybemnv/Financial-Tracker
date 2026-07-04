@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
+
 import '../../core/constants.dart';
 import '../../core/supabase.dart';
 
@@ -20,20 +22,21 @@ extension ClaudeModelName on ClaudeModel {
 }
 
 class ClaudeVisibleMessage {
-  final String text;
-  final bool isUser;
-
   const ClaudeVisibleMessage({
     required this.text,
     required this.isUser,
   });
+
+  final String text;
+  final bool isUser;
 }
 
 class ClaudeService {
   static const _tools = [
     {
       'name': 'get_accounts',
-      'description': 'List all financial accounts (SBI, Kotak, PayPal, Cash, investments) with their current balance derived from transactions.',
+      'description':
+          'List all financial accounts (SBI, Kotak, PayPal, Cash, investments) with their current balance derived from transactions.',
       'input_schema': {
         'type': 'object',
         'properties': {},
@@ -49,15 +52,34 @@ class ClaudeService {
     },
     {
       'name': 'get_transactions',
-      'description': 'Query transactions with optional filters. Returns amount, type, category, merchant, VPA, tags, date, account.',
+      'description':
+          'Query transactions with optional filters. Returns amount, type, category, merchant, tags, date, and flow direction.',
       'input_schema': {
         'type': 'object',
         'properties': {
-          'type': {'type': 'string', 'description': 'Filter by type: debit, credit, transfer, investment', 'enum': ['debit', 'credit', 'transfer', 'investment']},
-          'category': {'type': 'string', 'description': 'Filter by category: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other'},
-          'days': {'type': 'number', 'description': 'How many days back to look (e.g. 7, 30, 90)'},
-          'account_id': {'type': 'string', 'description': 'Filter by account UUID'},
-          'limit': {'type': 'number', 'description': 'Max rows to return (default 50)'},
+          'type': {
+            'type': 'string',
+            'description':
+                'Filter by type: debit, credit, transfer, investment',
+            'enum': ['debit', 'credit', 'transfer', 'investment']
+          },
+          'category': {
+            'type': 'string',
+            'description':
+                'Filter by category: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other'
+          },
+          'days': {
+            'type': 'number',
+            'description': 'How many days back to look (e.g. 7, 30, 90)'
+          },
+          'account_id': {
+            'type': 'string',
+            'description': 'Filter by account UUID'
+          },
+          'limit': {
+            'type': 'number',
+            'description': 'Max rows to return (default 50)'
+          },
         },
       },
     },
@@ -67,13 +89,17 @@ class ClaudeService {
       'input_schema': {
         'type': 'object',
         'properties': {
-          'days': {'type': 'number', 'description': 'Period in days (e.g. 7, 30, 90). Default 30.'},
+          'days': {
+            'type': 'number',
+            'description': 'Period in days (e.g. 7, 30, 90). Default 30.'
+          },
         },
       },
     },
     {
       'name': 'get_goals',
-      'description': 'List all savings goals with target amount, amount allocated, and percent funded.',
+      'description':
+          'List all savings goals with target amount, amount allocated, and percent funded.',
       'input_schema': {
         'type': 'object',
         'properties': {},
@@ -81,7 +107,8 @@ class ClaudeService {
     },
     {
       'name': 'get_invoices',
-      'description': 'Get freelance invoice summary: total invoiced, received via PayPal, received via bank, outstanding per client.',
+      'description':
+          'Get freelance invoice summary: total invoiced, received via PayPal, received via bank, outstanding per client.',
       'input_schema': {
         'type': 'object',
         'properties': {},
@@ -89,7 +116,17 @@ class ClaudeService {
     },
     {
       'name': 'get_recurring_expenses',
-      'description': 'List recurring/monthly expenses (subscriptions, SIPs, etc.) and their total monthly commitment.',
+      'description':
+          'List recurring/monthly expenses (subscriptions, SIPs, etc.) and their total monthly commitment.',
+      'input_schema': {
+        'type': 'object',
+        'properties': {},
+      },
+    },
+    {
+      'name': 'get_recurring_income',
+      'description':
+          'List expected recurring income and its approximate monthly total.',
       'input_schema': {
         'type': 'object',
         'properties': {},
@@ -97,11 +134,15 @@ class ClaudeService {
     },
     {
       'name': 'get_monthly_snapshots',
-      'description': 'Get monthly income/expenses/savings history from pre-computed snapshots. Useful for trends.',
+      'description':
+          'Get monthly income, expenses, savings, and investment history from pre-computed snapshots.',
       'input_schema': {
         'type': 'object',
         'properties': {
-          'months': {'type': 'number', 'description': 'Number of past months to return (default 12)'},
+          'months': {
+            'type': 'number',
+            'description': 'Number of past months to return (default 12)'
+          },
         },
       },
     },
@@ -110,6 +151,7 @@ class ClaudeService {
   final supabase = SupabaseService().client;
   final List<Map<String, dynamic>> _messages = [];
   late final Future<void> _loadFuture = _loadLastSession();
+
   String? _sessionId;
   ClaudeModel model = ClaudeModel.haiku45;
 
@@ -147,29 +189,28 @@ class ClaudeService {
     await _loadFuture;
     _messages.add({'role': 'user', 'content': question});
 
-    for (int turn = 0; turn < 10; turn++) {
+    for (var turn = 0; turn < 10; turn++) {
       final body = {
         'model': model.apiName,
         'max_tokens': 2048,
         'system': 'You are a personal finance assistant. You have access to financial data through tools. '
             'Use the tools to gather the information you need to answer the user\'s question. '
-            'Be concise, specific, and cite actual numbers. '
-            'If a question requires multiple data points, use multiple tool calls in parallel.',
+            'Use recurring income and recurring expense tools for affordability and runway questions. '
+            'Be concise, specific, and cite actual numbers.',
         'messages': _messages,
         'tools': _tools,
       };
 
-      final response = await http.post(
-        Uri.parse(AppConstants.claudeApiUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': AppConstants.claudeApiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: jsonEncode(body),
-      );
+      http.Response response;
+      try {
+        response = await _postWithRetry(body);
+      } catch (e) {
+        await _persistMessages();
+        return 'Error: $e';
+      }
 
       if (response.statusCode != 200) {
+        await _persistMessages();
         return 'Error: ${response.statusCode} ${response.body}';
       }
 
@@ -192,7 +233,6 @@ class ClaudeService {
 
       if (stopReason == 'tool_use') {
         final toolResults = <Map<String, dynamic>>[];
-
         for (final block in content) {
           if ((block as Map)['type'] != 'tool_use') continue;
 
@@ -217,7 +257,6 @@ class ClaudeService {
         if (toolResults.isNotEmpty) {
           _messages.add({'role': 'user', 'content': toolResults});
         }
-
         continue;
       }
 
@@ -230,9 +269,6 @@ class ClaudeService {
 
   Future<void> _loadLastSession() async {
     try {
-      // Single-anon-key app (no auth) — chat_sessions is global, like every
-      // other table. Load the most recently updated session so the agent
-      // resumes with prior context after a restart.
       final session = await supabase
           .from('chat_sessions')
           .select('id, messages')
@@ -273,6 +309,41 @@ class ClaudeService {
     }
   }
 
+  Future<http.Response> _postWithRetry(Map<String, dynamic> body) async {
+    Object? lastError;
+    http.Response? lastResponse;
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse(AppConstants.claudeApiUrl),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': AppConstants.claudeApiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: jsonEncode(body),
+        );
+
+        if (response.statusCode != 429 && response.statusCode < 500) {
+          return response;
+        }
+        lastResponse = response;
+      } catch (e) {
+        lastError = e;
+      }
+
+      if (attempt < 2) {
+        await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
+      }
+    }
+
+    if (lastResponse != null) {
+      return lastResponse;
+    }
+    throw Exception(lastError ?? 'Claude request failed');
+  }
+
   Future<String> _executeTool(String name, Map<String, dynamic> input) async {
     switch (name) {
       case 'get_accounts':
@@ -289,6 +360,8 @@ class ClaudeService {
         return _getInvoices();
       case 'get_recurring_expenses':
         return _getRecurringExpenses();
+      case 'get_recurring_income':
+        return _getRecurringIncome();
       case 'get_monthly_snapshots':
         return _getMonthlySnapshots(input);
       default:
@@ -300,18 +373,19 @@ class ClaudeService {
     try {
       final accounts = await supabase
           .from('accounts')
-          .select('id, name, type, opening_balance, opening_date')
+          .select('id, name, type')
           .eq('is_deleted', false);
 
       final lines = <String>[];
-      for (final a in (accounts as List)) {
-        final acc = a as Map;
+      for (final rawAccount in (accounts as List)) {
+        final account = Map<String, dynamic>.from(rawAccount as Map);
         try {
-          final bal = await supabase.rpc('fn_account_balance',
-              params: {'p_account_id': acc['id']});
-          lines.add('${acc['name']} (${acc['type']}): $bal');
+          final balance = await supabase.rpc('fn_account_balance',
+              params: {'p_account_id': account['id']});
+          lines.add('${account['name']} (${account['type']}): $balance');
         } catch (_) {
-          lines.add('${acc['name']} (${acc['type']}): balance unavailable');
+          lines.add(
+              '${account['name']} (${account['type']}): balance unavailable');
         }
       }
       return lines.isEmpty ? 'No accounts found.' : lines.join('\n');
@@ -331,32 +405,64 @@ class ClaudeService {
 
   Future<String> _getTransactions(Map<String, dynamic> filters) async {
     try {
+      final limit = _boundedLimit(filters['limit'] as num?);
+      final days = (filters['days'] as num?)?.toInt();
+      final since =
+          days != null ? DateTime.now().subtract(Duration(days: days)) : null;
+
       var query = supabase
           .from('transactions')
-          .select('amount, type, category, merchant, vpa, tags, account_id, created_at, note')
+          .select(
+              'amount, type, direction, category, merchant, vpa, tags, account_id, created_at, transacted_at, note')
           .eq('is_deleted', false);
 
-      if (filters['type'] != null) query = query.eq('type', filters['type']);
-      if (filters['category'] != null) query = query.eq('category', filters['category']);
-      if (filters['account_id'] != null) query = query.eq('account_id', filters['account_id']);
-      if (filters['days'] != null) {
-        final since = DateTime.now().subtract(Duration(days: (filters['days'] as num).toInt())).toIso8601String();
-        query = query.gte('created_at', since);
+      if (filters['type'] != null) {
+        query = query.eq('type', filters['type']);
+      }
+      if (filters['category'] != null) {
+        query = query.eq('category', filters['category']);
+      }
+      if (filters['account_id'] != null) {
+        query = query.eq('account_id', filters['account_id']);
       }
 
       final data = await query
           .order('created_at', ascending: false)
-          .limit((filters['limit'] as num?)?.toInt() ?? 50);
-      if ((data as List).isEmpty) return 'No transactions match those filters.';
+          .limit(days != null ? 200 : limit);
+
+      final rows = (data as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .where((row) {
+        final effectiveDate = _effectiveDate(row);
+        if (since != null &&
+            (effectiveDate == null || effectiveDate.isBefore(since))) {
+          return false;
+        }
+        return true;
+      }).toList()
+        ..sort((a, b) {
+          final left =
+              _effectiveDate(a) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final right =
+              _effectiveDate(b) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return right.compareTo(left);
+        });
+
+      if (rows.isEmpty) return 'No transactions match those filters.';
 
       final lines = <String>[];
-      for (final t in data) {
-        final tx = t as Map;
-        final prefix = tx['type'] == 'credit' ? '+' : '-';
-        final cat = tx['category'] ?? 'uncategorized';
-        final merchant = tx['merchant'] ?? 'unknown';
+      for (final tx in rows.take(limit)) {
+        final direction = _isInflow(tx) ? '+' : '-';
+        final date = _effectiveDate(tx);
+        final merchant = tx['merchant'] ?? tx['note'] ?? tx['vpa'] ?? 'unknown';
+        final label = tx['category'] ?? tx['type'];
         final tags = (tx['tags'] as List?)?.join(', ') ?? '';
-        lines.add('$prefix${tx['amount']} | $cat | $merchant${tags.isNotEmpty ? ' [$tags]' : ''}');
+        final dateLabel = date != null
+            ? date.toIso8601String().split('T').first
+            : 'unknown-date';
+        lines.add(
+          '$dateLabel | $direction${tx['amount']} | $label | $merchant${tags.isNotEmpty ? ' [$tags]' : ''}',
+        );
       }
       return lines.join('\n');
     } catch (e) {
@@ -367,34 +473,39 @@ class ClaudeService {
   Future<String> _getCategoryBreakdown(Map<String, dynamic> input) async {
     try {
       final days = (input['days'] as num?)?.toInt() ?? 30;
-      final since = DateTime.now().subtract(Duration(days: days)).toIso8601String();
+      final since = DateTime.now().subtract(Duration(days: days));
 
       final data = await supabase
           .from('transactions')
-          .select('category, amount')
+          .select('category, amount, created_at, transacted_at')
           .eq('type', 'debit')
           .eq('is_deleted', false)
-          .gte('created_at', since);
+          .order('created_at', ascending: false)
+          .limit(200);
 
       final categories = <String, double>{};
-      double total = 0;
+      var total = 0.0;
+      for (final rawTx in (data as List)) {
+        final tx = Map<String, dynamic>.from(rawTx as Map);
+        final effectiveDate = _effectiveDate(tx);
+        if (effectiveDate == null || effectiveDate.isBefore(since)) {
+          continue;
+        }
 
-      for (final t in (data as List)) {
-        final tx = t as Map;
-        final cat = (tx['category'] as String?) ?? 'Uncategorized';
-        final amt = (tx['amount'] as num).toDouble();
-        categories.update(cat, (v) => v + amt, ifAbsent: () => amt);
-        total += amt;
+        final category = (tx['category'] as String?) ?? 'Uncategorized';
+        final amount = (tx['amount'] as num).toDouble();
+        categories.update(category, (v) => v + amount, ifAbsent: () => amount);
+        total += amount;
       }
 
       if (categories.isEmpty) return 'No spending in the last $days days.';
 
       final lines = <String>['Total spent in last $days days: $total'];
-      final sorted = categories.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-
-      for (final e in sorted) {
-        final pct = (e.value / total * 100).toStringAsFixed(1);
-        lines.add('  ${e.key}: ${e.value} ($pct%)');
+      final sorted = categories.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      for (final entry in sorted) {
+        final pct = (entry.value / total * 100).toStringAsFixed(1);
+        lines.add('  ${entry.key}: ${entry.value} ($pct%)');
       }
       return lines.join('\n');
     } catch (e) {
@@ -412,13 +523,15 @@ class ClaudeService {
       if ((data as List).isEmpty) return 'No goals set up yet.';
 
       final lines = <String>[];
-      for (final g in data) {
-        final goal = g as Map;
+      for (final rawGoal in data) {
+        final goal = Map<String, dynamic>.from(rawGoal as Map);
         final target = (goal['target_amount'] as num).toDouble();
         final allocated = (goal['allocated_amount'] as num?)?.toDouble() ?? 0;
         final pct = target == 0 ? 0 : (allocated / target) * 100;
-        final typeTag = goal['type'] == 'emergency_fund' ? ' [emergency fund]' : '';
-        lines.add('${goal['name']}$typeTag: $allocated / $target (${pct.toStringAsFixed(0)}%)');
+        final typeTag =
+            goal['type'] == 'emergency_fund' ? ' [emergency fund]' : '';
+        lines.add(
+            '${goal['name']}$typeTag: $allocated / $target (${pct.toStringAsFixed(0)}%)');
       }
       return lines.join('\n');
     } catch (e) {
@@ -435,19 +548,25 @@ class ClaudeService {
 
       if ((data as List).isEmpty) return 'No invoices yet.';
 
-      double totalInvoiced = 0, totalReceived = 0;
+      var totalInvoiced = 0.0;
+      var totalReceived = 0.0;
       final lines = <String>[];
-      for (final i in data) {
-        final inv = i as Map;
-        final invoiced = (inv['invoiced_usd'] as num).toDouble();
-        final received = ((inv['received_paypal'] as num?)?.toDouble() ?? 0) +
-            ((inv['received_bank'] as num?)?.toDouble() ?? 0);
+      for (final rawInvoice in data) {
+        final invoice = Map<String, dynamic>.from(rawInvoice as Map);
+        final invoiced = (invoice['invoiced_usd'] as num).toDouble();
+        final received =
+            ((invoice['received_paypal'] as num?)?.toDouble() ?? 0) +
+                ((invoice['received_bank'] as num?)?.toDouble() ?? 0);
         totalInvoiced += invoiced;
         totalReceived += received;
-        lines.add('${inv['client']}: invoiced \$$invoiced, received \$$received, outstanding \$${invoiced - received}');
+        lines.add(
+          '${invoice['client']}: invoiced \$$invoiced, received \$$received, outstanding \$${invoiced - received}',
+        );
       }
-      lines.add(''); // blank line before summary
-      lines.add('Total invoiced: \$$totalInvoiced, Total received: \$$totalReceived, Outstanding: \$${totalInvoiced - totalReceived}');
+      lines.add('');
+      lines.add(
+        'Total invoiced: \$$totalInvoiced, Total received: \$$totalReceived, Outstanding: \$${totalInvoiced - totalReceived}',
+      );
       return lines.join('\n');
     } catch (e) {
       return 'Error fetching invoices: $e';
@@ -463,21 +582,55 @@ class ClaudeService {
 
       if ((data as List).isEmpty) return 'No recurring expenses set up.';
 
-      double monthlyTotal = 0;
+      var monthlyTotal = 0.0;
       final lines = <String>[];
-      for (final r in data) {
-        final re = r as Map;
-        final amt = (re['amount'] as num).toDouble();
-        final freq = re['frequency'] as String;
-        final monthly = freq == 'monthly' ? amt : freq == 'weekly' ? amt * 4.33 : amt / 12;
+      for (final rawExpense in data) {
+        final expense = Map<String, dynamic>.from(rawExpense as Map);
+        final amount = (expense['amount'] as num).toDouble();
+        final frequency = expense['frequency'] as String;
+        final monthly = _monthlyEquivalent(amount, frequency);
         monthlyTotal += monthly;
-        lines.add('${re['name']} (${re['category']}): $amt/$freq (~${monthly.toStringAsFixed(0)}/month)');
+        lines.add(
+          '${expense['name']} (${expense['category']}): $amount/$frequency (~${monthly.toStringAsFixed(0)}/month)',
+        );
       }
       lines.add('');
-      lines.add('Total monthly commitment: ~${monthlyTotal.toStringAsFixed(0)}');
+      lines
+          .add('Total monthly commitment: ~${monthlyTotal.toStringAsFixed(0)}');
       return lines.join('\n');
     } catch (e) {
       return 'Error fetching recurring expenses: $e';
+    }
+  }
+
+  Future<String> _getRecurringIncome() async {
+    try {
+      final data = await supabase
+          .from('recurring_income')
+          .select('name, amount, frequency, source')
+          .eq('is_deleted', false);
+
+      if ((data as List).isEmpty) return 'No recurring income set up.';
+
+      var monthlyTotal = 0.0;
+      final lines = <String>[];
+      for (final rawIncome in data) {
+        final income = Map<String, dynamic>.from(rawIncome as Map);
+        final amount = (income['amount'] as num).toDouble();
+        final frequency = income['frequency'] as String;
+        final monthly = _monthlyEquivalent(amount, frequency);
+        monthlyTotal += monthly;
+        final source = income['source'] ?? 'unknown source';
+        lines.add(
+          '${income['name']} ($source): $amount/$frequency (~${monthly.toStringAsFixed(0)}/month)',
+        );
+      }
+      lines.add('');
+      lines.add(
+          'Expected monthly recurring income: ~${monthlyTotal.toStringAsFixed(0)}');
+      return lines.join('\n');
+    } catch (e) {
+      return 'Error fetching recurring income: $e';
     }
   }
 
@@ -486,7 +639,8 @@ class ClaudeService {
       final months = (input['months'] as num?)?.toInt() ?? 12;
       final data = await supabase
           .from('monthly_snapshots')
-          .select('month, year, income, expenses, savings, savings_rate')
+          .select(
+              'month, year, income, expenses, investments, savings, savings_rate')
           .order('year', ascending: false)
           .order('month', ascending: false)
           .limit(months);
@@ -494,15 +648,52 @@ class ClaudeService {
       if ((data as List).isEmpty) return 'No monthly snapshot data yet.';
 
       final lines = <String>[];
-      for (final s in data) {
-        final snap = s as Map;
-        lines.add('${snap['year']}-${snap['month'].toString().padLeft(2, '0')}: '
-            'Income: ${snap['income']}, Expenses: ${snap['expenses']}, '
-            'Saved: ${snap['savings']} (${snap['savings_rate']}%)');
+      for (final rawSnapshot in data) {
+        final snapshot = Map<String, dynamic>.from(rawSnapshot as Map);
+        lines.add(
+          '${snapshot['year']}-${snapshot['month'].toString().padLeft(2, '0')}: Income ${snapshot['income']}, Expenses ${snapshot['expenses']}, Investments ${snapshot['investments']}, Saved ${snapshot['savings']} (${snapshot['savings_rate']}%)',
+        );
       }
       return lines.join('\n');
     } catch (e) {
       return 'Error fetching monthly snapshots: $e';
     }
+  }
+
+  int _boundedLimit(num? raw, {int fallback = 50}) {
+    final value = raw?.toInt() ?? fallback;
+    if (value < 1) return 1;
+    if (value > 200) return 200;
+    return value;
+  }
+
+  double _monthlyEquivalent(double amount, String frequency) {
+    switch (frequency) {
+      case 'weekly':
+        return amount * 4.33;
+      case 'yearly':
+        return amount / 12;
+      case 'monthly':
+      default:
+        return amount;
+    }
+  }
+
+  DateTime? _effectiveDate(Map<String, dynamic> row) {
+    final transactedAt = row['transacted_at'] as String?;
+    if (transactedAt != null && transactedAt.isNotEmpty) {
+      return DateTime.tryParse(transactedAt);
+    }
+    final createdAt = row['created_at'] as String?;
+    if (createdAt != null && createdAt.isNotEmpty) {
+      return DateTime.tryParse(createdAt);
+    }
+    return null;
+  }
+
+  bool _isInflow(Map<String, dynamic> row) {
+    final direction = row['direction'] as String?;
+    if (direction != null) return direction == 'inflow';
+    return row['type'] == 'credit';
   }
 }

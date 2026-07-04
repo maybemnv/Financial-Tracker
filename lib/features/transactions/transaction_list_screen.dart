@@ -1,27 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../core/theme.dart';
+
 import '../../core/constants.dart';
+import '../../core/theme.dart';
 import '../../models/account.dart';
 import '../../models/transaction.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../widgets/empty_state.dart';
 
-final _currency = NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
+final _currency =
+    NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
 
 const _allAccounts = 'all';
-
-// ---------------------------------------------------------------------------
-// TransactionListScreen — Paytm-style: grouped by date, time on each row.
-// ---------------------------------------------------------------------------
 
 class TransactionListScreen extends ConsumerStatefulWidget {
   const TransactionListScreen({super.key});
 
   @override
-  ConsumerState<TransactionListScreen> createState() => _TransactionListScreenState();
+  ConsumerState<TransactionListScreen> createState() =>
+      _TransactionListScreenState();
 }
 
 class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
@@ -36,7 +35,6 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
       appBar: AppBar(title: const Text('Transactions')),
       body: Column(
         children: [
-          // Account filter chips
           accountsAsync.maybeWhen(
             data: (accounts) {
               if (accounts.isEmpty) return const SizedBox.shrink();
@@ -44,7 +42,8 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                 height: 44,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   children: [
                     _filterChip('All', _allAccounts),
                     ...accounts.map((a) => _filterChip(a.name, a.id!)),
@@ -61,12 +60,15 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, size: 48, color: AppTheme.redAccent),
+                    const Icon(Icons.error_outline,
+                        size: 48, color: AppTheme.redAccent),
                     const SizedBox(height: 16),
-                    Text('$e', style: const TextStyle(color: AppTheme.textSecondary)),
+                    Text('$e',
+                        style: const TextStyle(color: AppTheme.textSecondary)),
                     const SizedBox(height: 16),
                     ElevatedButton(
-                      onPressed: () => ref.read(transactionProvider.notifier).load(),
+                      onPressed: () =>
+                          ref.read(transactionProvider.notifier).load(),
                       child: const Text('Retry'),
                     ),
                   ],
@@ -75,7 +77,9 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
               data: (transactions) {
                 final filtered = _accountFilter == _allAccounts
                     ? transactions
-                    : transactions.where((t) => t.accountId == _accountFilter).toList();
+                    : transactions
+                        .where((t) => t.accountId == _accountFilter)
+                        .toList();
 
                 if (filtered.isEmpty) {
                   return const EmptyState(
@@ -85,11 +89,9 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                   );
                 }
 
-                // Sort by effectiveDate descending (user-set date, else server timestamp)
                 final sorted = [...filtered]
                   ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
 
-                // Group by calendar date
                 final grouped = <DateTime, List<Transaction>>{};
                 for (final tx in sorted) {
                   final d = tx.effectiveDate;
@@ -97,7 +99,6 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                   grouped.putIfAbsent(key, () => []).add(tx);
                 }
 
-                // Flatten: [DateTime header, Transaction, Transaction, ...]
                 final items = <Object>[];
                 final sortedKeys = grouped.keys.toList()
                   ..sort((a, b) => b.compareTo(a));
@@ -107,7 +108,8 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                 }
 
                 return RefreshIndicator(
-                  onRefresh: () => ref.read(transactionProvider.notifier).load(),
+                  onRefresh: () =>
+                      ref.read(transactionProvider.notifier).load(),
                   child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     itemCount: items.length,
@@ -143,13 +145,10 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Date section header — "Today", "Yesterday", or "Fri, 27 Jun"
-// ---------------------------------------------------------------------------
-
 class _DateHeader extends StatelessWidget {
-  final DateTime date;
   const _DateHeader({required this.date});
+
+  final DateTime date;
 
   @override
   Widget build(BuildContext context) {
@@ -182,31 +181,34 @@ class _DateHeader extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Transaction card — Paytm-style: icon | merchant + meta | amount + time
-// ---------------------------------------------------------------------------
-
 class _TransactionCard extends ConsumerWidget {
-  final Transaction tx;
   const _TransactionCard({required this.tx});
+
+  final Transaction tx;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isCredit = tx.isCredit;
     final isTransfer = tx.isTransfer;
     final isInvestment = tx.isInvestment;
 
-    final color = isCredit
-        ? AppTheme.primaryGreen
-        : isTransfer
-            ? AppTheme.accentGold
-            : isInvestment
-                ? AppTheme.accentPurple
+    final color = isTransfer
+        ? AppTheme.accentGold
+        : isInvestment
+            ? AppTheme.accentPurple
+            : tx.isInflow
+                ? AppTheme.primaryGreen
                 : AppTheme.redAccent;
 
-    final sign = isCredit ? '+' : '-';
-
-        final timeStr = DateFormat('HH:mm').format(tx.effectiveDate);
+    final sign = tx.isInflow ? '+' : '-';
+    final timeStr = DateFormat('HH:mm').format(tx.effectiveDate);
+    final title = tx.merchant ??
+        tx.vpa ??
+        tx.note ??
+        (isTransfer
+            ? 'Transfer'
+            : isInvestment
+                ? 'Investment move'
+                : 'Unknown');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -217,19 +219,19 @@ class _TransactionCard extends ConsumerWidget {
           radius: 22,
           backgroundColor: color.withAlpha(30),
           child: Icon(
-            isCredit
-                ? Icons.arrow_downward_rounded
-                : isTransfer
-                    ? Icons.swap_horiz_rounded
-                    : isInvestment
-                        ? Icons.trending_up_rounded
+            isTransfer
+                ? Icons.swap_horiz_rounded
+                : isInvestment
+                    ? Icons.trending_up_rounded
+                    : tx.isInflow
+                        ? Icons.arrow_downward_rounded
                         : Icons.arrow_upward_rounded,
             color: color,
             size: 20,
           ),
         ),
         title: Text(
-          tx.merchant ?? tx.vpa ?? tx.note ?? 'Unknown',
+          title,
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -240,7 +242,8 @@ class _TransactionCard extends ConsumerWidget {
             const SizedBox(height: 2),
             Text(
               _subtitle(),
-              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              style:
+                  const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -250,23 +253,27 @@ class _TransactionCard extends ConsumerWidget {
                 spacing: 4,
                 runSpacing: 2,
                 children: tx.tags
-                    .map((tag) => Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryGreen.withAlpha(25),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                                color: AppTheme.primaryGreen.withAlpha(60)),
+                    .map(
+                      (tag) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryGreen.withAlpha(25),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: AppTheme.primaryGreen.withAlpha(60),
                           ),
-                          child: Text(
-                            tag,
-                            style: const TextStyle(
-                                fontSize: 10,
-                                color: AppTheme.primaryGreen,
-                                fontWeight: FontWeight.w500),
+                        ),
+                        child: Text(
+                          tag,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.primaryGreen,
+                            fontWeight: FontWeight.w500,
                           ),
-                        ))
+                        ),
+                      ),
+                    )
                     .toList(),
               ),
             ],
@@ -287,7 +294,8 @@ class _TransactionCard extends ConsumerWidget {
             const SizedBox(height: 2),
             Text(
               timeStr,
-              style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+              style:
+                  const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
             ),
           ],
         ),
@@ -298,16 +306,20 @@ class _TransactionCard extends ConsumerWidget {
 
   String _subtitle() {
     final parts = <String>[];
-    if (tx.type == 'transfer') {
-      parts.add('Transfer');
-    } else if (tx.type == 'investment') {
-      parts.add('Investment');
+    if (tx.isTransfer) {
+      parts.add(tx.isInflow ? 'Transfer in' : 'Transfer out');
+    } else if (tx.isInvestment) {
+      parts.add(tx.isInflow ? 'Investment in' : 'Investment out');
     } else if (tx.category != null) {
       parts.add(tx.category!);
     }
-    if (tx.bank != null) { parts.add(tx.bank!); }
-    if (tx.vpa != null && tx.merchant != null) { parts.add(tx.vpa!); }
-    return parts.join(' • ');
+    if (tx.bank != null) {
+      parts.add(tx.bank!);
+    }
+    if (tx.vpa != null && tx.merchant != null) {
+      parts.add(tx.vpa!);
+    }
+    return parts.join(' | ');
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
@@ -316,11 +328,13 @@ class _TransactionCard extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete transaction?'),
         content: const Text(
-            'This soft-deletes the transaction. It stays in your audit history but won\'t appear in the app.'),
+          'This soft-deletes the transaction. It stays in your audit history but will not appear in the app.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppTheme.redAccent),
             onPressed: () => Navigator.pop(ctx, true),
@@ -335,15 +349,12 @@ class _TransactionCard extends ConsumerWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// AddTransactionScreen — with date + time picker (defaults to now)
-// ---------------------------------------------------------------------------
-
 class AddTransactionScreen extends ConsumerStatefulWidget {
   const AddTransactionScreen({super.key});
 
   @override
-  ConsumerState<AddTransactionScreen> createState() => _AddTransactionScreenState();
+  ConsumerState<AddTransactionScreen> createState() =>
+      _AddTransactionScreenState();
 }
 
 class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
@@ -353,11 +364,12 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   final _vpaCtrl = TextEditingController();
   final _tagCtrl = TextEditingController();
   final _tagFocus = FocusNode();
+
   String _type = 'debit';
   String _category = 'Other';
   String? _accountId;
   String? _destAccountId;
-  DateTime? _transactedAt; // null = "Now" (server default); only set when user explicitly picks
+  DateTime? _transactedAt;
   final List<String> _tags = [];
   bool _isSaving = false;
 
@@ -374,7 +386,6 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   void _addTag() {
     final raw = _tagCtrl.text.trim();
     if (raw.isEmpty) return;
-    // Normalise: lowercase, no duplicate
     final tag = raw.toLowerCase();
     if (!_tags.contains(tag)) {
       setState(() => _tags.add(tag));
@@ -388,7 +399,6 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   bool get _needsDestination => _type == 'transfer' || _type == 'investment';
 
   Future<void> _pickDateTime() async {
-    // Step 1: pick date
     final date = await showDatePicker(
       context: context,
       initialDate: _transactedAt ?? DateTime.now(),
@@ -403,7 +413,6 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     );
     if (date == null || !mounted) return;
 
-    // Step 2: pick time
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_transactedAt ?? DateTime.now()),
@@ -418,8 +427,11 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
 
     setState(() {
       _transactedAt = DateTime(
-        date.year, date.month, date.day,
-        time.hour, time.minute,
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
       );
     });
   }
@@ -427,7 +439,8 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   @override
   Widget build(BuildContext context) {
     final accountsAsync = ref.watch(accountProvider);
-    final accounts = accountsAsync.maybeWhen(data: (a) => a, orElse: () => <Account>[]);
+    final accounts =
+        accountsAsync.maybeWhen(data: (a) => a, orElse: () => <Account>[]);
 
     final now = DateTime.now();
     final dateLabel = _transactedAt == null
@@ -446,7 +459,6 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              // Transaction type toggle
               SegmentedButton<String>(
                 segments: const [
                   ButtonSegment(value: 'debit', label: Text('Debit')),
@@ -458,15 +470,15 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 onSelectionChanged: (v) => setState(() => _type = v.first),
               ),
               const SizedBox(height: 16),
-
-              // Date & time picker — Paytm-style row
               InkWell(
                 onTap: _pickDateTime,
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   decoration: BoxDecoration(
-                    border: Border.all(color: AppTheme.textSecondary.withAlpha(80)),
+                    border:
+                        Border.all(color: AppTheme.textSecondary.withAlpha(80)),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -477,13 +489,17 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Transaction date & time',
-                              style: TextStyle(
-                                  fontSize: 11, color: AppTheme.textSecondary)),
+                          const Text(
+                            'Transaction date & time',
+                            style: TextStyle(
+                                fontSize: 11, color: AppTheme.textSecondary),
+                          ),
                           const SizedBox(height: 2),
-                          Text(dateLabel,
-                              style: const TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w600)),
+                          Text(
+                            dateLabel,
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
                         ],
                       ),
                       const Spacer(),
@@ -494,12 +510,12 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-
-              // Amount
               TextFormField(
                 controller: _amountCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'Amount (₹)', prefixText: '₹ '),
+                  labelText: 'Amount (₹)',
+                  prefixText: '₹ ',
+                ),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 validator: (v) {
@@ -509,26 +525,24 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 },
               ),
               const SizedBox(height: 12),
-
-              // Source account
               DropdownButtonFormField<String>(
                 initialValue: _accountId,
                 decoration: InputDecoration(
-                  labelText: _type == 'transfer' || _type == 'investment'
-                      ? 'From account'
-                      : 'Account',
+                  labelText: _needsDestination ? 'From account' : 'Account',
                 ),
                 items: accounts
-                    .map((a) =>
-                        DropdownMenuItem(value: a.id ?? '', child: Text(a.name)))
+                    .map(
+                      (a) => DropdownMenuItem(
+                        value: a.id ?? '',
+                        child: Text(a.name),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() => _accountId = v),
                 validator: (v) =>
                     v == null || v.isEmpty ? 'Select an account' : null,
               ),
               const SizedBox(height: 12),
-
-              // Destination account (transfers / investments only)
               if (_needsDestination) ...[
                 DropdownButtonFormField<String>(
                   initialValue: _destAccountId,
@@ -538,8 +552,12 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                         : 'Destination account',
                   ),
                   items: accounts
-                      .map((a) => DropdownMenuItem(
-                          value: a.id ?? '', child: Text(a.name)))
+                      .map(
+                        (a) => DropdownMenuItem(
+                          value: a.id ?? '',
+                          child: Text(a.name),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) => setState(() => _destAccountId = v),
                   validator: (v) =>
@@ -547,12 +565,11 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
-
-              // Merchant / VPA / Category (debit + credit only)
               if (!_needsDestination) ...[
                 TextFormField(
                   controller: _merchantCtrl,
-                  decoration: const InputDecoration(labelText: 'Merchant / Description'),
+                  decoration: const InputDecoration(
+                      labelText: 'Merchant / Description'),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -564,15 +581,14 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                   initialValue: _category,
                   decoration: const InputDecoration(labelText: 'Category'),
                   items: AppConstants.categories
-                      .map((c) =>
-                          DropdownMenuItem(value: c, child: Text(c)))
+                      .map(
+                        (c) => DropdownMenuItem(value: c, child: Text(c)),
+                      )
                       .toList(),
                   onChanged: (v) => setState(() => _category = v!),
                 ),
               ],
               const SizedBox(height: 16),
-
-              // Custom tags
               _TagInput(
                 tags: _tags,
                 controller: _tagCtrl,
@@ -581,7 +597,6 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 onRemove: _removeTag,
               ),
               const SizedBox(height: 24),
-
               FilledButton(
                 onPressed: _isSaving ? null : _submit,
                 child: _isSaving
@@ -601,30 +616,45 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_needsDestination && _accountId == _destAccountId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Choose different source and destination accounts')),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
     try {
       final amount = double.parse(_amountCtrl.text);
+      final notifier = ref.read(transactionProvider.notifier);
       if (_type == 'transfer') {
-        await ref.read(transactionProvider.notifier).addTransfer(
-              fromAccountId: _accountId!,
-              toAccountId: _destAccountId!,
-              amount: amount,
-              transactedAt: _transactedAt,
-            );
+        await notifier.addTransfer(
+          fromAccountId: _accountId!,
+          toAccountId: _destAccountId!,
+          amount: amount,
+          transactedAt: _transactedAt,
+        );
+      } else if (_type == 'investment') {
+        await notifier.addInvestment(
+          fromAccountId: _accountId!,
+          toAccountId: _destAccountId!,
+          amount: amount,
+          transactedAt: _transactedAt,
+        );
       } else {
         final tx = Transaction(
           amount: amount,
           type: _type,
           accountId: _accountId,
-          merchant:
-              _merchantCtrl.text.isNotEmpty ? _merchantCtrl.text : null,
+          merchant: _merchantCtrl.text.isNotEmpty ? _merchantCtrl.text : null,
           vpa: _vpaCtrl.text.isNotEmpty ? _vpaCtrl.text : null,
-          category: _needsDestination ? null : _category,
+          category: _category,
           tags: List.unmodifiable(_tags),
           source: 'manual',
           transactedAt: _transactedAt,
         );
-        await ref.read(transactionProvider.notifier).add(tx);
+        await notifier.add(tx);
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -639,19 +669,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// _TagInput — free-form tag builder with chip display
-// Type a tag → press Enter or the + button to add.
-// Tap × on a chip to remove. Tags are normalised to lowercase.
-// ---------------------------------------------------------------------------
-
 class _TagInput extends StatelessWidget {
-  final List<String> tags;
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final VoidCallback onAdd;
-  final void Function(String) onRemove;
-
   const _TagInput({
     required this.tags,
     required this.controller,
@@ -659,6 +677,12 @@ class _TagInput extends StatelessWidget {
     required this.onAdd,
     required this.onRemove,
   });
+
+  final List<String> tags;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final VoidCallback onAdd;
+  final void Function(String) onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -683,12 +707,12 @@ class _TagInput extends StatelessWidget {
                   hintStyle: const TextStyle(
                       fontSize: 13, color: AppTheme.textSecondary),
                   isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(
-                        color: AppTheme.textSecondary.withAlpha(80)),
+                    borderSide:
+                        BorderSide(color: AppTheme.textSecondary.withAlpha(80)),
                   ),
                 ),
               ),
@@ -713,16 +737,13 @@ class _TagInput extends StatelessWidget {
             children: tags
                 .map(
                   (tag) => Chip(
-                    label: Text(
-                      tag,
-                      style: const TextStyle(fontSize: 12),
-                    ),
+                    label: Text(tag, style: const TextStyle(fontSize: 12)),
                     deleteIcon: const Icon(Icons.close, size: 14),
                     onDeleted: () => onRemove(tag),
                     backgroundColor: AppTheme.primaryGreen.withAlpha(30),
                     deleteIconColor: AppTheme.primaryGreen,
-                    side: BorderSide(
-                        color: AppTheme.primaryGreen.withAlpha(80)),
+                    side:
+                        BorderSide(color: AppTheme.primaryGreen.withAlpha(80)),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
