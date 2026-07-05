@@ -14,11 +14,44 @@ import '../../widgets/summary_card.dart';
 final currencyFormat =
     NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
 
-class DashboardScreen extends ConsumerWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+    }
+  }
+
+  Future<void> _refresh() async {
+    ref.invalidate(accountProvider);
+    ref.invalidate(accountBalancesProvider);
+    ref.invalidate(netWorthProvider);
+    await ref.read(transactionProvider.notifier).load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final transactionsAsync = ref.watch(transactionProvider);
     final goalsAsync = ref.watch(goalProvider);
 
@@ -28,7 +61,7 @@ class DashboardScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorState(
           error: '$e',
-          onRetry: () => ref.read(transactionProvider.notifier).load(),
+          onRetry: _refresh,
         ),
         data: (transactions) {
           final emergencyFund = goalsAsync.maybeWhen(
@@ -38,7 +71,7 @@ class DashboardScreen extends ConsumerWidget {
           return _DashboardContent(
             transactions: transactions,
             emergencyFund: emergencyFund,
-            onRefresh: () => ref.read(transactionProvider.notifier).load(),
+            onRefresh: _refresh,
           );
         },
       ),
