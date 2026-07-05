@@ -82,5 +82,44 @@ void main() {
       );
       expect(analytics.spendingCategories.single.label, 'Uncategorized');
     });
+
+    test('can focus a prior month', () {
+      final analytics = DashboardAnalytics.fromTransactions(
+        [
+          Transaction(
+            amount: 30219.77,
+            type: 'credit',
+            direction: 'inflow',
+            merchant: 'Client A',
+            transactedAt: DateTime(2026, 7, 1),
+          ),
+          Transaction(
+            amount: 26165.94,
+            type: 'credit',
+            direction: 'inflow',
+            merchant: 'Client B',
+            transactedAt: DateTime(2026, 6, 15),
+          ),
+          Transaction(
+            amount: 1200,
+            type: 'debit',
+            direction: 'outflow',
+            category: 'Food',
+            transactedAt: DateTime(2026, 6, 20),
+          ),
+        ],
+        now: DateTime(2026, 7, 5),
+        focusMonth: DateTime(2026, 6),
+      );
+
+      expect(analytics.currentMonth.month, DateTime(2026, 6));
+      expect(analytics.currentMonth.income, 26165.94);
+      expect(analytics.currentMonth.spending, 1200);
+      expect(analytics.currentMonth.savings, 24965.94);
+      expect(
+        analytics.availableMonths,
+        [DateTime(2026, 7), DateTime(2026, 6)],
+      );
+    });
   });
 }

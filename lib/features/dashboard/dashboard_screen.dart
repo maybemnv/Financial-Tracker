@@ -98,7 +98,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 }
 
-class _DashboardContent extends ConsumerWidget {
+class _DashboardContent extends ConsumerStatefulWidget {
   const _DashboardContent({
     required this.transactions,
     required this.goals,
@@ -110,10 +110,51 @@ class _DashboardContent extends ConsumerWidget {
   final Future<void> Function() onRefresh;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final analytics = DashboardAnalytics.fromTransactions(transactions);
+  ConsumerState<_DashboardContent> createState() => _DashboardContentState();
+}
+
+class _DashboardContentState extends ConsumerState<_DashboardContent> {
+  DateTime? _selectedMonth;
+
+  DateTime _resolvedSelectedMonth(List<DateTime> availableMonths) {
+    if (_selectedMonth != null &&
+        availableMonths.any((month) => _isSameMonth(month, _selectedMonth!))) {
+      return DateTime(_selectedMonth!.year, _selectedMonth!.month);
+    }
+
+    if (availableMonths.isEmpty) {
+      final now = DateTime.now();
+      return DateTime(now.year, now.month);
+    }
+
+    final now = DateTime.now();
+    final currentMonth = DateTime(now.year, now.month);
+    final previousMonth = DateTime(now.year, now.month - 1);
+
+    if (now.day <= 7 &&
+        availableMonths.any((month) => _isSameMonth(month, previousMonth))) {
+      return previousMonth;
+    }
+    if (availableMonths.any((month) => _isSameMonth(month, currentMonth))) {
+      return currentMonth;
+    }
+    return availableMonths.first;
+  }
+
+  bool _isSameMonth(DateTime left, DateTime right) =>
+      left.year == right.year && left.month == right.month;
+
+  @override
+  Widget build(BuildContext context) {
+    final availableMonths =
+        DashboardAnalytics.monthsForTransactions(widget.transactions);
+    final selectedMonth = _resolvedSelectedMonth(availableMonths);
+    final analytics = DashboardAnalytics.fromTransactions(
+      widget.transactions,
+      focusMonth: selectedMonth,
+    );
     final summary = analytics.currentMonth;
-    final sortedGoals = [...goals]..sort((a, b) {
+    final sortedGoals = [...widget.goals]..sort((a, b) {
         if (a.isEmergencyFund == b.isEmergencyFund) {
           return a.name.compareTo(b.name);
         }
@@ -121,10 +162,16 @@ class _DashboardContent extends ConsumerWidget {
       });
 
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: widget.onRefresh,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _PeriodSelector(
+            selectedMonth: selectedMonth,
+            availableMonths: analytics.availableMonths,
+            onChanged: (month) => setState(() => _selectedMonth = month),
+          ),
+          const SizedBox(height: 16),
           _SnapshotHeroCard(
             summary: summary,
             latestTransactionAt: analytics.latestTransactionAt,
@@ -136,13 +183,15 @@ class _DashboardContent extends ConsumerWidget {
           const SizedBox(height: 24),
           _SectionCard(
             title: 'Income vs Spending',
-            subtitle: 'Six-month trend for earnings, spending, and savings',
+            subtitle:
+                'Six-month trend ending in ${monthTitleFormat.format(selectedMonth)}',
             child: _MonthlyTrendChart(points: analytics.monthlyTrend),
           ),
           const SizedBox(height: 24),
           _SectionCard(
-            title: 'This Month Activity',
-            subtitle: 'Daily income and spending movements',
+            title: 'Daily Activity',
+            subtitle:
+                'Daily income and spending movements for ${monthTitleFormat.format(selectedMonth)}',
             child: _DailyFlowChart(points: analytics.dailyFlow),
           ),
           const SizedBox(height: 24),
@@ -150,7 +199,7 @@ class _DashboardContent extends ConsumerWidget {
             title: 'Spending Mix',
             subtitle: summary.uncategorizedCount > 0
                 ? 'Uncategorized transactions are included so hidden spend stays visible'
-                : 'Current-month spending split by category',
+                : 'Spending split by category for ${monthTitleFormat.format(selectedMonth)}',
             child: _CategoryBreakdown(categories: analytics.spendingCategories),
           ),
           const SizedBox(height: 24),
@@ -158,7 +207,7 @@ class _DashboardContent extends ConsumerWidget {
           const SizedBox(height: 24),
           _ActionItemsSection(
             analytics: analytics,
-            hasEmergencyFund: goals.any((goal) => goal.isEmergencyFund),
+            hasEmergencyFund: widget.goals.any((goal) => goal.isEmergencyFund),
           ),
         ],
       ),
@@ -225,7 +274,7 @@ class _SnapshotHeroCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Net savings this month',
+                      'Net savings in selected month',
                       style: TextStyle(color: AppTheme.textSecondary),
                     ),
                   ],
@@ -278,6 +327,91 @@ class _SnapshotHeroCard extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PeriodSelector extends StatelessWidget {
+  const _PeriodSelector({
+    required this.selectedMonth,
+    required this.availableMonths,
+    required this.onChanged,
+  });
+
+  final DateTime selectedMonth;
+  final List<DateTime> availableMonths;
+  final ValueChanged<DateTime> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (availableMonths.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final selectedIndex = availableMonths.indexWhere(
+      (month) =>
+          month.year == selectedMonth.year &&
+          month.month == selectedMonth.month,
+    );
+    final newerMonth =
+        selectedIndex > 0 ? availableMonths[selectedIndex - 1] : null;
+    final olderMonth =
+        selectedIndex >= 0 && selectedIndex < availableMonths.length - 1
+            ? availableMonths[selectedIndex + 1]
+            : null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.darkCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(14)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: newerMonth == null ? null : () => onChanged(newerMonth),
+            icon: const Icon(Icons.chevron_left_rounded),
+            tooltip: 'Newer month',
+          ),
+          Expanded(
+            child: Center(
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<DateTime>(
+                  value: availableMonths.firstWhere(
+                    (month) =>
+                        month.year == selectedMonth.year &&
+                        month.month == selectedMonth.month,
+                  ),
+                  alignment: Alignment.center,
+                  dropdownColor: AppTheme.darkSurface,
+                  style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  items: availableMonths
+                      .map(
+                        (month) => DropdownMenuItem<DateTime>(
+                          value: month,
+                          child: Text(monthTitleFormat.format(month)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (month) {
+                    if (month != null) onChanged(month);
+                  },
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: olderMonth == null ? null : () => onChanged(olderMonth),
+            icon: const Icon(Icons.chevron_right_rounded),
+            tooltip: 'Older month',
+          ),
         ],
       ),
     );
@@ -944,7 +1078,7 @@ class _ActionItemsSection extends StatelessWidget {
           color: AppTheme.accentGold,
           title: 'Categorize recent spending',
           message:
-              '${summary.uncategorizedCount} current-month transactions are still uncategorized, so category insights are less accurate than they should be.',
+              '${summary.uncategorizedCount} selected-month transactions are still uncategorized, so category insights are less accurate than they should be.',
         ),
       );
     }
@@ -968,7 +1102,7 @@ class _ActionItemsSection extends StatelessWidget {
           color: AppTheme.redAccent,
           title: 'Spending pace is running hot',
           message:
-              'At the current daily pace, projected spending is ${currencyFormat.format(summary.projectedSpending)}, which is above this month\'s income.',
+              'At the current daily pace, projected spending is ${currencyFormat.format(summary.projectedSpending)}, which is above the selected month\'s income.',
         ),
       );
     } else if (summary.income > 0) {

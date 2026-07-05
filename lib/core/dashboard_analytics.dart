@@ -1,7 +1,8 @@
-﻿import '../models/transaction.dart';
+import '../models/transaction.dart';
 
 class DashboardAnalytics {
   DashboardAnalytics({
+    required this.availableMonths,
     required this.currentMonth,
     required this.monthlyTrend,
     required this.dailyFlow,
@@ -11,6 +12,7 @@ class DashboardAnalytics {
     this.latestTransactionAt,
   });
 
+  final List<DateTime> availableMonths;
   final DashboardPeriodSummary currentMonth;
   final List<DashboardMonthlyPoint> monthlyTrend;
   final List<DashboardDailyPoint> dailyFlow;
@@ -21,15 +23,19 @@ class DashboardAnalytics {
 
   static DashboardAnalytics fromTransactions(
     List<Transaction> transactions, {
+    DateTime? focusMonth,
     DateTime? now,
     int monthWindow = 6,
   }) {
     final resolvedNow = now ?? DateTime.now();
-    final monthStart = DateTime(resolvedNow.year, resolvedNow.month);
-    final nextMonthStart = DateTime(resolvedNow.year, resolvedNow.month + 1);
+    final selectedMonth = _monthStart(focusMonth ?? resolvedNow);
+    final monthStart = selectedMonth;
+    final nextMonthStart =
+        DateTime(selectedMonth.year, selectedMonth.month + 1);
+    final availableMonths = monthsForTransactions(transactions);
 
     final currentMonthTransactions = transactions.where((transaction) {
-      final date = transaction.effectiveDate;
+      final date = _monthStart(transaction.effectiveDate);
       return !date.isBefore(monthStart) && date.isBefore(nextMonthStart);
     }).toList()
       ..sort((a, b) => a.effectiveDate.compareTo(b.effectiveDate));
@@ -83,9 +89,10 @@ class DashboardAnalytics {
       ..sort((a, b) => b.amount.compareTo(a.amount));
 
     final dailyFlow = List.generate(
-      _daysInMonth(resolvedNow),
+      _daysInMonth(selectedMonth),
       (index) {
-        final day = DateTime(resolvedNow.year, resolvedNow.month, index + 1);
+        final day =
+            DateTime(selectedMonth.year, selectedMonth.month, index + 1);
         final totals = dailyTotals[day];
         return DashboardDailyPoint(
           day: day,
@@ -98,8 +105,8 @@ class DashboardAnalytics {
     final monthKeys = List.generate(
       monthWindow,
       (index) => DateTime(
-        resolvedNow.year,
-        resolvedNow.month - (monthWindow - index - 1),
+        selectedMonth.year,
+        selectedMonth.month - (monthWindow - index - 1),
       ),
     );
 
@@ -133,13 +140,17 @@ class DashboardAnalytics {
     }).toList();
 
     final savings = monthIncome - monthSpending;
-    final elapsedDays = resolvedNow.day;
+    final elapsedDays = selectedMonth.year == resolvedNow.year &&
+            selectedMonth.month == resolvedNow.month
+        ? resolvedNow.day
+        : _daysInMonth(selectedMonth);
     final double averageDailySpending =
         elapsedDays == 0 ? 0.0 : monthSpending / elapsedDays;
     final double projectedSpending =
-        (averageDailySpending * _daysInMonth(resolvedNow)).toDouble();
+        (averageDailySpending * _daysInMonth(selectedMonth)).toDouble();
 
     return DashboardAnalytics(
+      availableMonths: availableMonths,
       currentMonth: DashboardPeriodSummary(
         month: monthStart,
         income: monthIncome,
@@ -167,6 +178,15 @@ class DashboardAnalytics {
               .map((transaction) => transaction.effectiveDate)
               .reduce((a, b) => a.isAfter(b) ? a : b),
     );
+  }
+
+  static List<DateTime> monthsForTransactions(List<Transaction> transactions) {
+    final months = transactions
+        .map((transaction) => _monthStart(transaction.effectiveDate))
+        .toSet()
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+    return months;
   }
 }
 
@@ -274,3 +294,5 @@ String _categoryLabel(Transaction transaction) {
 }
 
 int _daysInMonth(DateTime date) => DateTime(date.year, date.month + 1, 0).day;
+
+DateTime _monthStart(DateTime date) => DateTime(date.year, date.month);
