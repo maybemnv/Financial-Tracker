@@ -39,20 +39,16 @@ class MonthlySnapshotJob {
         }
 
         final amount = (row['amount'] as num).toDouble();
-        final type = row['type'] as String;
         final direction = row['direction'] as String?;
-        switch (type) {
-          case 'credit':
-            income += amount;
-            break;
-          case 'debit':
+        if (direction == 'inflow') {
+          income += amount;
+        } else {
+          final type = row['type'] as String;
+          if (type == 'investment') {
+            investments += amount;
+          } else {
             expenses += amount;
-            break;
-          case 'investment':
-            if (direction != 'inflow') {
-              investments += amount;
-            }
-            break;
+          }
         }
       }
 

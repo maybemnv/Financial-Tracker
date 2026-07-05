@@ -27,8 +27,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
           .from('transactions')
           .select()
           .eq('is_deleted', false)
-          .order('created_at', ascending: false)
-          .limit(200);
+          .order('created_at', ascending: false);
       final transactions = (data as List)
           .map((json) => Transaction.fromJson(json as Map<String, dynamic>))
           .toList();

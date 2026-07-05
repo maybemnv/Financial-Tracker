@@ -64,17 +64,17 @@ class _DashboardContent extends ConsumerWidget {
         transactions.where((t) => _isSameMonth(t.effectiveDate, now)).toList();
 
     final earned = thisMonth
-        .where((t) => t.type == 'credit')
+        .where((t) => t.isInflow)
         .fold(0.0, (sum, t) => sum + t.amount);
     final spent = thisMonth
-        .where((t) => t.type == 'debit')
+        .where((t) => t.isOutflow)
         .fold(0.0, (sum, t) => sum + t.amount);
     final saved = earned - spent;
     final savingsRate = earned > 0 ? (saved / earned) * 100 : 0.0;
 
     final categoryMap = <String, double>{};
     for (final t
-        in thisMonth.where((t) => t.type == 'debit' && t.category != null)) {
+        in thisMonth.where((t) => t.isOutflow && t.category != null)) {
       categoryMap.update(t.category!, (v) => v + t.amount,
           ifAbsent: () => t.amount);
     }
