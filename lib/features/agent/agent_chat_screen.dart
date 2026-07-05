@@ -13,7 +13,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   final _messages = <_ChatMessage>[];
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  final _claude = ClaudeService();
+  final _agent = ClaudeService();
   bool _isLoading = false;
 
   @override
@@ -30,12 +30,12 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   }
 
   Future<void> _loadHistory() async {
-    await _claude.ready;
+    await _agent.ready;
     if (!mounted) return;
     setState(() {
       _messages
         ..clear()
-        ..addAll(_claude.visibleMessages().map(
+        ..addAll(_agent.visibleMessages().map(
               (message) => _ChatMessage(
                 text: message.text,
                 isUser: message.isUser,
@@ -50,31 +50,10 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       appBar: AppBar(
         title: const Text('Finance Agent'),
         actions: [
-          PopupMenuButton<ClaudeModel>(
-            icon: const Icon(Icons.settings),
-            onSelected: (m) => setState(() => _claude.model = m),
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: ClaudeModel.haiku45,
-                child: Row(
-                  children: [
-                    Icon(Icons.check, size: 16, color: _claude.model == ClaudeModel.haiku45 ? AppTheme.primaryGreen : Colors.transparent),
-                    const SizedBox(width: 8),
-                    const Text('Haiku 4.5 (default)'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: ClaudeModel.sonnet4,
-                child: Row(
-                  children: [
-                    Icon(Icons.check, size: 16, color: _claude.model == ClaudeModel.sonnet4 ? AppTheme.primaryGreen : Colors.transparent),
-                    const SizedBox(width: 8),
-                    const Text('Sonnet 4 (best)'),
-                  ],
-                ),
-              ),
-            ],
+          const IconButton(
+            icon: Icon(Icons.memory_rounded),
+            tooltip: 'Using Groq with qwen/qwen3-32b',
+            onPressed: null,
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -82,7 +61,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
               setState(() {
                 _messages.clear();
               });
-              await _claude.reset();
+              await _agent.reset();
             },
           ),
         ],
@@ -97,11 +76,20 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.smart_toy, size: 64, color: AppTheme.textSecondary),
+                      const Icon(Icons.smart_toy,
+                          size: 64, color: AppTheme.textSecondary),
                       const SizedBox(height: 16),
-                      const Text('Ask me anything about your finances', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+                      const Text('Ask me anything about your finances',
+                          style: TextStyle(
+                              color: AppTheme.textSecondary, fontSize: 16)),
                       const SizedBox(height: 24),
-                      Text('Model: ${_claude.model.apiName}', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                      const Text('Provider: Groq',
+                          style: TextStyle(
+                              color: AppTheme.textSecondary, fontSize: 11)),
+                      const SizedBox(height: 4),
+                      Text('Model: ${_agent.modelName}',
+                          style: const TextStyle(
+                              color: AppTheme.textSecondary, fontSize: 11)),
                       const SizedBox(height: 16),
                       Wrap(
                         spacing: 8,
@@ -129,16 +117,22 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                 itemBuilder: (context, index) {
                   final msg = _messages[index];
                   return Align(
-                    alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+                    alignment: msg.isUser
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
-                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+                      constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.8),
                       decoration: BoxDecoration(
-                        color: msg.isUser ? AppTheme.primaryGreen.withAlpha(40) : AppTheme.darkCard,
+                        color: msg.isUser
+                            ? AppTheme.primaryGreen.withAlpha(40)
+                            : AppTheme.darkCard,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(msg.text, style: const TextStyle(color: AppTheme.textPrimary)),
+                      child: Text(msg.text,
+                          style: const TextStyle(color: AppTheme.textPrimary)),
                     ),
                   );
                 },
@@ -147,7 +141,10 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.only(bottom: 8),
-              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
             ),
           Container(
             padding: const EdgeInsets.all(12),
@@ -170,7 +167,8 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.send, color: AppTheme.primaryGreen),
-                  onPressed: _isLoading ? null : () => _sendMessage(_inputCtrl.text),
+                  onPressed:
+                      _isLoading ? null : () => _sendMessage(_inputCtrl.text),
                 ),
               ],
             ),
@@ -198,7 +196,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     _inputCtrl.clear();
 
     try {
-      final response = await _claude.ask(text);
+      final response = await _agent.ask(text);
       if (mounted) {
         setState(() {
           _messages.add(_ChatMessage(text: response, isUser: false));
@@ -214,7 +212,8 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _messages.add(_ChatMessage(text: 'Sorry, I could not process that: $e', isUser: false));
+          _messages.add(_ChatMessage(
+              text: 'Sorry, I could not process that: $e', isUser: false));
         });
       }
     } finally {

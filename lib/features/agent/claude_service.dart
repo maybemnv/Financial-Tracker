@@ -5,22 +5,6 @@ import 'package:http/http.dart' as http;
 import '../../core/constants.dart';
 import '../../core/supabase.dart';
 
-enum ClaudeModel {
-  haiku45,
-  sonnet4,
-}
-
-extension ClaudeModelName on ClaudeModel {
-  String get apiName {
-    switch (this) {
-      case ClaudeModel.haiku45:
-        return 'claude-haiku-4-5-20251001';
-      case ClaudeModel.sonnet4:
-        return 'claude-sonnet-4-20250514';
-    }
-  }
-}
-
 class ClaudeVisibleMessage {
   const ClaudeVisibleMessage({
     required this.text,
@@ -34,137 +18,168 @@ class ClaudeVisibleMessage {
 class ClaudeService {
   static const _tools = [
     {
-      'name': 'get_accounts',
-      'description':
-          'List all financial accounts (SBI, Kotak, PayPal, Cash, investments) with their current balance derived from transactions.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {},
+      'type': 'function',
+      'function': {
+        'name': 'get_accounts',
+        'description':
+            'List all financial accounts (SBI, Kotak, PayPal, Cash, investments) with their current balance derived from transactions.',
+        'parameters': {
+          'type': 'object',
+          'properties': {},
+        },
       },
     },
     {
-      'name': 'get_net_worth',
-      'description': 'Get total net worth across all accounts.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {},
+      'type': 'function',
+      'function': {
+        'name': 'get_net_worth',
+        'description': 'Get total net worth across all accounts.',
+        'parameters': {
+          'type': 'object',
+          'properties': {},
+        },
       },
     },
     {
-      'name': 'get_transactions',
-      'description':
-          'Query transactions with optional filters. Returns amount, type, category, merchant, tags, date, and flow direction.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {
-          'type': {
-            'type': 'string',
-            'description':
-                'Filter by type: debit, credit, transfer, investment',
-            'enum': ['debit', 'credit', 'transfer', 'investment']
-          },
-          'category': {
-            'type': 'string',
-            'description':
-                'Filter by category: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other'
-          },
-          'days': {
-            'type': 'number',
-            'description': 'How many days back to look (e.g. 7, 30, 90)'
-          },
-          'account_id': {
-            'type': 'string',
-            'description': 'Filter by account UUID'
-          },
-          'limit': {
-            'type': 'number',
-            'description': 'Max rows to return (default 50)'
+      'type': 'function',
+      'function': {
+        'name': 'get_transactions',
+        'description':
+            'Query transactions with optional filters. Returns amount, type, category, merchant, tags, date, and flow direction.',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'type': {
+              'type': 'string',
+              'description':
+                  'Filter by type: debit, credit, transfer, investment',
+              'enum': ['debit', 'credit', 'transfer', 'investment']
+            },
+            'category': {
+              'type': 'string',
+              'description':
+                  'Filter by category: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other'
+            },
+            'days': {
+              'type': 'number',
+              'description': 'How many days back to look (e.g. 7, 30, 90)'
+            },
+            'account_id': {
+              'type': 'string',
+              'description': 'Filter by account UUID'
+            },
+            'limit': {
+              'type': 'number',
+              'description': 'Max rows to return (default 50)'
+            },
           },
         },
       },
     },
     {
-      'name': 'get_category_breakdown',
-      'description': 'Get spending broken down by category for a given period.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {
-          'days': {
-            'type': 'number',
-            'description': 'Period in days (e.g. 7, 30, 90). Default 30.'
+      'type': 'function',
+      'function': {
+        'name': 'get_category_breakdown',
+        'description':
+            'Get spending broken down by category for a given period.',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'days': {
+              'type': 'number',
+              'description': 'Period in days (e.g. 7, 30, 90). Default 30.'
+            },
           },
         },
       },
     },
     {
-      'name': 'get_cashflow_summary',
-      'description':
-          'Get income, spending, investments, and savings for a specific month or rolling day window. PayPal payout/deposit inflows count as earnings.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {
-          'month': {
-            'type': 'number',
-            'description': 'Calendar month number 1-12. Pair with year.'
-          },
-          'year': {
-            'type': 'number',
-            'description': 'Calendar year, for example 2026. Pair with month.'
-          },
-          'days': {
-            'type': 'number',
-            'description':
-                'Optional rolling window in days. Ignored when month+year are provided.'
+      'type': 'function',
+      'function': {
+        'name': 'get_cashflow_summary',
+        'description':
+            'Get income, spending, investments, and savings for a specific month or rolling day window. PayPal payout/deposit inflows count as earnings.',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'month': {
+              'type': 'number',
+              'description': 'Calendar month number 1-12. Pair with year.'
+            },
+            'year': {
+              'type': 'number',
+              'description': 'Calendar year, for example 2026. Pair with month.'
+            },
+            'days': {
+              'type': 'number',
+              'description':
+                  'Optional rolling window in days. Ignored when month+year are provided.'
+            },
           },
         },
       },
     },
     {
-      'name': 'get_goals',
-      'description':
-          'List all savings goals with target amount, amount allocated, and percent funded.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {},
+      'type': 'function',
+      'function': {
+        'name': 'get_goals',
+        'description':
+            'List all savings goals with target amount, amount allocated, and percent funded.',
+        'parameters': {
+          'type': 'object',
+          'properties': {},
+        },
       },
     },
     {
-      'name': 'get_invoices',
-      'description':
-          'Get freelance invoice summary: total invoiced, received via PayPal, received via bank, outstanding per client.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {},
+      'type': 'function',
+      'function': {
+        'name': 'get_invoices',
+        'description':
+            'Get freelance invoice summary: total invoiced, received via PayPal, received via bank, outstanding per client.',
+        'parameters': {
+          'type': 'object',
+          'properties': {},
+        },
       },
     },
     {
-      'name': 'get_recurring_expenses',
-      'description':
-          'List recurring/monthly expenses (subscriptions, SIPs, etc.) and their total monthly commitment.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {},
+      'type': 'function',
+      'function': {
+        'name': 'get_recurring_expenses',
+        'description':
+            'List recurring/monthly expenses (subscriptions, SIPs, etc.) and their total monthly commitment.',
+        'parameters': {
+          'type': 'object',
+          'properties': {},
+        },
       },
     },
     {
-      'name': 'get_recurring_income',
-      'description':
-          'List expected recurring income and its approximate monthly total.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {},
+      'type': 'function',
+      'function': {
+        'name': 'get_recurring_income',
+        'description':
+            'List expected recurring income and its approximate monthly total.',
+        'parameters': {
+          'type': 'object',
+          'properties': {},
+        },
       },
     },
     {
-      'name': 'get_monthly_snapshots',
-      'description':
-          'Get monthly income, expenses, savings, and investment history from pre-computed snapshots.',
-      'input_schema': {
-        'type': 'object',
-        'properties': {
-          'months': {
-            'type': 'number',
-            'description': 'Number of past months to return (default 12)'
+      'type': 'function',
+      'function': {
+        'name': 'get_monthly_snapshots',
+        'description':
+            'Get monthly income, expenses, savings, and investment history from pre-computed snapshots.',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'months': {
+              'type': 'number',
+              'description': 'Number of past months to return (default 12)'
+            },
           },
         },
       },
@@ -176,27 +191,20 @@ class ClaudeService {
   late final Future<void> _loadFuture = _loadLastSession();
 
   String? _sessionId;
-  ClaudeModel model = ClaudeModel.haiku45;
 
   Future<void> get ready => _loadFuture;
+  String get modelName => AppConstants.agentModel;
 
   List<ClaudeVisibleMessage> visibleMessages() {
     final visible = <ClaudeVisibleMessage>[];
     for (final message in _messages) {
-      final role = message['role'];
-      final content = message['content'];
-      if (role == 'user' && content is String) {
-        visible.add(ClaudeVisibleMessage(text: content, isUser: true));
-      } else if (role == 'assistant' && content is List) {
-        final text = content
-            .whereType<Map>()
-            .where((block) => block['type'] == 'text')
-            .map((block) => block['text'] as String? ?? '')
-            .where((text) => text.isNotEmpty)
-            .join('\n');
-        if (text.isNotEmpty) {
-          visible.add(ClaudeVisibleMessage(text: text, isUser: false));
-        }
+      final role = message['role'] as String?;
+      final text = _extractVisibleText(message['content']);
+      if (text.isEmpty) continue;
+      if (role == 'user') {
+        visible.add(ClaudeVisibleMessage(text: text, isUser: true));
+      } else if (role == 'assistant') {
+        visible.add(ClaudeVisibleMessage(text: text, isUser: false));
       }
     }
     return visible;
@@ -214,15 +222,12 @@ class ClaudeService {
 
     for (var turn = 0; turn < 10; turn++) {
       final body = {
-        'model': model.apiName,
+        'model': modelName,
         'max_tokens': 2048,
-        'system': 'You are a personal finance assistant. You have access to financial data through tools. '
-            'Use the tools to gather the information you need to answer the user\'s question. '
-            'Treat PayPal payout or deposit inflows as earnings. '
-            'Use recurring income and recurring expense tools for affordability and runway questions. '
-            'Be concise, specific, and cite actual numbers.',
+        'temperature': 0.2,
         'messages': _messages,
         'tools': _tools,
+        'tool_choice': 'auto',
       };
 
       http.Response response;
@@ -239,30 +244,37 @@ class ClaudeService {
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final content = data['content'] as List<dynamic>;
-      final stopReason = data['stop_reason'] as String?;
-
-      if (content.isNotEmpty) {
-        _messages.add({'role': 'assistant', 'content': content});
-      }
-
-      if (stopReason == 'end_turn' || stopReason == 'stop') {
-        final texts = content
-            .where((c) => (c as Map)['type'] == 'text')
-            .map((c) => (c as Map)['text'] as String)
-            .join('\n');
+      final choices = (data['choices'] as List<dynamic>? ?? const []);
+      if (choices.isEmpty) {
         await _persistMessages();
-        return texts;
+        return 'Error: Groq returned no choices.';
       }
 
-      if (stopReason == 'tool_use') {
-        final toolResults = <Map<String, dynamic>>[];
-        for (final block in content) {
-          if ((block as Map)['type'] != 'tool_use') continue;
+      final choice = Map<String, dynamic>.from(choices.first as Map);
+      final message =
+          Map<String, dynamic>.from(choice['message'] as Map? ?? const {});
+      final assistantText = _extractVisibleText(message['content']);
+      final toolCalls =
+          (message['tool_calls'] as List<dynamic>? ?? const []).map((call) {
+        return Map<String, dynamic>.from(call as Map);
+      }).toList();
 
-          final toolName = block['name'] as String;
-          final toolInput = block['input'] as Map<String, dynamic>? ?? {};
-          final toolId = block['id'] as String;
+      if (toolCalls.isNotEmpty) {
+        _messages.add({
+          'role': 'assistant',
+          'content': assistantText,
+          'tool_calls': toolCalls,
+        });
+
+        for (final toolCall in toolCalls) {
+          final function = Map<String, dynamic>.from(
+            toolCall['function'] as Map? ?? const {},
+          );
+          final toolName = function['name'] as String? ?? '';
+          final toolId = toolCall['id'] as String? ?? '';
+          final toolInput = _decodeToolArguments(
+            function['arguments'] as String?,
+          );
 
           String result;
           try {
@@ -271,20 +283,23 @@ class ClaudeService {
             result = 'Error executing $toolName: $e';
           }
 
-          toolResults.add({
-            'type': 'tool_result',
-            'tool_use_id': toolId,
+          _messages.add({
+            'role': 'tool',
+            'tool_call_id': toolId,
             'content': result,
           });
-        }
-
-        if (toolResults.isNotEmpty) {
-          _messages.add({'role': 'user', 'content': toolResults});
         }
         continue;
       }
 
-      break;
+      if (assistantText.isNotEmpty) {
+        _messages.add({'role': 'assistant', 'content': assistantText});
+        await _persistMessages();
+        return assistantText;
+      }
+
+      await _persistMessages();
+      return 'I could not complete that request. Please try rephrasing.';
     }
 
     await _persistMessages();
@@ -306,11 +321,63 @@ class ClaudeService {
       if (stored is List) {
         _messages
           ..clear()
-          ..addAll(stored.map((m) => Map<String, dynamic>.from(m as Map)));
+          ..addAll(_normalizeStoredMessages(stored));
       }
     } catch (_) {
       // Persistence must never block the agent if the migration is not applied.
     }
+  }
+
+  List<Map<String, dynamic>> _normalizeStoredMessages(List<dynamic> raw) {
+    final normalized = <Map<String, dynamic>>[];
+
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final message = Map<String, dynamic>.from(item);
+      final role = message['role'] as String?;
+      if (role == null) continue;
+
+      if (role == 'user') {
+        final text = _extractVisibleText(message['content']);
+        if (text.isNotEmpty) {
+          normalized.add({'role': 'user', 'content': text});
+        }
+        continue;
+      }
+
+      if (role == 'assistant') {
+        final toolCalls =
+            (message['tool_calls'] as List<dynamic>? ?? const []).map((call) {
+          return Map<String, dynamic>.from(call as Map);
+        }).toList();
+        final text = _extractVisibleText(message['content']);
+
+        if (toolCalls.isNotEmpty) {
+          normalized.add({
+            'role': 'assistant',
+            'content': text,
+            'tool_calls': toolCalls,
+          });
+        } else if (text.isNotEmpty) {
+          normalized.add({'role': 'assistant', 'content': text});
+        }
+        continue;
+      }
+
+      if (role == 'tool') {
+        final content = _extractVisibleText(message['content']);
+        final toolCallId = message['tool_call_id'] as String?;
+        if (content.isNotEmpty && toolCallId != null && toolCallId.isNotEmpty) {
+          normalized.add({
+            'role': 'tool',
+            'tool_call_id': toolCallId,
+            'content': content,
+          });
+        }
+      }
+    }
+
+    return normalized;
   }
 
   Future<void> _persistMessages() async {
@@ -340,11 +407,10 @@ class ClaudeService {
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
         final response = await http.post(
-          Uri.parse(AppConstants.claudeApiUrl),
+          Uri.parse(AppConstants.groqApiUrl),
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': AppConstants.claudeApiKey,
-            'anthropic-version': '2023-06-01',
+            'Authorization': 'Bearer ${AppConstants.groqApiKey}',
           },
           body: jsonEncode(body),
         );
@@ -365,7 +431,46 @@ class ClaudeService {
     if (lastResponse != null) {
       return lastResponse;
     }
-    throw Exception(lastError ?? 'Claude request failed');
+    throw Exception(lastError ?? 'Groq request failed');
+  }
+
+  Map<String, dynamic> _decodeToolArguments(String? raw) {
+    if (raw == null || raw.trim().isEmpty) {
+      return <String, dynamic>{};
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return decoded.map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+      }
+    } catch (_) {}
+    return <String, dynamic>{};
+  }
+
+  String _extractVisibleText(dynamic content) {
+    if (content is String) {
+      return content.trim();
+    }
+    if (content is List) {
+      return content
+          .whereType<Map>()
+          .map((block) => Map<String, dynamic>.from(block))
+          .where((block) {
+            final type = block['type'] as String?;
+            return type == null || type == 'text';
+          })
+          .map((block) => block['text'] as String? ?? '')
+          .where((text) => text.trim().isNotEmpty)
+          .join('\n')
+          .trim();
+    }
+    return '';
   }
 
   Future<String> _executeTool(String name, Map<String, dynamic> input) async {
