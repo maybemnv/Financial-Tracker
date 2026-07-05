@@ -97,6 +97,29 @@ class ClaudeService {
       },
     },
     {
+      'name': 'get_cashflow_summary',
+      'description':
+          'Get income, spending, investments, and savings for a specific month or rolling day window. PayPal payout/deposit inflows count as earnings.',
+      'input_schema': {
+        'type': 'object',
+        'properties': {
+          'month': {
+            'type': 'number',
+            'description': 'Calendar month number 1-12. Pair with year.'
+          },
+          'year': {
+            'type': 'number',
+            'description': 'Calendar year, for example 2026. Pair with month.'
+          },
+          'days': {
+            'type': 'number',
+            'description':
+                'Optional rolling window in days. Ignored when month+year are provided.'
+          },
+        },
+      },
+    },
+    {
       'name': 'get_goals',
       'description':
           'List all savings goals with target amount, amount allocated, and percent funded.',
@@ -195,6 +218,7 @@ class ClaudeService {
         'max_tokens': 2048,
         'system': 'You are a personal finance assistant. You have access to financial data through tools. '
             'Use the tools to gather the information you need to answer the user\'s question. '
+            'Treat PayPal payout or deposit inflows as earnings. '
             'Use recurring income and recurring expense tools for affordability and runway questions. '
             'Be concise, specific, and cite actual numbers.',
         'messages': _messages,
@@ -354,6 +378,8 @@ class ClaudeService {
         return _getTransactions(input);
       case 'get_category_breakdown':
         return _getCategoryBreakdown(input);
+      case 'get_cashflow_summary':
+        return _getCashflowSummary(input);
       case 'get_goals':
         return _getGoals();
       case 'get_invoices':
@@ -510,6 +536,82 @@ class ClaudeService {
       return lines.join('\n');
     } catch (e) {
       return 'Error computing category breakdown: $e';
+    }
+  }
+
+  Future<String> _getCashflowSummary(Map<String, dynamic> input) async {
+    try {
+      final month = (input['month'] as num?)?.toInt();
+      final year = (input['year'] as num?)?.toInt();
+      final days = (input['days'] as num?)?.toInt();
+
+      final now = DateTime.now();
+      late final DateTime periodStart;
+      late final DateTime periodEnd;
+      late final String label;
+
+      if (month != null && year != null) {
+        periodStart = DateTime(year, month);
+        periodEnd = DateTime(year, month + 1);
+        label =
+            '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}';
+      } else {
+        final rollingDays = days ?? 30;
+        periodStart = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).subtract(Duration(days: rollingDays - 1));
+        periodEnd = now.add(const Duration(days: 1));
+        label = 'last $rollingDays days';
+      }
+
+      final data = await supabase
+          .from('transactions')
+          .select(
+              'amount, type, direction, merchant, bank, note, created_at, transacted_at')
+          .eq('is_deleted', false)
+          .order('created_at', ascending: false)
+          .limit(500);
+
+      var income = 0.0;
+      var spending = 0.0;
+      var investments = 0.0;
+      var transactionCount = 0;
+
+      for (final rawRow in (data as List)) {
+        final row = Map<String, dynamic>.from(rawRow as Map);
+        final effectiveDate = _effectiveDate(row);
+        if (effectiveDate == null ||
+            effectiveDate.isBefore(periodStart) ||
+            !effectiveDate.isBefore(periodEnd)) {
+          continue;
+        }
+
+        transactionCount += 1;
+        final amount = (row['amount'] as num).toDouble();
+        if (_isInvestmentOutflowRow(row)) {
+          investments += amount;
+        } else if (_isIncomeRow(row)) {
+          income += amount;
+        } else if (_isSpendingRow(row)) {
+          spending += amount;
+        }
+      }
+
+      final savings = income - spending;
+      final savingsRate = income > 0 ? (savings / income) * 100 : 0.0;
+
+      return '$label\n'
+          'Income: ${income.toStringAsFixed(2)}\n'
+          'Spending: ${spending.toStringAsFixed(2)}\n'
+          'Investments: ${investments.toStringAsFixed(2)}\n'
+          'Savings: ${savings.toStringAsFixed(2)}\n'
+          'Savings rate: ${savingsRate.toStringAsFixed(1)}%\n'
+          'Transactions considered: $transactionCount\n'
+          'PayPal payout/deposit inflows are included in income.';
+    } catch (e) {
+      return 'Error computing cashflow summary: $e';
     }
   }
 
@@ -695,5 +797,35 @@ class ClaudeService {
     final direction = row['direction'] as String?;
     if (direction != null) return direction == 'inflow';
     return row['type'] == 'credit';
+  }
+
+  bool _isIncomeRow(Map<String, dynamic> row) {
+    final type = row['type'] as String?;
+    if (type == 'transfer' || type == 'investment') return false;
+    if (_looksLikePayPalEarning(row) && _isInflow(row)) return true;
+    return _isInflow(row) || type == 'credit';
+  }
+
+  bool _isSpendingRow(Map<String, dynamic> row) {
+    final type = row['type'] as String?;
+    if (type == 'transfer' || type == 'investment') return false;
+    return !_isIncomeRow(row);
+  }
+
+  bool _isInvestmentOutflowRow(Map<String, dynamic> row) {
+    final type = row['type'] as String?;
+    if (type != 'investment') return false;
+    final direction = row['direction'] as String?;
+    return direction == null || direction == 'outflow';
+  }
+
+  bool _looksLikePayPalEarning(Map<String, dynamic> row) {
+    final merchant = (row['merchant'] as String?)?.toLowerCase() ?? '';
+    final bank = (row['bank'] as String?)?.toLowerCase() ?? '';
+    final note = (row['note'] as String?)?.toLowerCase() ?? '';
+    return merchant.contains('paypal') ||
+        bank.contains('paypal') ||
+        note.contains('paypal payout') ||
+        note.contains('paypal deposit');
   }
 }

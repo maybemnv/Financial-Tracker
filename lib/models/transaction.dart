@@ -62,6 +62,16 @@ class Transaction {
   bool get isCredit => type == 'credit';
   bool get isTransfer => type == 'transfer';
   bool get isInvestment => type == 'investment';
+  bool get isPayPalPayoutOrDeposit {
+    final merchantText = merchant?.toLowerCase() ?? '';
+    final bankText = bank?.toLowerCase() ?? '';
+    final noteText = note?.toLowerCase() ?? '';
+    return merchantText.contains('paypal') ||
+        bankText.contains('paypal') ||
+        noteText.contains('paypal payout') ||
+        noteText.contains('paypal deposit');
+  }
+
   bool get isInflow =>
       direction != null ? direction == 'inflow' : type == 'credit';
   bool get isOutflow => !isInflow;

@@ -274,6 +274,7 @@ class _DailyAccumulator {
 
 bool _isIncome(Transaction transaction) {
   if (transaction.isTransfer || transaction.isInvestment) return false;
+  if (transaction.isInflow && transaction.isPayPalPayoutOrDeposit) return true;
   return transaction.type == 'credit' || transaction.isInflow;
 }
 

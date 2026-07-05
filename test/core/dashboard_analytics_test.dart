@@ -83,21 +83,24 @@ void main() {
       expect(analytics.spendingCategories.single.label, 'Uncategorized');
     });
 
-    test('can focus a prior month', () {
+    test('can focus a prior month and counts PayPal payout inflows as income',
+        () {
       final analytics = DashboardAnalytics.fromTransactions(
         [
           Transaction(
             amount: 30219.77,
             type: 'credit',
             direction: 'inflow',
-            merchant: 'Client A',
+            merchant: 'PayPal',
+            note: 'PayPal payout NEFTINW-1635580463',
             transactedAt: DateTime(2026, 7, 1),
           ),
           Transaction(
             amount: 26165.94,
             type: 'credit',
             direction: 'inflow',
-            merchant: 'Client B',
+            merchant: 'PayPal',
+            note: 'PayPal payout NEFTINW-1619160089',
             transactedAt: DateTime(2026, 6, 15),
           ),
           Transaction(
