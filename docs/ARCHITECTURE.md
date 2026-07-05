@@ -90,6 +90,12 @@ graph LR
         IN["InvoiceNotifier<br/>List<Invoice>"]
     end
 
+    subgraph Derived["Derived Providers (FutureProvider)"]
+        AB["accountBalancesProvider<br/>Map account_id -> balance"]
+        NW["netWorthProvider<br/>double"]
+        DA["DashboardAnalytics<br/>(pure computation class)"]
+    end
+
     subgraph Supabase["Supabase"]
         TXT[transactions]
         GLT[goals]
@@ -107,16 +113,24 @@ graph LR
     GN <-->|select/insert + subscribe| GLT
     IN <-->|select/insert + subscribe| IVT
 
+    AB -->|calls RPC per account| TXT
+    NW -->|calls fn_net_worth| TXT
+    DA -->|computes from| TN
+
     TLS -->|watch| TN
     DS -->|watch| TN
+    DS -->|watch| AB
+    DS -->|watch| NW
     GS -->|watch| GN
     IS -->|watch| IN
 ```
 
 Each provider:
-1. Calls `load()` on creation (SELECT with order + limit)
+1. Calls `load()` on creation (SELECT with order, no limit — all non-deleted rows)
 2. Subscribes to Realtime channel (pushes trigger `load()` on change)
 3. Exposes `add()`, `update()`, `delete()` that call Supabase then refresh local state
+
+The `DashboardScreen` uses a `WidgetsBindingObserver` to call `_refresh()` on mount and app resume — invalidating all account/balance providers and reloading the transaction provider so metrics are always fresh.
 
 ---
 
@@ -266,5 +280,8 @@ flowchart LR
 | Agent approach | Claude tool-use (8 tools) | Claude decides which queries to run per turn — no pre-fetching, smarter context selection |
 | Agent models | Haiku 4.5 (default) + Sonnet 4 | Switcher in settings menu; both support tool-use |
 | Transaction dates | `transacted_at` (user-set) + `created_at` (server) | `transacted_at` is the actual money-move date; falls back to `created_at` for display/balance calculation |
+| Ledger direction | `direction` column (`inflow`/`outflow`) | Independent of `type` — the RPC uses `direction` directly so transfer/investment legs balance correctly. Model helpers `isInflow`/`isOutflow` fall back to `type` for backward compatibility. |
+| Dashboard refresh | `WidgetsBindingObserver` + `ref.invalidate()` | On mount and app resume, all providers are invalidated so metrics reflect the latest DB state. Pull-to-refresh also reloads the transaction provider. |
+| Dashboard analytics | `DashboardAnalytics.fromTransactions()` | Pure computation class that aggregates transactions into `currentMonth` summary, `monthlyTrend` per-month buckets, and `spendingCategories` pie chart data. |
 | No auth | Single anon key | Personal tool, 2 devices max |
 | Charts | fl_chart | Pie + line, battle-tested Flutter lib |

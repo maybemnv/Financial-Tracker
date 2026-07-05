@@ -9,11 +9,12 @@ Postgres database hosted on Supabase. All tables use UUID primary keys with `gen
 Core ledger. Every financial event lives here — debits, credits, transfers, and investments.
 
 | Column | Type | Default | Notes |
-|---|---|---|---|
+|---|---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
 | `account_id` | `uuid FK` | | References `accounts.id`. Every transaction belongs to an account. |
-| `amount` | `numeric` | | Always positive. Direction determined by `type`. |
+| `amount` | `numeric` | | Always positive. Direction determined by `direction` column. |
 | `type` | `text` | | `debit`, `credit`, `transfer`, or `investment` |
+| `direction` | `text` | | `inflow` or `outflow`. Explicit ledger direction — the RPC uses this directly instead of inferring from `type`. Required (non-null) after migration 00004. |
 | `vpa` | `text` | `nullable` | UPI VPA (e.g. `user@paytm`, `user@oksbi`) |
 | `merchant` | `text` | `nullable` | Merchant name extracted from SMS or manual entry |
 | `bank` | `text` | `nullable` | Bank name from SMS |
@@ -41,14 +42,16 @@ CHECK (amount > 0)
 CHECK (source IN ('sms', 'manual'))
 ```
 
-### Type semantics
+### Type + Direction semantics
 
-| Type | Effect on source account | Effect on destination | Net worth impact |
+`type` captures the semantic kind for reporting; `direction` captures whether the row adds to or subtracts from the account balance. The `fn_account_balance` RPC uses `direction` directly (not `type`), so `credit` rows always have `direction = 'inflow'` and `debit` rows always have `direction = 'outflow'`. Transfers and investments use explicit inflow/outflow per leg.
+
+| Type | `direction` (source leg) | `direction` (destination leg) | Net worth impact |
 |---|---|---|---|
-| `debit` | Balance decreases | — | Decreases |
-| `credit` | Balance increases | — | Increases |
-| `transfer` | Balance decreases | Balance increases (linked row) | None |
-| `investment` | Balance decreases | Investment account increases | None |
+| `debit` | `outflow` | — | Decreases |
+| `credit` | `inflow` | — | Increases |
+| `transfer` | `outflow` | `inflow` | None |
+| `investment` | `outflow` | `inflow` | None |
 
 ### Indexes
 
@@ -283,7 +286,7 @@ Applied to: `transactions`, `invoices`, `chat_sessions`
 
 ### `fn_account_balance(p_account_id uuid)`
 
-Returns the derived current balance for an account: `opening_balance + SUM(credits) - SUM(debits)` for transactions after `opening_date`. Uses `COALESCE(transacted_at, created_at)` for the date filter so backdated entries count correctly. Excludes transfers and investments, ignores soft-deleted rows.
+Returns the derived current balance for an account: `opening_balance + SUM(inflows) - SUM(outflows)` for transactions after `opening_date`. Uses the `direction` column directly (not `type`), so transfer and investment legs with explicit direction are correctly included. Uses `COALESCE(transacted_at, created_at)` for the date filter so backdated entries count correctly. Ignores soft-deleted rows.
 
 ```sql
 CREATE OR REPLACE FUNCTION fn_account_balance(p_account_id uuid)
@@ -296,11 +299,13 @@ BEGIN
   SELECT opening_balance, opening_date INTO ob, od
   FROM accounts WHERE id = p_account_id;
 
-  SELECT COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE -amount END), 0)
+  SELECT COALESCE(
+    SUM(CASE WHEN direction = 'inflow' THEN amount ELSE -amount END),
+    0
+  )
   INTO tx_total
   FROM transactions
   WHERE account_id = p_account_id
-    AND type IN ('debit', 'credit')
     AND is_deleted = false
     AND (od IS NULL OR COALESCE(transacted_at, created_at) >= od);
 
@@ -366,9 +371,10 @@ These are enforced at the application layer (not in SQL constraints):
 |---|---|
 | **Soft delete** | Nothing is ever `DELETE FROM`. Use `is_deleted = true` + `deleted_at`. |
 | **Immutable history** | Every update appends to `edit_history` JSONB. Previous values are never overwritten silently. |
-| **Double-entry transfers** | A transfer creates two rows in `transactions` — one `debit` from source account, one `credit` to destination account — linked by `transfer_group_id`. |
-| **Investments are not expenses** | `type = 'investment'` decreases cash balance but does not count as spending in reports. Net worth is unchanged. |
-| **Balances are derived, not stored** | `accounts` has `opening_balance` + `opening_date`. Current balance is computed by `fn_account_balance()` as `opening + SUM(credits) - SUM(debits)` on transactions after the opening date. No `balance` column to drift out of sync. |
+| **Explicit ledger direction** | Every row has a `direction` column (`inflow`/`outflow`) independent of `type`. The RPC uses `direction` directly so transfer/investment legs are balanced correctly. The model's `isInflow`/`isOutflow` helpers fall back to `type` when `direction` is null for backward compatibility. |
+| **Double-entry transfers** | A transfer creates two rows in `transactions` — one with `direction = outflow` from source account, one with `direction = inflow` to destination account — linked by `transfer_group_id`. |
+| **Investments are not expenses** | `type = 'investment'` with `direction = outflow` decreases cash balance but does not count as spending in reports. Net worth is unchanged. |
+| **Balances are derived, not stored** | `accounts` has `opening_balance` + `opening_date`. Current balance is computed by `fn_account_balance()` as `opening + SUM(inflows) - SUM(outflows)` on transactions after the opening date. No `balance` column to drift out of sync. |
 | **AI never modifies data** | No agent function can `UPDATE`, `DELETE`, or `INSERT` transactions. Agent is read-only + categorization-only. |
 
 ---
