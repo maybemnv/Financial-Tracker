@@ -1,4 +1,4 @@
-import 'dart:math';
+﻿import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +12,7 @@ import '../../models/transaction.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/transaction_provider.dart';
+import '../../widgets/newsprint_primitives.dart';
 
 final currencyFormat =
     NumberFormat.currency(symbol: '\u20B9', decimalDigits: 0, locale: 'en_IN');
@@ -74,9 +75,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final transactionsAsync = ref.watch(transactionProvider);
     final goalsAsync = ref.watch(goalProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Dashboard')),
-      body: transactionsAsync.when(
+    return NewsprintPage(
+      kicker: 'Briefing',
+      title: 'Monthly money briefing',
+      subtitle: 'Cashflow, balances, savings pace, and problem spots pulled into one blunt operating view.',
+      child: transactionsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ErrorState(
           error: '$error',
@@ -1458,3 +1461,7 @@ double _niceInterval(double range) {
   if (rough <= 25000) return 5000;
   return 10000;
 }
+
+
+
+

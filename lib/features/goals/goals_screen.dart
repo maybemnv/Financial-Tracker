@@ -1,12 +1,14 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/theme.dart';
 import '../../models/goal.dart';
 import '../../providers/goal_provider.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/newsprint_primitives.dart';
 
-final currencyFormat = NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
+final currencyFormat = NumberFormat.currency(symbol: 'INR ', decimalDigits: 0, locale: 'en_IN');
 
 class GoalsScreen extends ConsumerWidget {
   const GoalsScreen({super.key});
@@ -15,60 +17,74 @@ class GoalsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final goalsAsync = ref.watch(goalProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Goals')),
-      body: goalsAsync.when(
+    return NewsprintPage(
+      kicker: 'Targets',
+      title: 'Savings board',
+      subtitle: 'Emergency cash stays pinned. Everything else competes for allocation below it.',
+      actions: [
+        FilledButton.icon(
+          onPressed: () => _showAddGoalDialog(context),
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('NEW GOAL'),
+        ),
+      ],
+      child: goalsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: AppTheme.redAccent),
-              const SizedBox(height: 16),
-              Text('$e', style: const TextStyle(color: AppTheme.textSecondary)),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => ref.read(goalProvider.notifier).load(),
-                child: const Text('Retry'),
-              ),
-            ],
+          child: NewsprintNotice(
+            icon: Icons.error_outline_rounded,
+            title: 'Goal desk offline',
+            message: '$e',
+            color: AppTheme.redAccent,
           ),
         ),
         data: (goals) {
           if (goals.isEmpty) {
             return const EmptyState(
-              icon: Icons.flag,
+              icon: Icons.flag_rounded,
               title: 'No goals yet',
-              subtitle: 'Set a savings goal to track your progress',
+              subtitle: 'Create a fund, device, or buffer target to turn idle cash into a visible plan.',
             );
           }
+
           final sorted = _sorted(goals);
+          final totalTarget = sorted.fold<double>(0, (sum, goal) => sum + goal.targetAmount);
+          final totalSaved = sorted.fold<double>(0, (sum, goal) => sum + goal.allocatedAmount);
+
           return RefreshIndicator(
             onRefresh: () => ref.read(goalProvider.notifier).load(),
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              // Emergency fund is always pinned to the top.
-              itemCount: sorted.length,
-              itemBuilder: (context, index) => _GoalCard(goal: sorted[index]),
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    NewsprintMetricStrip(label: 'Goals', value: '${sorted.length}'),
+                    NewsprintMetricStrip(label: 'Saved', value: currencyFormat.format(totalSaved)),
+                    NewsprintMetricStrip(label: 'Target', value: currencyFormat.format(totalTarget)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...sorted.map((goal) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _GoalCard(goal: goal),
+                    )),
+              ],
             ),
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddGoalDialog(context, ref),
-        child: const Icon(Icons.add),
-      ),
     );
   }
 
-  void _showAddGoalDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
+  void _showAddGoalDialog(BuildContext context) {
+    showDialog<void>(
       context: context,
       builder: (ctx) => const _AddGoalDialog(),
     );
   }
 
-  /// Emergency fund first, then the rest in creation order.
   List<Goal> _sorted(List<Goal> goals) {
     final copy = [...goals];
     copy.sort((a, b) {
@@ -82,6 +98,7 @@ class GoalsScreen extends ConsumerWidget {
 
 class _AddGoalDialog extends ConsumerStatefulWidget {
   const _AddGoalDialog();
+
   @override
   ConsumerState<_AddGoalDialog> createState() => _AddGoalDialogState();
 }
@@ -106,15 +123,17 @@ class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Goal Name *')),
+          TextField(
+            controller: _nameCtrl,
+            decoration: const InputDecoration(labelText: 'Goal Name *'),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _amountCtrl,
-            decoration: const InputDecoration(labelText: 'Target Amount (₹) *'),
+            decoration: const InputDecoration(labelText: 'Target Amount (INR) *'),
             keyboardType: TextInputType.number,
           ),
           const SizedBox(height: 12),
-          // Goal type drives dashboard detection — not the name.
           SegmentedButton<String>(
             segments: const [
               ButtonSegment(value: 'custom', label: Text('Custom')),
@@ -126,12 +145,12 @@ class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
         FilledButton(
           onPressed: _isSaving ? null : _submit,
           child: _isSaving
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Create'),
+              : const Text('CREATE'),
         ),
       ],
     );
@@ -146,13 +165,14 @@ class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
       );
       return;
     }
+
     setState(() => _isSaving = true);
     try {
       await ref.read(goalProvider.notifier).add(Goal(
-        name: _nameCtrl.text,
-        targetAmount: amount,
-        type: _type,
-      ));
+            name: _nameCtrl.text,
+            targetAmount: amount,
+            type: _type,
+          ));
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -167,60 +187,79 @@ class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
 }
 
 class _GoalCard extends ConsumerWidget {
-  final Goal goal;
   const _GoalCard({required this.goal});
+
+  final Goal goal;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pct = goal.fundedPercent;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text(goal.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                Text('${pct.toStringAsFixed(0)}%', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primaryGreen)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: pct / 100,
-                minHeight: 10,
-                backgroundColor: AppTheme.darkBg,
-                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
+    final pct = goal.fundedPercent.clamp(0, 100).toDouble();
+    final remaining = (goal.targetAmount - goal.allocatedAmount).clamp(0, double.infinity);
+
+    return NewsprintPanel(
+      color: goal.isEmergencyFund ? AppTheme.paper : AppTheme.paperAlt,
+      accentTop: goal.isEmergencyFund,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (goal.isEmergencyFund)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: NewsprintTag(label: 'Emergency fund'),
+                      ),
+                    Text(goal.name, style: Theme.of(context).textTheme.titleLarge),
+                  ],
+                ),
+              ),
+              Text(
+                '${pct.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontSize: 24,
+                      color: goal.isEmergencyFund ? AppTheme.redAccent : AppTheme.ink,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRect(
+            child: LinearProgressIndicator(
+              value: pct / 100,
+              minHeight: 14,
+              backgroundColor: AppTheme.paperMuted,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                goal.isEmergencyFund ? AppTheme.redAccent : AppTheme.ink,
               ),
             ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('${currencyFormat.format(goal.allocatedAmount)} saved', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                Text('Target: ${currencyFormat.format(goal.targetAmount)}', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => _showAllocateDialog(context, ref),
-                child: const Text('Allocate Funds'),
-              ),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              NewsprintMetricStrip(label: 'Saved', value: currencyFormat.format(goal.allocatedAmount)),
+              NewsprintMetricStrip(label: 'Target', value: currencyFormat.format(goal.targetAmount)),
+              NewsprintMetricStrip(label: 'Remaining', value: currencyFormat.format(remaining)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton(
+            onPressed: () => _showAllocateDialog(context),
+            child: const Text('ALLOCATE FUNDS'),
+          ),
+        ],
       ),
     );
   }
 
-  void _showAllocateDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
+  void _showAllocateDialog(BuildContext context) {
+    showDialog<void>(
       context: context,
       builder: (ctx) => _AllocateDialog(goal: goal),
     );
@@ -228,8 +267,9 @@ class _GoalCard extends ConsumerWidget {
 }
 
 class _AllocateDialog extends ConsumerStatefulWidget {
-  final Goal goal;
   const _AllocateDialog({required this.goal});
+
+  final Goal goal;
 
   @override
   ConsumerState<_AllocateDialog> createState() => _AllocateDialogState();
@@ -251,16 +291,16 @@ class _AllocateDialogState extends ConsumerState<_AllocateDialog> {
       title: const Text('Allocate Funds'),
       content: TextField(
         controller: _ctrl,
-        decoration: const InputDecoration(labelText: 'Amount (₹) *'),
+        decoration: const InputDecoration(labelText: 'Amount (INR) *'),
         keyboardType: TextInputType.number,
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
         FilledButton(
           onPressed: _isSaving ? null : _submit,
           child: _isSaving
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Allocate'),
+              : const Text('ALLOCATE'),
         ),
       ],
     );
@@ -270,6 +310,7 @@ class _AllocateDialogState extends ConsumerState<_AllocateDialog> {
     if (_ctrl.text.isEmpty) return;
     final amount = double.tryParse(_ctrl.text);
     if (amount == null || amount <= 0) return;
+
     setState(() => _isSaving = true);
     try {
       await ref.read(goalProvider.notifier).allocate(widget.goal.id!, amount);

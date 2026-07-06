@@ -1,13 +1,15 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+
 import '../../core/theme.dart';
 import '../../models/invoice.dart';
 import '../../providers/invoice_provider.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/newsprint_primitives.dart';
 
-final usdFormat = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
-final currencyFormat = NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
+final usdFormat = NumberFormat.currency(symbol: '\u0024', decimalDigits: 2);
+final currencyFormat = NumberFormat.currency(symbol: 'INR ', decimalDigits: 0, locale: 'en_IN');
 
 class InvoiceSidebar extends ConsumerWidget {
   const InvoiceSidebar({super.key});
@@ -17,90 +19,117 @@ class InvoiceSidebar extends ConsumerWidget {
     final invoicesAsync = ref.watch(invoiceProvider);
 
     return Drawer(
-      width: MediaQuery.of(context).size.width * 0.85,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Invoices'),
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.pop(context),
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () => _showAddInvoiceDialog(context, ref),
+      width: MediaQuery.of(context).size.width * 0.88,
+      backgroundColor: AppTheme.scaffold,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: invoicesAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(
+              child: NewsprintNotice(
+                icon: Icons.error_outline_rounded,
+                title: 'Invoice desk offline',
+                message: '$e',
+                color: AppTheme.redAccent,
+              ),
             ),
-          ],
-        ),
-        body: invoicesAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: AppTheme.redAccent),
-                const SizedBox(height: 16),
-                Text('$e', style: const TextStyle(color: AppTheme.textSecondary)),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.read(invoiceProvider.notifier).load(),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
-          data: (invoices) {
-            if (invoices.isEmpty) {
-              return const EmptyState(
-                icon: Icons.receipt_long,
-                title: 'No invoices',
-                subtitle: 'Tap + to add an invoice',
-              );
-            }
+            data: (invoices) {
+              final totalInvoiced = invoices.fold(0.0, (s, i) => s + i.invoicedUsd);
+              final totalReceived = invoices.fold(0.0, (s, i) => s + i.totalReceived);
+              final totalOutstanding = totalInvoiced - totalReceived;
 
-            final totalInvoiced = invoices.fold(0.0, (s, i) => s + i.invoicedUsd);
-            final totalReceived = invoices.fold(0.0, (s, i) => s + i.totalReceived);
-            final totalOutstanding = totalInvoiced - totalReceived;
-
-            return Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  color: AppTheme.darkCard,
-                  child: Row(
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  NewsprintPanel(
+                    color: AppTheme.ink,
+                    accentTop: true,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'INVOICE DESK',
+                                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                      color: AppTheme.paper,
+                                    ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Freelance exposure, cash received, and what is still outstanding.',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: AppTheme.paperMuted,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close_rounded, color: AppTheme.paper),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
                     children: [
-                      _Summary(label: 'Invoiced', amount: usdFormat.format(totalInvoiced), color: AppTheme.accentGold),
-                      const SizedBox(width: 12),
-                      _Summary(label: 'Received', amount: usdFormat.format(totalReceived), color: AppTheme.primaryGreen),
-                      const SizedBox(width: 12),
-                      _Summary(label: 'Outstanding', amount: usdFormat.format(totalOutstanding), color: totalOutstanding > 0 ? AppTheme.redAccent : AppTheme.primaryGreen),
+                      Expanded(child: _Summary(label: 'Invoiced', amount: usdFormat.format(totalInvoiced), color: AppTheme.accentGold)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _Summary(label: 'Received', amount: usdFormat.format(totalReceived), color: AppTheme.primaryGreen)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _Summary(label: 'Open', amount: usdFormat.format(totalOutstanding), color: totalOutstanding > 0 ? AppTheme.redAccent : AppTheme.ink)),
                     ],
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(8),
-                    itemCount: invoices.length,
-                    itemBuilder: (context, index) => _InvoiceCard(invoice: invoices[index]),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.icon(
+                      onPressed: () => _showAddInvoiceDialog(context),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('ADD INVOICE'),
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: invoices.isEmpty
+                        ? const EmptyState(
+                            icon: Icons.request_quote_rounded,
+                            title: 'No invoices',
+                            subtitle: 'Add an invoice to track open freelance revenue and payout splits.',
+                          )
+                        : ListView.builder(
+                            padding: EdgeInsets.zero,
+                            itemCount: invoices.length,
+                            itemBuilder: (context, index) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _InvoiceCard(invoice: invoices[index]),
+                            ),
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
-  void _showAddInvoiceDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
+  void _showAddInvoiceDialog(BuildContext context) {
+    showDialog<void>(
       context: context,
-      builder: (ctx) => _AddInvoiceDialog(),
+      builder: (ctx) => const _AddInvoiceDialog(),
     );
   }
 }
 
 class _AddInvoiceDialog extends ConsumerStatefulWidget {
+  const _AddInvoiceDialog();
+
   @override
   ConsumerState<_AddInvoiceDialog> createState() => _AddInvoiceDialogState();
 }
@@ -175,12 +204,12 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
         FilledButton(
           onPressed: _isSaving ? null : _submit,
           child: _isSaving
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Save'),
+              : const Text('SAVE'),
         ),
       ],
     );
@@ -198,13 +227,13 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
     setState(() => _isSaving = true);
     try {
       await ref.read(invoiceProvider.notifier).add(Invoice(
-        client: _clientCtrl.text,
-        description: _descCtrl.text.isNotEmpty ? _descCtrl.text : null,
-        invoicedUsd: invoiced,
-        receivedPaypal: double.tryParse(_paypalCtrl.text) ?? 0,
-        receivedBank: double.tryParse(_bankCtrl.text) ?? 0,
-        invoiceDate: _invoiceDate,
-      ));
+            client: _clientCtrl.text,
+            description: _descCtrl.text.isNotEmpty ? _descCtrl.text : null,
+            invoicedUsd: invoiced,
+            receivedPaypal: double.tryParse(_paypalCtrl.text) ?? 0,
+            receivedBank: double.tryParse(_bankCtrl.text) ?? 0,
+            invoiceDate: _invoiceDate,
+          ));
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -219,19 +248,28 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
 }
 
 class _Summary extends StatelessWidget {
+  const _Summary({required this.label, required this.amount, required this.color});
+
   final String label;
   final String amount;
   final Color color;
-  const _Summary({required this.label, required this.amount, required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
+    return NewsprintPanel(
+      color: AppTheme.paper,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-          const SizedBox(height: 4),
-          Text(amount, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)),
+          Text(label.toUpperCase(), style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(height: 6),
+          Text(
+            amount,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: color,
+                  fontFamilyFallback: AppTheme.monoFallback,
+                ),
+          ),
         ],
       ),
     );
@@ -239,114 +277,83 @@ class _Summary extends StatelessWidget {
 }
 
 class _InvoiceCard extends StatelessWidget {
-  final Invoice invoice;
   const _InvoiceCard({required this.invoice});
+
+  final Invoice invoice;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text(invoice.client, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _statusColor(invoice.computedStatus).withAlpha(30),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(invoice.computedStatus.toUpperCase(), style: TextStyle(fontSize: 11, color: _statusColor(invoice.computedStatus), fontWeight: FontWeight.bold)),
+    return NewsprintPanel(
+      color: AppTheme.paper,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(invoice.client, style: Theme.of(context).textTheme.titleLarge),
+                    if (invoice.description != null) ...[
+                      const SizedBox(height: 4),
+                      Text(invoice.description!, style: Theme.of(context).textTheme.bodyMedium),
+                    ],
+                  ],
                 ),
-              ],
-            ),
-            if (invoice.description != null) ...[
-              const SizedBox(height: 4),
-              Text(invoice.description!, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-            ],
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _RowItem(label: 'Invoiced', amount: usdFormat.format(invoice.invoicedUsd), color: AppTheme.accentGold),
-                const SizedBox(width: 16),
-                _RowItem(label: 'PayPal', amount: usdFormat.format(invoice.receivedPaypal), color: AppTheme.primaryGreen),
-                const SizedBox(width: 16),
-                _RowItem(label: 'Bank', amount: usdFormat.format(invoice.receivedBank), color: Colors.cyanAccent),
-              ],
-            ),
-            if (invoice.outstanding > 0) ...[
-              const SizedBox(height: 4),
-              Text('Outstanding: ${usdFormat.format(invoice.outstanding)}', style: const TextStyle(color: AppTheme.redAccent, fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-            // Derived FX fields — display only, computed from received amounts.
-            if (invoice.fxRate != null || invoice.paypalFee != null || invoice.fxLoss != null) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 12,
-                runSpacing: 4,
-                children: [
-                  if (invoice.fxRate != null)
-                    _FxChip(label: 'FX Rate', value: '₹${invoice.fxRate!.toStringAsFixed(2)}/\$'),
-                  if (invoice.paypalFee != null)
-                    _FxChip(label: 'PayPal Fee', value: usdFormat.format(invoice.paypalFee!)),
-                  if (invoice.fxLoss != null)
-                    _FxChip(label: 'FX Loss', value: currencyFormat.format(invoice.fxLoss!)),
-                ],
+              ),
+              NewsprintTag(
+                label: invoice.computedStatus,
+                backgroundColor: _statusColor(invoice.computedStatus),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              NewsprintMetricStrip(label: 'Invoiced', value: usdFormat.format(invoice.invoicedUsd), valueColor: AppTheme.accentGold),
+              NewsprintMetricStrip(label: 'PayPal', value: usdFormat.format(invoice.receivedPaypal), valueColor: AppTheme.primaryGreen),
+              NewsprintMetricStrip(label: 'Bank', value: usdFormat.format(invoice.receivedBank), valueColor: AppTheme.focusBlue),
+            ],
+          ),
+          if (invoice.outstanding > 0) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Outstanding: ${usdFormat.format(invoice.outstanding)}',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppTheme.redAccent),
+            ),
           ],
-        ),
+          if (invoice.fxRate != null || invoice.paypalFee != null || invoice.fxLoss != null) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (invoice.fxRate != null)
+                  NewsprintTag(label: 'FX INR ${invoice.fxRate!.toStringAsFixed(2)}', backgroundColor: AppTheme.paperAlt, textColor: AppTheme.ink),
+                if (invoice.paypalFee != null)
+                  NewsprintTag(label: 'FEE ${usdFormat.format(invoice.paypalFee!)}', backgroundColor: AppTheme.paperAlt, textColor: AppTheme.ink),
+                if (invoice.fxLoss != null)
+                  NewsprintTag(label: 'LOSS ${currencyFormat.format(invoice.fxLoss!)}', backgroundColor: AppTheme.paperAlt, textColor: AppTheme.ink),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
 
   Color _statusColor(String status) {
     switch (status) {
-      case 'paid': return AppTheme.primaryGreen;
-      case 'partial': return AppTheme.accentGold;
-      default: return AppTheme.redAccent;
+      case 'paid':
+        return AppTheme.primaryGreen;
+      case 'partial':
+        return AppTheme.accentGold;
+      default:
+        return AppTheme.redAccent;
     }
-  }
-}
-
-class _RowItem extends StatelessWidget {
-  final String label;
-  final String amount;
-  final Color color;
-  const _RowItem({required this.label, required this.amount, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
-        const SizedBox(height: 2),
-        Text(amount, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
-      ],
-    );
-  }
-}
-
-class _FxChip extends StatelessWidget {
-  final String label;
-  final String value;
-  const _FxChip({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppTheme.darkBg,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text('$label: $value', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-    );
   }
 }

@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+
 import '../../core/theme.dart';
+import '../../widgets/newsprint_primitives.dart';
 import 'claude_service.dart';
 
 class AgentChatScreen extends StatefulWidget {
@@ -46,129 +48,69 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Finance Agent'),
-        actions: [
-          const IconButton(
-            icon: Icon(Icons.memory_rounded),
-            tooltip: 'Using Groq with qwen/qwen3-32b',
-            onPressed: null,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () async {
-              setState(() {
-                _messages.clear();
-              });
-              await _agent.reset();
-            },
-          ),
-        ],
-      ),
-      body: Column(
+    return NewsprintPage(
+      kicker: 'Agent Desk',
+      title: 'Interrogate the ledger',
+      subtitle: 'Ask for affordability, spending shape, goal pressure, or invoice exposure. The model answers from your live finance data.',
+      actions: [
+        NewsprintTag(label: 'Groq ${_agent.modelName}'),
+        OutlinedButton.icon(
+          onPressed: () async {
+            setState(() {
+              _messages.clear();
+            });
+            await _agent.reset();
+          },
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('RESET'),
+        ),
+      ],
+      child: Column(
         children: [
-          if (_messages.isEmpty)
-            Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.smart_toy,
-                          size: 64, color: AppTheme.textSecondary),
-                      const SizedBox(height: 16),
-                      const Text('Ask me anything about your finances',
-                          style: TextStyle(
-                              color: AppTheme.textSecondary, fontSize: 16)),
-                      const SizedBox(height: 24),
-                      const Text('Provider: Groq',
-                          style: TextStyle(
-                              color: AppTheme.textSecondary, fontSize: 11)),
-                      const SizedBox(height: 4),
-                      Text('Model: ${_agent.modelName}',
-                          style: const TextStyle(
-                              color: AppTheme.textSecondary, fontSize: 11)),
-                      const SizedBox(height: 16),
-                      Wrap(
+          Expanded(
+            child: _messages.isEmpty ? _emptyState() : _messageThread(),
+          ),
+          const SizedBox(height: 12),
+          NewsprintPanel(
+            color: AppTheme.paper,
+            child: Column(
+              children: [
+                TextField(
+                  controller: _inputCtrl,
+                  maxLines: 4,
+                  minLines: 1,
+                  decoration: const InputDecoration(
+                    hintText: 'Ask the agent what changed, what is risky, or what you can afford next.',
+                  ),
+                  onSubmitted: _isLoading ? null : _sendMessage,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        alignment: WrapAlignment.center,
                         children: [
                           _suggestion('Can I afford a new keyboard?'),
-                          _suggestion('What did I spend most on?'),
+                          _suggestion('What did I spend most on this month?'),
                           _suggestion('How much did I earn this month?'),
-                          _suggestion('What are my outstanding invoices?'),
-                          _suggestion('Am I on track for my emergency fund?'),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollCtrl,
-                padding: const EdgeInsets.all(16),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  final msg = _messages[index];
-                  return Align(
-                    alignment: msg.isUser
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.8),
-                      decoration: BoxDecoration(
-                        color: msg.isUser
-                            ? AppTheme.primaryGreen.withAlpha(40)
-                            : AppTheme.darkCard,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(msg.text,
-                          style: const TextStyle(color: AppTheme.textPrimary)),
                     ),
-                  );
-                },
-              ),
-            ),
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
-              color: AppTheme.darkSurface,
-              border: Border(top: BorderSide(color: Color(0xFF2C3E50))),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _inputCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Ask something...',
-                      border: InputBorder.none,
-                      filled: false,
+                    const SizedBox(width: 10),
+                    FilledButton.icon(
+                      onPressed: _isLoading ? null : () => _sendMessage(_inputCtrl.text),
+                      icon: _isLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_rounded),
+                      label: Text(_isLoading ? 'THINKING' : 'SEND'),
                     ),
-                    onSubmitted: _isLoading ? null : _sendMessage,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.send, color: AppTheme.primaryGreen),
-                  onPressed:
-                      _isLoading ? null : () => _sendMessage(_inputCtrl.text),
+                  ],
                 ),
               ],
             ),
@@ -178,12 +120,73 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     );
   }
 
+  Widget _emptyState() {
+    return Center(
+      child: NewsprintPanel(
+        color: AppTheme.paperAlt,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('NO QUESTIONS YET', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              'Start with a practical question. The agent is best when the ask is concrete and tied to a decision.',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _messageThread() {
+    return ListView.builder(
+      controller: _scrollCtrl,
+      padding: EdgeInsets.zero,
+      itemCount: _messages.length,
+      itemBuilder: (context, index) {
+        final msg = _messages[index];
+        return Align(
+          alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.84),
+            margin: const EdgeInsets.only(bottom: 10),
+            child: NewsprintPanel(
+              color: msg.isUser ? AppTheme.ink : AppTheme.paper,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    msg.isUser ? 'YOU' : 'AGENT',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: msg.isUser ? AppTheme.paperMuted : AppTheme.textSecondary,
+                          letterSpacing: 1.2,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    msg.text,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: msg.isUser ? AppTheme.paper : AppTheme.ink,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _suggestion(String text) {
     return ActionChip(
-      label: Text(text, style: const TextStyle(fontSize: 12)),
+      label: Text(text, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: AppTheme.ink)),
       onPressed: _isLoading ? null : () => _sendMessage(text),
-      backgroundColor: AppTheme.darkCard,
-      side: const BorderSide(color: Color(0xFF2C3E50)),
+      backgroundColor: AppTheme.paperAlt,
+      side: const BorderSide(color: AppTheme.ink, width: 1.5),
+      shape: const RoundedRectangleBorder(),
     );
   }
 
@@ -202,9 +205,10 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
           _messages.add(_ChatMessage(text: response, isUser: false));
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_scrollCtrl.hasClients) return;
           _scrollCtrl.animateTo(
             _scrollCtrl.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
+            duration: const Duration(milliseconds: 250),
             curve: Curves.easeOut,
           );
         });
@@ -212,8 +216,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _messages.add(_ChatMessage(
-              text: 'Sorry, I could not process that: $e', isUser: false));
+          _messages.add(_ChatMessage(text: 'Sorry, I could not process that: $e', isUser: false));
         });
       }
     } finally {
@@ -223,7 +226,8 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
 }
 
 class _ChatMessage {
+  const _ChatMessage({required this.text, required this.isUser});
+
   final String text;
   final bool isUser;
-  _ChatMessage({required this.text, required this.isUser});
 }

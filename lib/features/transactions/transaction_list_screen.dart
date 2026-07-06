@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -8,10 +8,11 @@ import '../../models/account.dart';
 import '../../models/transaction.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/transaction_provider.dart';
+import '../../widgets/newsprint_primitives.dart';
 import '../../widgets/empty_state.dart';
 
 final _currency =
-    NumberFormat.currency(symbol: '₹', decimalDigits: 2, locale: 'en_IN');
+    NumberFormat.currency(symbol: 'â‚¹', decimalDigits: 2, locale: 'en_IN');
 
 const _allAccounts = 'all';
 
@@ -31,23 +32,30 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
     final transactionsAsync = ref.watch(transactionProvider);
     final accountsAsync = ref.watch(accountProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Transactions')),
-      body: Column(
+    return NewsprintPage(
+      kicker: 'Ledger',
+      title: 'Daily money ledger',
+      subtitle:
+          'Every inflow, outflow, transfer, and investment leg in one ruled stack.',
+      child: Column(
         children: [
           accountsAsync.maybeWhen(
             data: (accounts) {
               if (accounts.isEmpty) return const SizedBox.shrink();
-              return SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  children: [
-                    _filterChip('All', _allAccounts),
-                    ...accounts.map((a) => _filterChip(a.name, a.id!)),
-                  ],
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: NewsprintPanel(
+                  color: AppTheme.paperAlt,
+                  child: SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        _filterChip('All desks', _allAccounts),
+                        ...accounts.map((a) => _filterChip(a.name, a.id!)),
+                      ],
+                    ),
+                  ),
                 ),
               );
             },
@@ -57,21 +65,11 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
             child: transactionsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        size: 48, color: AppTheme.redAccent),
-                    const SizedBox(height: 16),
-                    Text('$e',
-                        style: const TextStyle(color: AppTheme.textSecondary)),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () =>
-                          ref.read(transactionProvider.notifier).load(),
-                      child: const Text('Retry'),
-                    ),
-                  ],
+                child: NewsprintNotice(
+                  icon: Icons.error_outline_rounded,
+                  title: 'Ledger feed interrupted',
+                  message: '$e',
+                  color: AppTheme.redAccent,
                 ),
               ),
               data: (transactions) {
@@ -85,7 +83,7 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                   return const EmptyState(
                     icon: Icons.receipt_long,
                     title: 'No transactions yet',
-                    subtitle: 'Tap + to add your first transaction',
+                    subtitle: 'Use the add button to open the ledger and record your first movement.',
                   );
                 }
 
@@ -108,10 +106,9 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                 }
 
                 return RefreshIndicator(
-                  onRefresh: () =>
-                      ref.read(transactionProvider.notifier).load(),
+                  onRefresh: () => ref.read(transactionProvider.notifier).load(),
                   child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    padding: EdgeInsets.zero,
                     itemCount: items.length,
                     itemBuilder: (context, index) {
                       final item = items[index];
@@ -138,8 +135,16 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
         label: Text(label),
         selected: selected,
         onSelected: (_) => setState(() => _accountFilter = value),
-        selectedColor: AppTheme.primaryGreen.withAlpha(40),
-        checkmarkColor: AppTheme.primaryGreen,
+        backgroundColor: AppTheme.paper,
+        selectedColor: AppTheme.ink,
+        checkmarkColor: AppTheme.paper,
+        labelStyle: TextStyle(
+          color: selected ? AppTheme.paper : AppTheme.ink,
+          fontWeight: FontWeight.w800,
+        ),
+        side: const BorderSide(color: AppTheme.ink, width: 1.5),
+        shape: const RoundedRectangleBorder(),
+        showCheckmark: false,
       ),
     );
   }
@@ -167,15 +172,24 @@ class _DateHeader extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 8),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: AppTheme.textSecondary,
-          letterSpacing: 0.5,
-        ),
+      padding: const EdgeInsets.only(top: 18, bottom: 10),
+      child: Row(
+        children: [
+          const Expanded(child: Divider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              label.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textSecondary,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+          const Expanded(child: Divider()),
+        ],
       ),
     );
   }
@@ -210,96 +224,94 @@ class _TransactionCard extends ConsumerWidget {
                 ? 'Investment move'
                 : 'Unknown');
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        leading: CircleAvatar(
-          radius: 22,
-          backgroundColor: color.withAlpha(30),
-          child: Icon(
-            isTransfer
-                ? Icons.swap_horiz_rounded
-                : isInvestment
-                    ? Icons.trending_up_rounded
-                    : tx.isInflow
-                        ? Icons.arrow_downward_rounded
-                        : Icons.arrow_upward_rounded,
-            color: color,
-            size: 20,
-          ),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 2),
-            Text(
-              _subtitle(),
-              style:
-                  const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (tx.tags.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 4,
-                runSpacing: 2,
-                children: tx.tags
-                    .map(
-                      (tag) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryGreen.withAlpha(25),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: AppTheme.primaryGreen.withAlpha(60),
-                          ),
-                        ),
-                        child: Text(
-                          tag,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppTheme.primaryGreen,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: AppTheme.panelDecoration(
+        color: AppTheme.paper,
+      ),
+      child: InkWell(
+        onLongPress: () => _confirmDelete(context, ref),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: AppTheme.panelDecoration(color: color.withAlpha(34)),
+                child: Icon(
+                  isTransfer
+                      ? Icons.swap_horiz_rounded
+                      : isInvestment
+                          ? Icons.trending_up_rounded
+                          : tx.isInflow
+                              ? Icons.arrow_downward_rounded
+                              : Icons.arrow_upward_rounded,
+                  color: color,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _subtitle(),
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (tx.tags.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: tx.tags
+                            .map(
+                              (tag) => NewsprintTag(
+                                label: tag,
+                                backgroundColor: AppTheme.paperAlt,
+                                textColor: AppTheme.ink,
+                              ),
+                            )
+                            .toList(),
                       ),
-                    )
-                    .toList(),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '$sign${_currency.format(tx.amount)}',
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                      fontFamilyFallback: AppTheme.monoFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    timeStr,
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                  ),
+                ],
               ),
             ],
-          ],
+          ),
         ),
-        trailing: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              '$sign${_currency.format(tx.amount)}',
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              timeStr,
-              style:
-                  const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-        onLongPress: () => _confirmDelete(context, ref),
       ),
     );
   }
@@ -513,8 +525,8 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
               TextFormField(
                 controller: _amountCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Amount (₹)',
-                  prefixText: '₹ ',
+                  labelText: 'Amount (â‚¹)',
+                  prefixText: 'â‚¹ ',
                 ),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -755,3 +767,5 @@ class _TagInput extends StatelessWidget {
     );
   }
 }
+
+
