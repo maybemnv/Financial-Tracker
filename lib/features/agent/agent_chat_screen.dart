@@ -2,7 +2,7 @@
 
 import '../../core/theme.dart';
 import '../../widgets/newsprint_primitives.dart';
-import 'claude_service.dart';
+import 'llm_service.dart';
 
 class AgentChatScreen extends StatefulWidget {
   const AgentChatScreen({super.key});
@@ -15,7 +15,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   final _messages = <_ChatMessage>[];
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  final _agent = ClaudeService();
+  final _agent = LlmService();
   bool _isLoading = false;
 
   @override
