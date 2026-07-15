@@ -1,11 +1,11 @@
 # Finance Tracker
 
-Cross-platform (Android + Windows) personal finance app built with Flutter.
+Flutter web personal finance app backed by Supabase.
 
 ## Features
 
 - **Manual Entry** — Add transactions with account selector, type (debit/credit/transfer/investment), category, merchant, custom tags, date & time picker (Paytm-style)
-- **Real-time Sync** — Powered by Supabase Realtime; add a transaction on phone, appears on Windows within seconds
+- **Real-time Sync** — Powered by Supabase Realtime; add a transaction in one browser tab, appears in another within seconds
 - **Dashboard** — Emergency Fund progress card, Savings Rate (target 20%+), per-account balance breakdown, summary cards (Earned/Spent/Saved/Net) + category pie chart
 - **Accounts** — Multiple accounts (SBI, Kotak, PayPal, Cash) with derived balances via `fn_account_balance()` — never stored, never drift
 - **Transfers** — Double-entry transfer support: two linked rows with matching `transfer_group_id`, net worth unaffected
@@ -15,23 +15,21 @@ Cross-platform (Android + Windows) personal finance app built with Flutter.
 - **Paytm-Style List** — Transactions grouped by date ("Today", "Yesterday", "Fri, 27 Jun 2026"), 24hr time on each row.
 - **Soft Delete** — Nothing is ever hard-deleted; `is_deleted` + `deleted_at` on all tables + confirmation dialog
 - **Immutable Audit Trail** — `edit_history` JSONB stores old/new values + `edited_at` on every change
-- **SMS Capture** — Auto-parse UPI SMS from PhonePe, GPay, Paytm (regex engine + SHA-256 dedup)
-- **Smart Categorization** — Rule-based (priority-ordered) + Claude LLM fallback
+- **Smart Categorization** — Rule-based (priority-ordered) + Groq LLM fallback
 - **Goals** — Set savings goals with live progress tracking; Emergency Fund goal detected by `type` field, pinned to top
-- **Invoice Sidebar** — Track freelance invoices with 3 columns + FX rate / PayPal fee / FX loss chips
-- **Finance Agent** — Claude-powered Q&A with tool-use (8 tools that query your actual data). Model switcher: Haiku 4.5 (default) + Sonnet 4.
+- **Invoice Sidebar** — Track freelance invoices with PayPal USD, INR bank receipts, FX rate, and fee chips
+- **Finance Agent** — Groq-powered Q&A with tool-use (8 tools that query your actual data)
 - **Monthly Snapshots** — Pre-computed monthly aggregates written on first open of each new month
 
 ## Tech Stack
 
 | Layer | Tech |
 |---|---|
-| Frontend | Flutter (Dart) |
+| Frontend | Flutter Web (Dart) |
 | Backend / DB | Supabase (Postgres, Realtime) |
 | State | Riverpod |
 | Charts | fl_chart |
-| LLM | Anthropic Claude API |
-| SMS Parsing | Regex engine + SHA-256 dedup |
+| LLM | Groq Qwen 32B |
 
 ## Setup
 
@@ -39,31 +37,41 @@ Cross-platform (Android + Windows) personal finance app built with Flutter.
 
 - Flutter SDK (stable)
 - Supabase account (free tier)
-- Anthropic API key
+- Groq API key
 
 ### 1. Environment
 
-Create `.env` in the project root (already done for this project):
+Create `.env` in the project root:
 
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
-CLAUDE_API_KEY=sk-ant-your-claude-key
+GROQ_API_KEY=gsk_your_groq_api_key
 ```
 
-### 2. Supabase (already applied for this project)
+Do not include `SUPABASE_SERVICE_KEY` — it is not used by the client and would be exposed in the browser bundle.
+
+### 2. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com)
 2. Run `supabase/migrations/00001_init.sql` in the SQL editor (creates all 8 tables, RPCs, RLS, Realtime, seed accounts)
-3. Run `supabase/migrations/00002_clear_add_transacted_at.sql` to add the `transacted_at` column and update `fn_account_balance`
+3. Run remaining migrations in `supabase/migrations/` in order
 4. Copy your project URL and anon key into `.env`
 
 ### 3. Run
 
 ```bash
 flutter pub get
-flutter run
+flutter run -d chrome
 ```
+
+### 4. Build
+
+```bash
+flutter build web
+```
+
+Output in `build/web/` — deploy as static files.
 
 ## Project Structure
 
@@ -98,20 +106,28 @@ lib/
 │   ├── dashboard/             # Emergency Fund, Savings Rate, per-account balances, pie chart
 │   ├── goals/                 # Goal list (emergency fund pinned) + add/allocate
 │   ├── invoices/              # Slide-in sidebar with FX chips
-│   ├── agent/                 # Chat UI + Claude tool-use service (8 tools), model switcher (Haiku 4.5 / Sonnet 4)
-│   └── sms/                   # SMS parser + listener
+│   ├── agent/                 # Chat UI + Groq tool-use service (8 tools)
+│   └── sms/                   # SMS parser (kept for future paste/import)
 └── widgets/                   # Shared UI components (EmptyState, SummaryCard)
 ```
 
-## Build
+## Deployment
 
-```bash
-# Android
-flutter build appbundle
+This app is designed for Vercel deployment.
 
-# Windows (requires `flutter create . --platforms windows` first)
-flutter build windows
-```
+1. Push the repo to GitHub
+2. Import into Vercel
+3. Set environment variables in the Vercel project dashboard:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `GROQ_API_KEY`
+4. Vercel builds with `vercel.json` which generates `.env` from these vars before `flutter build web`
+
+### Security Notes
+
+- The browser bundle contains `SUPABASE_ANON_KEY` and `GROQ_API_KEY` — both are visible to users. This is acceptable for a personal single-user app.
+- `SUPABASE_SERVICE_KEY` must never be added to the Flutter `.env` or Vercel env vars — it would grant full database access to anyone who inspects the web bundle.
+- For higher security, move Groq calls behind a Supabase Edge Function so the API key never reaches the browser.
 
 ## Design Principles
 
@@ -121,5 +137,5 @@ flutter build windows
 - **Investments are not expenses** — `type = 'investment'`, net worth unchanged.
 - **Immutable history** — `edit_history` JSONB stores every change.
 - **Balances are derived** — `accounts` has `opening_balance` + `opening_date`. Current balance is `fn_account_balance()`. No `balance` column.
-- **Agent uses tool-use, not context injection** — Claude decides which of the 8 tools to call per turn. No pre-fetching data.
-- **No streaming** — Claude responses appear after 2–4s. SSE removed from scope permanently.
+- **Agent uses tool-use, not context injection** — Groq decides which of the 8 tools to call per turn. No pre-fetching data.
+- **No streaming** — Agent responses appear after 2–4s. SSE removed from scope permanently.

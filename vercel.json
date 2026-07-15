@@ -1,5 +1,5 @@
 {
-  "buildCommand": "flutter build web",
+  "buildCommand": "./vercel-build.sh",
   "outputDirectory": "build/web",
   "framework": "flutter",
   "devCommand": "flutter run -d web"

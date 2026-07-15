@@ -89,42 +89,42 @@
 ## Phase 2: Web-Only Pivot
 
 ### 2.1 Remove Native-Only SMS Runtime
-- [ ] Remove `SmsListener` import and wiring from `lib/app.dart`
-- [ ] Delete `lib/features/sms/sms_listener.dart`
-- [ ] Keep `lib/features/sms/sms_parser.dart` (pure Dart, usable for paste/import)
-- [ ] Remove `another_telephony` dependency from `pubspec.yaml`
-- [ ] Run `flutter pub get`
-- [ ] Validate: `flutter pub get`, `flutter analyze`, `flutter test`, `flutter build web`
+- [x] Remove `SmsListener` import and wiring from `lib/app.dart`
+- [x] Delete `lib/features/sms/sms_listener.dart`
+- [x] Keep `lib/features/sms/sms_parser.dart` (pure Dart, usable for paste/import)
+- [x] Remove `another_telephony` dependency from `pubspec.yaml`
+- [x] Run `flutter pub get`
+- [x] Validate: `flutter pub get`, `flutter analyze`, `flutter test`, `flutter build web`
 
 ### 2.2 Make Config Web-Safe
-- [ ] Strip `SUPABASE_SERVICE_KEY` from local `.env` (unused client-side, must not ship in bundle)
-- [ ] Update `.env.example` to browser-safe keys only:
+- [x] Strip `SUPABASE_SERVICE_KEY` from local `.env` (unused client-side, must not ship in bundle)
+- [x] Update `.env.example` to browser-safe keys only:
   - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GROQ_API_KEY`
-- [ ] Update `vercel.json` build command to generate `.env` from Vercel env vars before `flutter build web`
-- [ ] Add required Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GROQ_API_KEY`
-- [ ] Verify no service key leaks into `build/web`
+- [x] Update `vercel.json` build command to generate `.env` from Vercel env vars before `flutter build web`
+- [ ] Add required Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GROQ_API_KEY` (Vercel dashboard)
+- [x] Verify no service key leaks into `build/web`
 - [ ] Rotate `SUPABASE_SERVICE_KEY` in Supabase (if there's any doubt it was ever shipped)
 - [ ] Optional future: proxy Groq calls through a Supabase Edge Function so the AI key never reaches the browser
 
 ### 2.3 Delete Native Project Folders
-- [ ] Delete `android/`
-- [ ] Delete `windows/`
-- [ ] Clean up `.gitignore` stale Android/Windows entries
-- [ ] Run `flutter pub get`
-- [ ] Validate: `flutter devices` shows only web, `flutter build web` succeeds
+- [x] Delete `android/`
+- [x] Delete `windows/`
+- [x] Clean up `.gitignore` stale Android/Windows entries
+- [x] Run `flutter pub get`
+- [x] Validate: `flutter build web` succeeds
 
 ### 2.4 Update Documentation
-- [ ] Update `README.md`:
+- [x] Update `README.md`:
   - Project description: Flutter web personal finance tracker
   - Local setup: `flutter pub get && flutter run -d chrome`
   - Build: `flutter build web`
   - Deployment: Vercel generates `.env` from env vars at build time
   - Note: SMS auto-capture removed in web-only product
-- [ ] Update `docs/ARCHITECTURE.md`:
+- [x] Update `docs/ARCHITECTURE.md`:
   - Replace Android/Windows diagram with Web App → Supabase → Groq
   - Remove SMS Listener from system overview
-- [ ] Update `.env.example` — only browser-safe keys
-- [ ] This file — mark native SMS as retired
+- [x] Update `.env.example` — only browser-safe keys
+- [x] This file — mark completed items as done
 
 ### 2.5 Web UX Pass
 - [ ] Make UI responsive at desktop widths (~1440px) while preserving mobile look at ~390px
@@ -212,8 +212,8 @@
 
 ### Security (Web-Specific)
 - [x] Keys loaded from `.env` (gitignored), not hardcoded
-- [ ] `SUPABASE_SERVICE_KEY` removed from web bundle (service-role key must never ship to browser)
-- [ ] `SUPABASE_ANON_KEY` and `GROQ_API_KEY` exposure acknowledged — both are browser-visible
+- [x] `SUPABASE_SERVICE_KEY` removed from web bundle (service-role key must never ship to browser)
+- [x] `SUPABASE_ANON_KEY` and `GROQ_API_KEY` exposure acknowledged — both are browser-visible
 - [ ] Verify no keys in crash logs or error stack traces
 - [ ] RLS review before any public exposure
 
@@ -223,7 +223,7 @@
 - [ ] Widget tests for each screen (empty, populated, error states)
 
 ### Build & Release (Web)
-- [ ] `flutter build web` — release artifact in `build/web/`
+- [x] `flutter build web` — release artifact in `build/web/`
 - [ ] Configure Vercel project pointing at repo
 - [ ] Set Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GROQ_API_KEY`
 - [ ] Deploy from `main` branch — auto-build on push

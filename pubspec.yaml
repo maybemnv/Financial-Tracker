@@ -16,7 +16,6 @@ dependencies:
   http: ^1.1.0
   flutter_dotenv: ^6.0.1
   crypto: ^3.0.3
-  another_telephony: ^0.4.1
 
 dev_dependencies:
   flutter_test:
