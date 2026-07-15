@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,9 +6,7 @@ import 'features/agent/agent_chat_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/goals/goals_screen.dart';
 import 'features/invoices/invoice_sidebar.dart';
-import 'features/sms/sms_listener.dart';
 import 'features/transactions/transaction_list_screen.dart';
-import 'providers/transaction_provider.dart';
 import 'widgets/newsprint_shell.dart';
 
 class AppTabs extends StatefulWidget {
@@ -72,35 +68,6 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  StreamSubscription? _smsSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _smsSubscription = SmsListener().onTransactionParsed.listen((tx) async {
-      final inserted = await ref.read(transactionProvider.notifier).add(tx);
-      if (!mounted || !inserted) return;
-      final merchant = tx.merchant ?? tx.bank ?? 'unknown merchant';
-      final amount = tx.amount == tx.amount.truncateToDouble()
-          ? tx.amount.toStringAsFixed(0)
-          : tx.amount.toStringAsFixed(2);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Transaction added: \u20B9$amount at $merchant')),
-      );
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      SmsListener().start();
-    });
-  }
-
-  @override
-  void dispose() {
-    _smsSubscription?.cancel();
-    SmsListener().stop();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {

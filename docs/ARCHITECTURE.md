@@ -1,6 +1,6 @@
 # Architecture
 
-Cross-platform Flutter app backed by Supabase (Postgres + Realtime) with a Claude-powered finance agent.
+Flutter web personal finance app backed by Supabase (Postgres + Realtime) with a Groq-powered finance agent.
 
 ---
 
@@ -8,13 +8,8 @@ Cross-platform Flutter app backed by Supabase (Postgres + Realtime) with a Claud
 
 ```mermaid
 graph TB
-    subgraph Android["Android App"]
-        SMS["SMS Listener"]
+    subgraph WebApp["Web App (flutter build web)"]
         ME["Manual Entry"]
-    end
-
-    subgraph Windows["Windows App"]
-        MEW["Manual Entry"]
     end
 
     subgraph Supabase["Supabase (Postgres + Realtime)"]
@@ -28,22 +23,16 @@ graph TB
         MS[monthly_snapshots]
     end
 
-    subgraph Claude["Anthropic Claude API"]
+    subgraph Groq["Groq API (Qwen 32B)"]
         CAT[categorization fallback]
         AGT[agent Q&A]
     end
 
-    Android -->|insert / select / subscribe| Supabase
-    Windows -->|insert / select / subscribe| Supabase
-    Supabase -->|realtime push| Android
-    Supabase -->|realtime push| Windows
+    WebApp -->|insert / select / subscribe| Supabase
+    Supabase -->|realtime push| WebApp
 
-    Android -.->|unmatched tx| Claude
-    Claude -.->|category + tags| Android
-    Android -.->|question + context| Claude
-    Claude -.->|answer| Android
-    Windows -.->|question + context| Claude
-    Claude -.->|answer| Windows
+    WebApp -.->|unmatched tx / question| Groq
+    Groq -.->|category + tags / answer| WebApp
 ```
 
 ---
