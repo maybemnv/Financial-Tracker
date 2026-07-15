@@ -5,8 +5,8 @@ import 'package:http/http.dart' as http;
 import '../../core/constants.dart';
 import '../../core/supabase.dart';
 
-class ClaudeVisibleMessage {
-  const ClaudeVisibleMessage({
+class LlmVisibleMessage {
+  const LlmVisibleMessage({
     required this.text,
     required this.isUser,
   });
@@ -15,14 +15,14 @@ class ClaudeVisibleMessage {
   final bool isUser;
 }
 
-class ClaudeService {
+class LlmService {
   static const _tools = [
     {
       'type': 'function',
       'function': {
         'name': 'get_accounts',
         'description':
-            'List all financial accounts (SBI, Kotak, PayPal, Cash, investments) with their current balance derived from transactions.',
+            'List all financial accounts (PSB, Kotak, PayPal, Cash, investments) with their current balance derived from transactions.',
         'parameters': {
           'type': 'object',
           'properties': {},
@@ -195,16 +195,16 @@ class ClaudeService {
   Future<void> get ready => _loadFuture;
   String get modelName => AppConstants.agentModel;
 
-  List<ClaudeVisibleMessage> visibleMessages() {
-    final visible = <ClaudeVisibleMessage>[];
+  List<LlmVisibleMessage> visibleMessages() {
+    final visible = <LlmVisibleMessage>[];
     for (final message in _messages) {
       final role = message['role'] as String?;
       final text = _extractVisibleText(message['content']);
       if (text.isEmpty) continue;
       if (role == 'user') {
-        visible.add(ClaudeVisibleMessage(text: text, isUser: true));
+        visible.add(LlmVisibleMessage(text: text, isUser: true));
       } else if (role == 'assistant') {
-        visible.add(ClaudeVisibleMessage(text: text, isUser: false));
+        visible.add(LlmVisibleMessage(text: text, isUser: false));
       }
     }
     return visible;
