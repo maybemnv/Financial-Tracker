@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -12,7 +12,7 @@ import '../../widgets/newsprint_primitives.dart';
 import '../../widgets/empty_state.dart';
 
 final _currency =
-    NumberFormat.currency(symbol: 'â‚¹', decimalDigits: 2, locale: 'en_IN');
+    NumberFormat.currency(symbol: '\u20B9', decimalDigits: 2, locale: 'en_IN');
 
 const _allAccounts = 'all';
 
@@ -83,7 +83,8 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                   return const EmptyState(
                     icon: Icons.receipt_long,
                     title: 'No transactions yet',
-                    subtitle: 'Use the add button to open the ledger and record your first movement.',
+                    subtitle:
+                        'Use the add button to open the ledger and record your first movement.',
                   );
                 }
 
@@ -106,7 +107,8 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
                 }
 
                 return RefreshIndicator(
-                  onRefresh: () => ref.read(transactionProvider.notifier).load(),
+                  onRefresh: () =>
+                      ref.read(transactionProvider.notifier).load(),
                   child: ListView.builder(
                     padding: EdgeInsets.zero,
                     itemCount: items.length,
@@ -239,7 +241,8 @@ class _TransactionCard extends ConsumerWidget {
               Container(
                 width: 44,
                 height: 44,
-                decoration: AppTheme.panelDecoration(color: color.withAlpha(34)),
+                decoration:
+                    AppTheme.panelDecoration(color: color.withAlpha(34)),
                 child: Icon(
                   isTransfer
                       ? Icons.swap_horiz_rounded
@@ -259,14 +262,16 @@ class _TransactionCard extends ConsumerWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 15),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 3),
                     Text(
                       _subtitle(),
-                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.textSecondary),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -305,7 +310,8 @@ class _TransactionCard extends ConsumerWidget {
                   const SizedBox(height: 4),
                   Text(
                     timeStr,
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                    style: const TextStyle(
+                        fontSize: 11, color: AppTheme.textSecondary),
                   ),
                 ],
               ),
@@ -525,8 +531,8 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
               TextFormField(
                 controller: _amountCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Amount (â‚¹)',
-                  prefixText: 'â‚¹ ',
+                  labelText: 'Amount (\u20B9)',
+                  prefixText: '\u20B9 ',
                 ),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -767,5 +773,3 @@ class _TagInput extends StatelessWidget {
     );
   }
 }
-
-

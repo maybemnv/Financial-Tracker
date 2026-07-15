@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,7 +8,8 @@ import '../../providers/goal_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/newsprint_primitives.dart';
 
-final currencyFormat = NumberFormat.currency(symbol: 'INR ', decimalDigits: 0, locale: 'en_IN');
+final currencyFormat =
+    NumberFormat.currency(symbol: '\u20B9', decimalDigits: 0, locale: 'en_IN');
 
 class GoalsScreen extends ConsumerWidget {
   const GoalsScreen({super.key});
@@ -20,7 +21,8 @@ class GoalsScreen extends ConsumerWidget {
     return NewsprintPage(
       kicker: 'Targets',
       title: 'Savings board',
-      subtitle: 'Emergency cash stays pinned. Everything else competes for allocation below it.',
+      subtitle:
+          'Emergency cash stays pinned. Everything else competes for allocation below it.',
       actions: [
         FilledButton.icon(
           onPressed: () => _showAddGoalDialog(context),
@@ -43,13 +45,16 @@ class GoalsScreen extends ConsumerWidget {
             return const EmptyState(
               icon: Icons.flag_rounded,
               title: 'No goals yet',
-              subtitle: 'Create a fund, device, or buffer target to turn idle cash into a visible plan.',
+              subtitle:
+                  'Create a fund, device, or buffer target to turn idle cash into a visible plan.',
             );
           }
 
           final sorted = _sorted(goals);
-          final totalTarget = sorted.fold<double>(0, (sum, goal) => sum + goal.targetAmount);
-          final totalSaved = sorted.fold<double>(0, (sum, goal) => sum + goal.allocatedAmount);
+          final totalTarget =
+              sorted.fold<double>(0, (sum, goal) => sum + goal.targetAmount);
+          final totalSaved =
+              sorted.fold<double>(0, (sum, goal) => sum + goal.allocatedAmount);
 
           return RefreshIndicator(
             onRefresh: () => ref.read(goalProvider.notifier).load(),
@@ -60,9 +65,14 @@ class GoalsScreen extends ConsumerWidget {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    NewsprintMetricStrip(label: 'Goals', value: '${sorted.length}'),
-                    NewsprintMetricStrip(label: 'Saved', value: currencyFormat.format(totalSaved)),
-                    NewsprintMetricStrip(label: 'Target', value: currencyFormat.format(totalTarget)),
+                    NewsprintMetricStrip(
+                        label: 'Goals', value: '${sorted.length}'),
+                    NewsprintMetricStrip(
+                        label: 'Saved',
+                        value: currencyFormat.format(totalSaved)),
+                    NewsprintMetricStrip(
+                        label: 'Target',
+                        value: currencyFormat.format(totalTarget)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -130,14 +140,16 @@ class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _amountCtrl,
-            decoration: const InputDecoration(labelText: 'Target Amount (INR) *'),
+            decoration:
+                const InputDecoration(labelText: 'Target Amount (\u20B9) *'),
             keyboardType: TextInputType.number,
           ),
           const SizedBox(height: 12),
           SegmentedButton<String>(
             segments: const [
               ButtonSegment(value: 'custom', label: Text('Custom')),
-              ButtonSegment(value: 'emergency_fund', label: Text('Emergency Fund')),
+              ButtonSegment(
+                  value: 'emergency_fund', label: Text('Emergency Fund')),
             ],
             selected: {_type},
             onSelectionChanged: (v) => setState(() => _type = v.first),
@@ -145,11 +157,16 @@ class _AddGoalDialogState extends ConsumerState<_AddGoalDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL')),
         FilledButton(
           onPressed: _isSaving ? null : _submit,
           child: _isSaving
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2))
               : const Text('CREATE'),
         ),
       ],
@@ -194,7 +211,8 @@ class _GoalCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pct = goal.fundedPercent.clamp(0, 100).toDouble();
-    final remaining = (goal.targetAmount - goal.allocatedAmount).clamp(0, double.infinity);
+    final remaining =
+        (goal.targetAmount - goal.allocatedAmount).clamp(0, double.infinity);
 
     return NewsprintPanel(
       color: goal.isEmergencyFund ? AppTheme.paper : AppTheme.paperAlt,
@@ -214,7 +232,8 @@ class _GoalCard extends ConsumerWidget {
                         padding: EdgeInsets.only(bottom: 8),
                         child: NewsprintTag(label: 'Emergency fund'),
                       ),
-                    Text(goal.name, style: Theme.of(context).textTheme.titleLarge),
+                    Text(goal.name,
+                        style: Theme.of(context).textTheme.titleLarge),
                   ],
                 ),
               ),
@@ -222,7 +241,9 @@ class _GoalCard extends ConsumerWidget {
                 '${pct.toStringAsFixed(0)}%',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontSize: 24,
-                      color: goal.isEmergencyFund ? AppTheme.redAccent : AppTheme.ink,
+                      color: goal.isEmergencyFund
+                          ? AppTheme.redAccent
+                          : AppTheme.ink,
                     ),
               ),
             ],
@@ -243,9 +264,14 @@ class _GoalCard extends ConsumerWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
-              NewsprintMetricStrip(label: 'Saved', value: currencyFormat.format(goal.allocatedAmount)),
-              NewsprintMetricStrip(label: 'Target', value: currencyFormat.format(goal.targetAmount)),
-              NewsprintMetricStrip(label: 'Remaining', value: currencyFormat.format(remaining)),
+              NewsprintMetricStrip(
+                  label: 'Saved',
+                  value: currencyFormat.format(goal.allocatedAmount)),
+              NewsprintMetricStrip(
+                  label: 'Target',
+                  value: currencyFormat.format(goal.targetAmount)),
+              NewsprintMetricStrip(
+                  label: 'Remaining', value: currencyFormat.format(remaining)),
             ],
           ),
           const SizedBox(height: 14),
@@ -291,15 +317,20 @@ class _AllocateDialogState extends ConsumerState<_AllocateDialog> {
       title: const Text('Allocate Funds'),
       content: TextField(
         controller: _ctrl,
-        decoration: const InputDecoration(labelText: 'Amount (INR) *'),
+        decoration: const InputDecoration(labelText: 'Amount (\u20B9) *'),
         keyboardType: TextInputType.number,
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL')),
         FilledButton(
           onPressed: _isSaving ? null : _submit,
           child: _isSaving
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2))
               : const Text('ALLOCATE'),
         ),
       ],

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,7 +85,8 @@ class _AppShellState extends ConsumerState<AppShell> {
           ? tx.amount.toStringAsFixed(0)
           : tx.amount.toStringAsFixed(2);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Transaction added: INR $amount at $merchant')),
+        SnackBar(
+            content: Text('Transaction added: \u20B9$amount at $merchant')),
       );
     });
 

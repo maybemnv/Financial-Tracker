@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -9,7 +11,11 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/newsprint_primitives.dart';
 
 final usdFormat = NumberFormat.currency(symbol: '\u0024', decimalDigits: 2);
-final currencyFormat = NumberFormat.currency(symbol: 'INR ', decimalDigits: 0, locale: 'en_IN');
+final inrFormat = NumberFormat.currency(
+  symbol: '\u20B9',
+  decimalDigits: 2,
+  locale: 'en_IN',
+);
 
 class InvoiceSidebar extends ConsumerWidget {
   const InvoiceSidebar({super.key});
@@ -19,7 +25,7 @@ class InvoiceSidebar extends ConsumerWidget {
     final invoicesAsync = ref.watch(invoiceProvider);
 
     return Drawer(
-      width: MediaQuery.of(context).size.width * 0.88,
+      width: math.min(MediaQuery.of(context).size.width * 0.88, 560),
       backgroundColor: AppTheme.scaffold,
       child: SafeArea(
         child: Padding(
@@ -35,9 +41,14 @@ class InvoiceSidebar extends ConsumerWidget {
               ),
             ),
             data: (invoices) {
-              final totalInvoiced = invoices.fold(0.0, (s, i) => s + i.invoicedUsd);
-              final totalReceived = invoices.fold(0.0, (s, i) => s + i.totalReceived);
-              final totalOutstanding = totalInvoiced - totalReceived;
+              final totalInvoiced =
+                  invoices.fold(0.0, (s, i) => s + i.invoicedUsd);
+              final totalPayPal =
+                  invoices.fold(0.0, (s, i) => s + i.receivedPaypal);
+              final totalInBank =
+                  invoices.fold(0.0, (s, i) => s + i.receivedBank);
+              final totalDifference =
+                  invoices.fold(0.0, (s, i) => s + i.difference);
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,14 +64,20 @@ class InvoiceSidebar extends ConsumerWidget {
                             children: [
                               Text(
                                 'INVOICE DESK',
-                                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineMedium
+                                    ?.copyWith(
                                       color: AppTheme.paper,
                                     ),
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Freelance exposure, cash received, and what is still outstanding.',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                'Freelance exposure, PayPal receipts, INR bank settlements, and what is still outstanding.',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
                                       color: AppTheme.paperMuted,
                                     ),
                               ),
@@ -69,19 +86,51 @@ class InvoiceSidebar extends ConsumerWidget {
                         ),
                         IconButton(
                           onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close_rounded, color: AppTheme.paper),
+                          icon: const Icon(Icons.close_rounded,
+                              color: AppTheme.paper),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      Expanded(child: _Summary(label: 'Invoiced', amount: usdFormat.format(totalInvoiced), color: AppTheme.accentGold)),
-                      const SizedBox(width: 8),
-                      Expanded(child: _Summary(label: 'Received', amount: usdFormat.format(totalReceived), color: AppTheme.primaryGreen)),
-                      const SizedBox(width: 8),
-                      Expanded(child: _Summary(label: 'Open', amount: usdFormat.format(totalOutstanding), color: totalOutstanding > 0 ? AppTheme.redAccent : AppTheme.ink)),
+                      SizedBox(
+                        width: 160,
+                        child: _Summary(
+                          label: 'Invoiced',
+                          amount: usdFormat.format(totalInvoiced),
+                          color: AppTheme.accentGold,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 160,
+                        child: _Summary(
+                          label: 'PayPal',
+                          amount: usdFormat.format(totalPayPal),
+                          color: AppTheme.primaryGreen,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 160,
+                        child: _Summary(
+                          label: 'In Bank',
+                          amount: inrFormat.format(totalInBank),
+                          color: AppTheme.focusBlue,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 160,
+                        child: _Summary(
+                          label: 'Difference',
+                          amount: usdFormat.format(totalDifference),
+                          color: totalDifference > 0
+                              ? AppTheme.redAccent
+                              : AppTheme.primaryGreen,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -99,14 +148,26 @@ class InvoiceSidebar extends ConsumerWidget {
                         ? const EmptyState(
                             icon: Icons.request_quote_rounded,
                             title: 'No invoices',
-                            subtitle: 'Add an invoice to track open freelance revenue and payout splits.',
+                            subtitle:
+                                'Add an invoice to track USD billing, PayPal receipts, and INR bank settlements.',
                           )
                         : ListView.builder(
                             padding: EdgeInsets.zero,
                             itemCount: invoices.length,
                             itemBuilder: (context, index) => Padding(
                               padding: const EdgeInsets.only(bottom: 12),
-                              child: _InvoiceCard(invoice: invoices[index]),
+                              child: _InvoiceCard(
+                                invoice: invoices[index],
+                                onEdit: () => _showEditInvoiceDialog(
+                                  context,
+                                  invoices[index],
+                                ),
+                                onDelete: () => _confirmDelete(
+                                  context,
+                                  ref,
+                                  invoices[index],
+                                ),
+                              ),
                             ),
                           ),
                   ),
@@ -122,26 +183,85 @@ class InvoiceSidebar extends ConsumerWidget {
   void _showAddInvoiceDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (ctx) => const _AddInvoiceDialog(),
+      builder: (ctx) => const _InvoiceDialog(),
     );
+  }
+
+  void _showEditInvoiceDialog(BuildContext context, Invoice invoice) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _InvoiceDialog(invoice: invoice),
+    );
+  }
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    Invoice invoice,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete invoice?'),
+        content: const Text(
+          'This soft-deletes the invoice. It stays in your audit history but will not appear in the app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && invoice.id != null) {
+      await ref.read(invoiceProvider.notifier).delete(invoice.id!);
+    }
   }
 }
 
-class _AddInvoiceDialog extends ConsumerStatefulWidget {
-  const _AddInvoiceDialog();
+class _InvoiceDialog extends ConsumerStatefulWidget {
+  const _InvoiceDialog({this.invoice});
+
+  final Invoice? invoice;
 
   @override
-  ConsumerState<_AddInvoiceDialog> createState() => _AddInvoiceDialogState();
+  ConsumerState<_InvoiceDialog> createState() => _InvoiceDialogState();
 }
 
-class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
-  final _clientCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _amountCtrl = TextEditingController();
-  final _paypalCtrl = TextEditingController();
-  final _bankCtrl = TextEditingController();
-  DateTime _invoiceDate = DateTime.now();
+class _InvoiceDialogState extends ConsumerState<_InvoiceDialog> {
+  late final TextEditingController _clientCtrl;
+  late final TextEditingController _descCtrl;
+  late final TextEditingController _amountCtrl;
+  late final TextEditingController _paypalCtrl;
+  late final TextEditingController _bankCtrl;
+  late final TextEditingController _fxRateCtrl;
+  late DateTime _invoiceDate;
   bool _isSaving = false;
+
+  bool get _isEditing => widget.invoice != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final invoice = widget.invoice;
+    _clientCtrl = TextEditingController(text: invoice?.client ?? '');
+    _descCtrl = TextEditingController(text: invoice?.description ?? '');
+    _amountCtrl =
+        TextEditingController(text: invoice?.invoicedUsd.toString() ?? '');
+    _paypalCtrl =
+        TextEditingController(text: invoice?.receivedPaypal.toString() ?? '');
+    _bankCtrl =
+        TextEditingController(text: invoice?.receivedBank.toString() ?? '');
+    _fxRateCtrl =
+        TextEditingController(text: invoice?.fxRate?.toString() ?? '');
+    _invoiceDate = invoice?.invoiceDate ?? DateTime.now();
+  }
 
   @override
   void dispose() {
@@ -150,6 +270,7 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
     _amountCtrl.dispose();
     _paypalCtrl.dispose();
     _bankCtrl.dispose();
+    _fxRateCtrl.dispose();
     super.dispose();
   }
 
@@ -166,30 +287,49 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('New Invoice'),
+      title: Text(_isEditing ? 'Edit Invoice' : 'New Invoice'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: _clientCtrl, decoration: const InputDecoration(labelText: 'Client *')),
+            TextField(
+              controller: _clientCtrl,
+              decoration: const InputDecoration(labelText: 'Client *'),
+            ),
             const SizedBox(height: 12),
-            TextField(controller: _descCtrl, decoration: const InputDecoration(labelText: 'Description')),
+            TextField(
+              controller: _descCtrl,
+              decoration: const InputDecoration(labelText: 'Description'),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: _amountCtrl,
-              decoration: const InputDecoration(labelText: 'Invoiced Amount (USD) *'),
+              decoration:
+                  const InputDecoration(labelText: 'Invoiced Amount (USD) *'),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _paypalCtrl,
-              decoration: const InputDecoration(labelText: 'Received via PayPal (USD)'),
+              decoration:
+                  const InputDecoration(labelText: 'Received via PayPal (USD)'),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _bankCtrl,
-              decoration: const InputDecoration(labelText: 'Received in Bank (USD)'),
+              decoration:
+                  const InputDecoration(labelText: 'Received in Bank (INR)'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _fxRateCtrl,
+              decoration: const InputDecoration(
+                labelText: 'FX Rate (INR per USD)',
+                helperText:
+                    'Used to compare INR bank receipts with USD invoices.',
+              ),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
@@ -204,12 +344,19 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('CANCEL'),
+        ),
         FilledButton(
           onPressed: _isSaving ? null : _submit,
           child: _isSaving
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('SAVE'),
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(_isEditing ? 'UPDATE' : 'SAVE'),
         ),
       ],
     );
@@ -217,6 +364,7 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
 
   Future<void> _submit() async {
     if (_clientCtrl.text.isEmpty || _amountCtrl.text.isEmpty) return;
+
     final invoiced = double.tryParse(_amountCtrl.text);
     if (invoiced == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -224,16 +372,58 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
       );
       return;
     }
+
+    final paypal = double.tryParse(_paypalCtrl.text) ?? 0;
+    final bank = double.tryParse(_bankCtrl.text) ?? 0;
+    final fxRateText = _fxRateCtrl.text.trim();
+    final fxRate = fxRateText.isEmpty
+        ? widget.invoice?.fxRate
+        : double.tryParse(fxRateText);
+
+    if (fxRateText.isNotEmpty && fxRate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid FX rate')),
+      );
+      return;
+    }
+
+    if (!_isEditing && bank > 0 && fxRate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('FX rate is required when bank receipts are in INR'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
     try {
-      await ref.read(invoiceProvider.notifier).add(Invoice(
-            client: _clientCtrl.text,
-            description: _descCtrl.text.isNotEmpty ? _descCtrl.text : null,
-            invoicedUsd: invoiced,
-            receivedPaypal: double.tryParse(_paypalCtrl.text) ?? 0,
-            receivedBank: double.tryParse(_bankCtrl.text) ?? 0,
-            invoiceDate: _invoiceDate,
-          ));
+      final invoice = Invoice(
+        id: widget.invoice?.id,
+        client: _clientCtrl.text,
+        description: _descCtrl.text.isNotEmpty ? _descCtrl.text : null,
+        invoicedUsd: invoiced,
+        receivedPaypal: paypal,
+        receivedBank: bank,
+        paypalFee: widget.invoice?.paypalFee,
+        fxLoss: widget.invoice?.fxLoss,
+        fxRate: fxRate,
+        status: widget.invoice?.status ?? 'pending',
+        invoiceDate: _invoiceDate,
+        isDeleted: widget.invoice?.isDeleted ?? false,
+        deletedAt: widget.invoice?.deletedAt,
+        createdAt: widget.invoice?.createdAt,
+        updatedAt: widget.invoice?.updatedAt,
+      );
+
+      final notifier = ref.read(invoiceProvider.notifier);
+      if (_isEditing) {
+        await notifier.update(invoice);
+      } else {
+        await notifier.add(invoice);
+      }
+
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -248,7 +438,11 @@ class _AddInvoiceDialogState extends ConsumerState<_AddInvoiceDialog> {
 }
 
 class _Summary extends StatelessWidget {
-  const _Summary({required this.label, required this.amount, required this.color});
+  const _Summary({
+    required this.label,
+    required this.amount,
+    required this.color,
+  });
 
   final String label;
   final String amount;
@@ -261,7 +455,8 @@ class _Summary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label.toUpperCase(), style: Theme.of(context).textTheme.labelSmall),
+          Text(label.toUpperCase(),
+              style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(height: 6),
           Text(
             amount,
@@ -277,9 +472,15 @@ class _Summary extends StatelessWidget {
 }
 
 class _InvoiceCard extends StatelessWidget {
-  const _InvoiceCard({required this.invoice});
+  const _InvoiceCard({
+    required this.invoice,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final Invoice invoice;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -295,13 +496,29 @@ class _InvoiceCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(invoice.client, style: Theme.of(context).textTheme.titleLarge),
+                    Text(invoice.client,
+                        style: Theme.of(context).textTheme.titleLarge),
                     if (invoice.description != null) ...[
                       const SizedBox(height: 4),
-                      Text(invoice.description!, style: Theme.of(context).textTheme.bodyMedium),
+                      Text(invoice.description!,
+                          style: Theme.of(context).textTheme.bodyMedium),
                     ],
                   ],
                 ),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == 'edit') {
+                    onEdit();
+                  } else if (value == 'delete') {
+                    onDelete();
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+                icon: const Icon(Icons.more_horiz_rounded),
               ),
               NewsprintTag(
                 label: invoice.computedStatus,
@@ -314,30 +531,69 @@ class _InvoiceCard extends StatelessWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
-              NewsprintMetricStrip(label: 'Invoiced', value: usdFormat.format(invoice.invoicedUsd), valueColor: AppTheme.accentGold),
-              NewsprintMetricStrip(label: 'PayPal', value: usdFormat.format(invoice.receivedPaypal), valueColor: AppTheme.primaryGreen),
-              NewsprintMetricStrip(label: 'Bank', value: usdFormat.format(invoice.receivedBank), valueColor: AppTheme.focusBlue),
+              NewsprintMetricStrip(
+                label: 'Invoiced',
+                value: usdFormat.format(invoice.invoicedUsd),
+                valueColor: AppTheme.accentGold,
+              ),
+              NewsprintMetricStrip(
+                label: 'PayPal',
+                value: usdFormat.format(invoice.receivedPaypal),
+                valueColor: AppTheme.primaryGreen,
+              ),
+              NewsprintMetricStrip(
+                label: 'In Bank',
+                value: inrFormat.format(invoice.receivedBank),
+                valueColor: AppTheme.focusBlue,
+              ),
+              NewsprintMetricStrip(
+                label: 'Difference',
+                value: usdFormat.format(invoice.difference),
+                valueColor: invoice.difference > 0
+                    ? AppTheme.redAccent
+                    : AppTheme.primaryGreen,
+              ),
             ],
           ),
-          if (invoice.outstanding > 0) ...[
+          if (invoice.outstanding.abs() > 0.005) ...[
             const SizedBox(height: 10),
             Text(
-              'Outstanding: ${usdFormat.format(invoice.outstanding)}',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppTheme.redAccent),
+              invoice.difference > 0
+                  ? 'Outstanding: ${usdFormat.format(invoice.outstanding)}'
+                  : 'Overpaid: ${usdFormat.format(invoice.outstanding.abs())}',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: invoice.difference > 0
+                        ? AppTheme.redAccent
+                        : AppTheme.primaryGreen,
+                  ),
             ),
           ],
-          if (invoice.fxRate != null || invoice.paypalFee != null || invoice.fxLoss != null) ...[
+          if (invoice.fxRate != null ||
+              invoice.paypalFee != null ||
+              invoice.fxLoss != null) ...[
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
                 if (invoice.fxRate != null)
-                  NewsprintTag(label: 'FX INR ${invoice.fxRate!.toStringAsFixed(2)}', backgroundColor: AppTheme.paperAlt, textColor: AppTheme.ink),
+                  const NewsprintTag(
+                    label: 'FX INR/USD ',
+                    backgroundColor: AppTheme.paperAlt,
+                    textColor: AppTheme.ink,
+                  ),
                 if (invoice.paypalFee != null)
-                  NewsprintTag(label: 'FEE ${usdFormat.format(invoice.paypalFee!)}', backgroundColor: AppTheme.paperAlt, textColor: AppTheme.ink),
+                  NewsprintTag(
+                    label: 'FEE ${usdFormat.format(invoice.paypalFee!)}',
+                    backgroundColor: AppTheme.paperAlt,
+                    textColor: AppTheme.ink,
+                  ),
                 if (invoice.fxLoss != null)
-                  NewsprintTag(label: 'LOSS ${currencyFormat.format(invoice.fxLoss!)}', backgroundColor: AppTheme.paperAlt, textColor: AppTheme.ink),
+                  NewsprintTag(
+                    label: 'LOSS ${inrFormat.format(invoice.fxLoss!)}',
+                    backgroundColor: AppTheme.paperAlt,
+                    textColor: AppTheme.ink,
+                  ),
               ],
             ),
           ],
