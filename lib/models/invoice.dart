@@ -1,14 +1,17 @@
 /// Freelance invoice with a 3-column payout breakdown.
 ///
-/// [paypalFee], [fxLoss], [fxRate] are derived display fields computed from the
-/// received amounts — no manual entry needed. [computedStatus] mirrors the
-/// SQL-free client-side status derivation.
+/// [receivedBank] is stored in INR. [paypalFee], [fxLoss], and [fxRate] are
+/// derived display fields computed from the received amounts. [computedStatus]
+/// mirrors the SQL-free client-side status derivation.
 class Invoice {
   final String? id;
   final String client;
   final String? description;
   final double invoicedUsd;
   final double receivedPaypal;
+
+  /// Bank receipts are tracked in INR so the app can show the rupee amount
+  /// users actually saw in their bank account.
   final double receivedBank;
   final double? paypalFee;
   final double? fxLoss;
@@ -38,8 +41,17 @@ class Invoice {
     this.updatedAt,
   });
 
-  double get totalReceived => receivedPaypal + receivedBank;
-  double get outstanding => invoicedUsd - totalReceived;
+  double get receivedBankUsdEquivalent {
+    final rate = fxRate;
+    if (rate != null && rate > 0) {
+      return receivedBank / rate;
+    }
+    return receivedBank;
+  }
+
+  double get totalReceived => receivedPaypal + receivedBankUsdEquivalent;
+  double get difference => invoicedUsd - receivedPaypal;
+  double get outstanding => difference;
 
   String get computedStatus {
     if (totalReceived >= invoicedUsd) return 'paid';
@@ -86,7 +98,7 @@ class Invoice {
       'paypal_fee': paypalFee,
       'fx_loss': fxLoss,
       'fx_rate': fxRate,
-      'status': status,
+      'status': computedStatus,
       'invoice_date': invoiceDate?.toIso8601String(),
     };
   }

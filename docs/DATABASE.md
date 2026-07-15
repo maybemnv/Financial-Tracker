@@ -150,7 +150,7 @@ Freelance invoice tracking with 3-column payout breakdown.
 | `description` | `text` | `nullable` | Invoice line item or project description |
 | `invoiced_usd` | `numeric` | | Amount invoiced in USD |
 | `received_paypal` | `numeric` | `0` | Amount received via PayPal (USD) |
-| `received_bank` | `numeric` | `0` | Amount received via bank transfer (USD) |
+| `received_bank` | `numeric` | `0` | Amount received via bank transfer (INR) |
 | `paypal_fee` | `numeric` | `nullable` | PayPal fee deducted (USD) |
 | `fx_loss` | `numeric` | `nullable` | Loss due to FX conversion (INR) |
 | `fx_rate` | `numeric` | `nullable` | Effective INR/USD rate at time of receipt |

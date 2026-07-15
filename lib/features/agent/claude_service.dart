@@ -136,7 +136,7 @@ class ClaudeService {
       'function': {
         'name': 'get_invoices',
         'description':
-            'Get freelance invoice summary: total invoiced, received via PayPal, received via bank, outstanding per client.',
+            'Get freelance invoice summary: total invoiced, received via PayPal, INR bank receipts, and outstanding difference per client.',
         'parameters': {
           'type': 'object',
           'properties': {},
@@ -750,29 +750,31 @@ class ClaudeService {
     try {
       final data = await supabase
           .from('invoices')
-          .select('client, invoiced_usd, received_paypal, received_bank')
+          .select(
+              'client, invoiced_usd, received_paypal, received_bank, fx_rate')
           .eq('is_deleted', false);
 
       if ((data as List).isEmpty) return 'No invoices yet.';
 
       var totalInvoiced = 0.0;
-      var totalReceived = 0.0;
+      var totalPaypal = 0.0;
+      var totalBankInr = 0.0;
       final lines = <String>[];
       for (final rawInvoice in data) {
         final invoice = Map<String, dynamic>.from(rawInvoice as Map);
         final invoiced = (invoice['invoiced_usd'] as num).toDouble();
-        final received =
-            ((invoice['received_paypal'] as num?)?.toDouble() ?? 0) +
-                ((invoice['received_bank'] as num?)?.toDouble() ?? 0);
+        final paypal = (invoice['received_paypal'] as num?)?.toDouble() ?? 0;
+        final bankInr = (invoice['received_bank'] as num?)?.toDouble() ?? 0;
         totalInvoiced += invoiced;
-        totalReceived += received;
+        totalPaypal += paypal;
+        totalBankInr += bankInr;
         lines.add(
-          '${invoice['client']}: invoiced \$$invoiced, received \$$received, outstanding \$${invoiced - received}',
+          '${invoice['client']}: invoiced \$$invoiced, PayPal \$$paypal, in bank INR $bankInr, difference \$${invoiced - paypal}',
         );
       }
       lines.add('');
       lines.add(
-        'Total invoiced: \$$totalInvoiced, Total received: \$$totalReceived, Outstanding: \$${totalInvoiced - totalReceived}',
+        'Total invoiced: \$$totalInvoiced, PayPal: \$$totalPaypal, In bank: INR $totalBankInr, Difference: \$${totalInvoiced - totalPaypal}',
       );
       return lines.join('\n');
     } catch (e) {
