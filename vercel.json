@@ -1,5 +1,5 @@
 {
-  "buildCommand": "test -n \"$SUPABASE_URL\" || { echo 'ERROR: SUPABASE_URL is not set'; exit 1; }; test -n \"$SUPABASE_ANON_KEY\" || { echo 'ERROR: SUPABASE_ANON_KEY is not set'; exit 1; }; test -n \"$GROQ_API_KEY\" || { echo 'ERROR: GROQ_API_KEY is not set'; exit 1; }; printf \"SUPABASE_URL=%s\\nSUPABASE_ANON_KEY=%s\\nGROQ_API_KEY=%s\\n\" \"$SUPABASE_URL\" \"$SUPABASE_ANON_KEY\" \"$GROQ_API_KEY\" > .env && flutter build web",
+  "buildCommand": "./vercel-build.sh",
   "outputDirectory": "build/web",
   "framework": "flutter",
   "devCommand": "flutter run -d web"
