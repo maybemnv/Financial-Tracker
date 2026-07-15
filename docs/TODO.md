@@ -99,12 +99,12 @@
 ### 2.2 Make Config Web-Safe
 - [x] Strip `SUPABASE_SERVICE_KEY` from local `.env` (unused client-side, must not ship in bundle)
 - [x] Update `.env.example` to browser-safe keys only:
-  - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GROQ_API_KEY`
+  - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GEMINI_API_KEY`
 - [x] Update `vercel.json` build command to generate `.env` from Vercel env vars before `flutter build web`
-- [ ] Add required Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GROQ_API_KEY` (Vercel dashboard)
+- [ ] Add required Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GEMINI_API_KEY` (Vercel dashboard)
 - [x] Verify no service key leaks into `build/web`
 - [ ] Rotate `SUPABASE_SERVICE_KEY` in Supabase (if there's any doubt it was ever shipped)
-- [ ] Optional future: proxy Groq calls through a Supabase Edge Function so the AI key never reaches the browser
+- [ ] Optional future: proxy Gemini calls through a Supabase Edge Function so the AI key never reaches the browser
 
 ### 2.3 Delete Native Project Folders
 - [x] Delete `android/`
@@ -121,7 +121,7 @@
   - Deployment: Vercel generates `.env` from env vars at build time
   - Note: SMS auto-capture removed in web-only product
 - [x] Update `docs/ARCHITECTURE.md`:
-  - Replace Android/Windows diagram with Web App → Supabase → Groq
+  - Replace Android/Windows diagram with Web App → Supabase → Gemini
   - Remove SMS Listener from system overview
 - [x] Update `.env.example` — only browser-safe keys
 - [x] This file — mark completed items as done
@@ -141,7 +141,7 @@
 - [ ] Dashboard aggregates correctly
 - [ ] Goals load and allocations work
 - [ ] Invoice drawer loads and writes
-- [ ] Agent chat works if `GROQ_API_KEY` is configured
+- [ ] Agent chat works if `GEMINI_API_KEY` is configured
 - [ ] No serious runtime errors in browser console
 - [ ] Vercel build log shows `.env` generation before `flutter build web`
 - [ ] Production deployment serves `build/web` and app boots
@@ -167,12 +167,12 @@
 
 ## Phase 4: Finance Agent
 
-### Groq API Integration
+### Gemini API Integration
 - [x] HTTP client configured (`http` package)
 - [x] API key loaded from `.env` via flutter_dotenv
 - [x] Data gathering before sending: per-account fn_account_balance, fn_net_worth, tx summary, invoices, goals
 - [x] Proper tool-use (8 tool definitions, tool call execution loop up to 10 rounds)
-- [x] Model: Groq Qwen 32B (cheap/fast)
+- [x] Model: Gemini 2.5 Flash
 - [x] Conversation history maintenance (multi-turn context)
 - [x] Structured context injected per query: balance per account via `fn_account_balance`, net worth via `fn_net_worth`, monthly burn, goal progress
 - [x] Include committed recurring spend + expected income in agent context
@@ -203,7 +203,7 @@
 
 ### Error Handling & Resilience
 - [ ] Graceful degradation when Supabase is down (local cache or offline state)
-- [x] Retry logic for Groq API failures (no streaming to manage)
+- [x] Retry logic for Gemini API failures (no streaming to manage)
 - [x] Duplicate transaction prevention (raw_sms hash via Dedup utility, checked in TransactionNotifier.add)
 
 ### Performance
@@ -213,7 +213,7 @@
 ### Security (Web-Specific)
 - [x] Keys loaded from `.env` (gitignored), not hardcoded
 - [x] `SUPABASE_SERVICE_KEY` removed from web bundle (service-role key must never ship to browser)
-- [x] `SUPABASE_ANON_KEY` and `GROQ_API_KEY` exposure acknowledged — both are browser-visible
+- [x] `SUPABASE_ANON_KEY` and `GEMINI_API_KEY` exposure acknowledged — both are browser-visible
 - [ ] Verify no keys in crash logs or error stack traces
 - [ ] RLS review before any public exposure
 
@@ -225,7 +225,7 @@
 ### Build & Release (Web)
 - [x] `flutter build web` — release artifact in `build/web/`
 - [ ] Configure Vercel project pointing at repo
-- [ ] Set Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GROQ_API_KEY`
+- [ ] Set Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GEMINI_API_KEY`
 - [ ] Deploy from `main` branch — auto-build on push
 
 ---
@@ -252,7 +252,7 @@ Questions to ask:
 - **Immutable history** — store old/new values and edited_at on every change.
 - **Boring dashboard first** — Emergency Fund progress, Savings Rate, Monthly Spend, Per-Account Balance before any fancy charts.
 - **Balances are derived, not stored** — `accounts` has `opening_balance` + `opening_date`. Current balance is `fn_account_balance()`. No `balance` column to drift.
-- **Career Investment tag** — Keyboard, domains, hosting, Groq API costs, courses = tagged separately, excluded from discretionary spend reports.
+- **Career Investment tag** — Keyboard, domains, hosting, Gemini API costs, courses = tagged separately, excluded from discretionary spend reports.
 - **Invoice FX fields** — PayPal fee, FX loss, FX rate are derived display fields from received amounts. No manual entry needed.
 - **No streaming** — Agent responses appear after 2–4s. SSE removed from scope permanently.
 - **Transaction attachments** (backlog) — Invoice PDFs, receipts, and screenshots attached to transactions. Not in v1 scope. Noted here so future schema changes leave room.

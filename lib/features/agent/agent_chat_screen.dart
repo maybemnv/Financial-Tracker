@@ -53,7 +53,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       title: 'Interrogate the ledger',
       subtitle: 'Ask for affordability, spending shape, goal pressure, or invoice exposure. The model answers from your live finance data.',
       actions: [
-        NewsprintTag(label: 'Groq ${_agent.modelName}'),
+        NewsprintTag(label: 'Gemini ${_agent.modelName}'),
         OutlinedButton.icon(
           onPressed: () async {
             setState(() {

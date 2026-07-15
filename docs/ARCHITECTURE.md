@@ -1,6 +1,6 @@
 # Architecture
 
-Flutter web personal finance app backed by Supabase (Postgres + Realtime) with a Groq-powered finance agent.
+Flutter web personal finance app backed by Supabase (Postgres + Realtime) with a Gemini-powered finance agent.
 
 ---
 
@@ -23,7 +23,7 @@ graph TB
         MS[monthly_snapshots]
     end
 
-    subgraph Groq["Groq API (Qwen 32B)"]
+    subgraph Gemini["Gemini API (2.5 Flash)"]
         CAT[categorization fallback]
         AGT[agent Q&A]
     end
@@ -31,8 +31,8 @@ graph TB
     WebApp -->|insert / select / subscribe| Supabase
     Supabase -->|realtime push| WebApp
 
-    WebApp -.->|unmatched tx / question| Groq
-    Groq -.->|category + tags / answer| WebApp
+    WebApp -.->|unmatched tx / question| Gemini
+    Gemini -.->|category + tags / answer| WebApp
 ```
 
 ---

@@ -15,10 +15,10 @@ Flutter web personal finance app backed by Supabase.
 - **Paytm-Style List** — Transactions grouped by date ("Today", "Yesterday", "Fri, 27 Jun 2026"), 24hr time on each row.
 - **Soft Delete** — Nothing is ever hard-deleted; `is_deleted` + `deleted_at` on all tables + confirmation dialog
 - **Immutable Audit Trail** — `edit_history` JSONB stores old/new values + `edited_at` on every change
-- **Smart Categorization** — Rule-based (priority-ordered) + Groq LLM fallback
+- **Smart Categorization** — Rule-based (priority-ordered) + Gemini LLM fallback
 - **Goals** — Set savings goals with live progress tracking; Emergency Fund goal detected by `type` field, pinned to top
 - **Invoice Sidebar** — Track freelance invoices with PayPal USD, INR bank receipts, FX rate, and fee chips
-- **Finance Agent** — Groq-powered Q&A with tool-use (8 tools that query your actual data)
+- **Finance Agent** — Gemini-powered Q&A with tool-use (8 tools that query your actual data)
 - **Monthly Snapshots** — Pre-computed monthly aggregates written on first open of each new month
 
 ## Tech Stack
@@ -29,7 +29,7 @@ Flutter web personal finance app backed by Supabase.
 | Backend / DB | Supabase (Postgres, Realtime) |
 | State | Riverpod |
 | Charts | fl_chart |
-| LLM | Groq Qwen 32B |
+| LLM | Gemini 2.5 Flash |
 
 ## Setup
 
@@ -37,7 +37,7 @@ Flutter web personal finance app backed by Supabase.
 
 - Flutter SDK (stable)
 - Supabase account (free tier)
-- Groq API key
+- Gemini API key
 
 ### 1. Environment
 
@@ -46,7 +46,7 @@ Create `.env` in the project root:
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
-GROQ_API_KEY=gsk_your_groq_api_key
+GEMINI_API_KEY=your-gemini-api-key
 ```
 
 Do not include `SUPABASE_SERVICE_KEY` — it is not used by the client and would be exposed in the browser bundle.
@@ -106,7 +106,7 @@ lib/
 │   ├── dashboard/             # Emergency Fund, Savings Rate, per-account balances, pie chart
 │   ├── goals/                 # Goal list (emergency fund pinned) + add/allocate
 │   ├── invoices/              # Slide-in sidebar with FX chips
-│   ├── agent/                 # Chat UI + Groq tool-use service (8 tools)
+│   ├── agent/                 # Chat UI + Gemini tool-use service (8 tools)
 │   └── sms/                   # SMS parser (kept for future paste/import)
 └── widgets/                   # Shared UI components (EmptyState, SummaryCard)
 ```
@@ -120,14 +120,14 @@ This app is designed for Vercel deployment.
 3. Set environment variables in the Vercel project dashboard:
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
-   - `GROQ_API_KEY`
+   - `GEMINI_API_KEY`
 4. Vercel builds with `vercel.json` which generates `.env` from these vars before `flutter build web`
 
 ### Security Notes
 
-- The browser bundle contains `SUPABASE_ANON_KEY` and `GROQ_API_KEY` — both are visible to users. This is acceptable for a personal single-user app.
+- The browser bundle contains `SUPABASE_ANON_KEY` and `GEMINI_API_KEY` — both are visible to users. This is acceptable for a personal single-user app.
 - `SUPABASE_SERVICE_KEY` must never be added to the Flutter `.env` or Vercel env vars — it would grant full database access to anyone who inspects the web bundle.
-- For higher security, move Groq calls behind a Supabase Edge Function so the API key never reaches the browser.
+- For higher security, move Gemini calls behind a Supabase Edge Function so the API key never reaches the browser.
 
 ## Design Principles
 
@@ -137,5 +137,5 @@ This app is designed for Vercel deployment.
 - **Investments are not expenses** — `type = 'investment'`, net worth unchanged.
 - **Immutable history** — `edit_history` JSONB stores every change.
 - **Balances are derived** — `accounts` has `opening_balance` + `opening_date`. Current balance is `fn_account_balance()`. No `balance` column.
-- **Agent uses tool-use, not context injection** — Groq decides which of the 8 tools to call per turn. No pre-fetching data.
+- **Agent uses tool-use, not context injection** — Gemini decides which of the 8 tools to call per turn. No pre-fetching data.
 - **No streaming** — Agent responses appear after 2–4s. SSE removed from scope permanently.

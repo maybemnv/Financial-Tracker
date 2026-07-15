@@ -247,7 +247,7 @@ class LlmService {
       final choices = (data['choices'] as List<dynamic>? ?? const []);
       if (choices.isEmpty) {
         await _persistMessages();
-        return 'Error: Groq returned no choices.';
+        return 'Error: Gemini returned no choices.';
       }
 
       final choice = Map<String, dynamic>.from(choices.first as Map);
@@ -407,10 +407,10 @@ class LlmService {
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
         final response = await http.post(
-          Uri.parse(AppConstants.groqApiUrl),
+          Uri.parse(AppConstants.geminiApiUrl),
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${AppConstants.groqApiKey}',
+            'Authorization': 'Bearer ${AppConstants.geminiApiKey}',
           },
           body: jsonEncode(body),
         );
@@ -431,7 +431,7 @@ class LlmService {
     if (lastResponse != null) {
       return lastResponse;
     }
-    throw Exception(lastError ?? 'Groq request failed');
+    throw Exception(lastError ?? 'Gemini request failed');
   }
 
   Map<String, dynamic> _decodeToolArguments(String? raw) {

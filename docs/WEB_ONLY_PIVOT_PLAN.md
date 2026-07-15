@@ -64,11 +64,11 @@ Current client code only needs:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
-- `GROQ_API_KEY`
+- `GEMINI_API_KEY`
 
 Current client code does not use `SUPABASE_SERVICE_KEY`. That key must not be shipped in the web bundle.
 
-Important: `GROQ_API_KEY` is used by the client-side agent service. If it remains client-side, it will be exposed in the browser bundle. That is acceptable only if treated as a public client key for this personal app. The more secure future path is moving Groq calls behind a Supabase Edge Function or another server-side proxy.
+Important: `GEMINI_API_KEY` is used by the client-side agent service. If it remains client-side, it will be exposed in the browser bundle. That is acceptable only if treated as a public client key for this personal app. The more secure future path is moving Gemini calls behind a Supabase Edge Function or another server-side proxy.
 
 ## Migration Phases
 
@@ -121,7 +121,7 @@ Local development rules:
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
-GROQ_API_KEY=your-groq-api-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
 ```
 
 - Do not include `SUPABASE_SERVICE_KEY` in the Flutter app `.env`.
@@ -134,7 +134,7 @@ Vercel build strategy:
 ```text
 SUPABASE_URL
 SUPABASE_ANON_KEY
-GROQ_API_KEY
+GEMINI_API_KEY
 ```
 
 - Generate `.env` during the Vercel build from those environment variables, then build Flutter web.
@@ -142,14 +142,14 @@ GROQ_API_KEY
 - Update `vercel.json` build command to something equivalent to:
 
 ```bash
-printf "SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nGROQ_API_KEY=%s\n" "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$GROQ_API_KEY" > .env && flutter build web
+printf "SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nGEMINI_API_KEY=%s\n" "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$GEMINI_API_KEY" > .env && flutter build web
 ```
 
 Recommended `vercel.json` shape:
 
 ```json
 {
-  "buildCommand": "printf \"SUPABASE_URL=%s\\nSUPABASE_ANON_KEY=%s\\nGROQ_API_KEY=%s\\n\" \"$SUPABASE_URL\" \"$SUPABASE_ANON_KEY\" \"$GROQ_API_KEY\" > .env && flutter build web",
+  "buildCommand": "printf \"SUPABASE_URL=%s\\nSUPABASE_ANON_KEY=%s\\nGEMINI_API_KEY=%s\\n\" \"$SUPABASE_URL\" \"$SUPABASE_ANON_KEY\" \"$GEMINI_API_KEY\" > .env && flutter build web",
   "outputDirectory": "build/web",
   "framework": "flutter",
   "devCommand": "flutter run -d web"
@@ -169,7 +169,7 @@ Validation:
 - Confirm `.env` in the build contains only the three expected keys.
 - Confirm no service key appears in `build/web`.
 - Confirm app boots and Supabase initializes.
-- Confirm agent feature can call Groq if `GROQ_API_KEY` is set.
+- Confirm agent feature can call Gemini if `GEMINI_API_KEY` is set.
 
 Security note:
 
@@ -178,10 +178,10 @@ Security note:
 
 Future secure AI path:
 
-- Move Groq requests from the browser to a Supabase Edge Function.
-- Store `GROQ_API_KEY` as an Edge Function secret.
+- Move Gemini requests from the browser to a Supabase Edge Function.
+- Store `GEMINI_API_KEY` as an Edge Function secret.
 - The Flutter app calls the Edge Function with the user's prompt/context.
-- The browser never receives the Groq key.
+- The browser never receives the Gemini key.
 
 ### Phase 3: Delete Native Project Folders
 
@@ -248,7 +248,7 @@ flutter build web
 
 Update `docs/ARCHITECTURE.md`:
 
-- Replace Android/Windows system diagram with Web App -> Supabase -> Groq.
+- Replace Android/Windows system diagram with Web App -> Supabase -> Gemini.
 - Remove SMS Listener from system overview.
 - Keep manual entry, transaction CRUD, Supabase realtime, invoices, goals, dashboard, and agent desk.
 
@@ -263,7 +263,7 @@ Update `.env.example`:
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
-GROQ_API_KEY=your-groq-api-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
 ```
 
 Do not include `SUPABASE_SERVICE_KEY`.
@@ -271,7 +271,7 @@ Do not include `SUPABASE_SERVICE_KEY`.
 Validation:
 
 - Docs no longer tell users to build Android app bundles or Windows desktop builds.
-- Docs clearly state that the browser bundle contains the anon Supabase key and client Groq key.
+- Docs clearly state that the browser bundle contains the anon Supabase key and client Gemini key.
 
 ### Phase 5: Web UX Pass
 
@@ -332,7 +332,7 @@ Manual checks:
 - Dashboard aggregates current-month data correctly.
 - Goals load and allocations work.
 - Invoice drawer loads and writes.
-- Agent chat works if `GROQ_API_KEY` is configured.
+- Agent chat works if `GEMINI_API_KEY` is configured.
 - Browser console has no serious runtime errors.
 
 Vercel checks after deployment setup:
@@ -367,7 +367,7 @@ Vercel checks after deployment setup:
 - Do not redesign the database.
 - Do not move money-modifying actions into AI automation.
 - Do not deploy during the planning/build-only pass.
-- Do not implement Groq Edge Function proxy unless explicitly chosen later.
+- Do not implement Gemini Edge Function proxy unless explicitly chosen later.
 - Do not build Android or Windows artifacts after this pivot.
 
 ## Open Questions For Later
