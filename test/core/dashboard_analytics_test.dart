@@ -1,5 +1,6 @@
 import 'package:finance_tracker/core/dashboard_analytics.dart';
 import 'package:finance_tracker/models/transaction.dart';
+import 'package:finance_tracker/models/transaction_label.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -17,7 +18,9 @@ void main() {
             amount: 1200,
             type: 'debit',
             direction: 'outflow',
-            category: 'Food',
+            labels: const [
+              TransactionLabel(id: 'food', name: 'Food', color: '#1D76DB'),
+            ],
             createdAt: DateTime(2026, 7, 3),
           ),
           Transaction(
@@ -80,7 +83,7 @@ void main() {
         reason:
             'June trend should include the transaction because transactedAt is in June.',
       );
-      expect(analytics.spendingCategories.single.label, 'Uncategorized');
+      expect(analytics.spendingCategories.single.label, 'Unlabeled');
     });
 
     test('can focus a prior month and counts PayPal payout inflows as income',
@@ -107,7 +110,9 @@ void main() {
             amount: 1200,
             type: 'debit',
             direction: 'outflow',
-            category: 'Food',
+            labels: const [
+              TransactionLabel(id: 'food', name: 'Food', color: '#1D76DB'),
+            ],
             transactedAt: DateTime(2026, 6, 20),
           ),
         ],
@@ -124,5 +129,30 @@ void main() {
         [DateTime(2026, 7), DateTime(2026, 6)],
       );
     });
+  });
+
+  test('splits a multi-label transaction so the pie remains a full spending mix',
+      () {
+    final analytics = DashboardAnalytics.fromTransactions(
+      [
+        Transaction(
+          amount: 1000,
+          type: 'debit',
+          direction: 'outflow',
+          createdAt: DateTime(2026, 7, 3),
+          labels: const [
+            TransactionLabel(id: 'food', name: 'Food', color: '#1D76DB'),
+            TransactionLabel(id: 'drinks', name: 'Drinks', color: '#B60205'),
+          ],
+        ),
+      ],
+      now: DateTime(2026, 7, 10),
+    );
+
+    expect(analytics.spendingCategories, hasLength(2));
+    expect(analytics.spendingCategories.every((point) => point.amount == 500),
+        isTrue);
+    expect(analytics.spendingCategories.fold<double>(
+        0, (total, point) => total + point.share), closeTo(1, 0.001));
   });
 }
