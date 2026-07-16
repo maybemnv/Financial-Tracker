@@ -1,5 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 
+import 'package:flutter/services.dart';
+
 import '../../core/theme.dart';
 import '../../widgets/newsprint_primitives.dart';
 import 'llm_service.dart';
@@ -75,14 +77,27 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
             color: AppTheme.paper,
             child: Column(
               children: [
-                TextField(
-                  controller: _inputCtrl,
-                  maxLines: 4,
-                  minLines: 1,
-                  decoration: const InputDecoration(
-                    hintText: 'Ask the agent what changed, what is risky, or what you can afford next.',
+                Focus(
+                  onKeyEvent: (_, event) {
+                    final shouldSend = event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.enter &&
+                        !HardwareKeyboard.instance.isShiftPressed;
+                    if (shouldSend && !_isLoading) {
+                      _sendMessage(_inputCtrl.text);
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  child: TextField(
+                    controller: _inputCtrl,
+                    maxLines: 4,
+                    minLines: 1,
+                    keyboardType: TextInputType.multiline,
+                    decoration: const InputDecoration(
+                      hintText: 'Ask the agent what changed, what is risky, or what you can afford next.',
+                    ),
+                    onSubmitted: _isLoading ? null : _sendMessage,
                   ),
-                  onSubmitted: _isLoading ? null : _sendMessage,
                 ),
                 const SizedBox(height: 12),
                 Row(
