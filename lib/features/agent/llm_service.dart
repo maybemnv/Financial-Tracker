@@ -541,11 +541,14 @@ class LlmService {
       final since =
           days != null ? DateTime.now().subtract(Duration(days: days)) : null;
 
-      final requestedLabel = (filters['label'] as String?)?.toLowerCase();
+      final requestedLabel = filters['label'] as String?;
+      final labelRelation = requestedLabel == null
+          ? 'transaction_labels(label:labels(name, color))'
+          : 'transaction_labels!inner(label:labels!inner(name, color))';
       var query = supabase
           .from('transactions')
           .select(
-              'amount, type, direction, merchant, vpa, account_id, created_at, transacted_at, note, transaction_labels(label:labels(name, color))')
+              'amount, type, direction, merchant, vpa, account_id, created_at, transacted_at, note, $labelRelation')
           .eq('is_deleted', false);
 
       if (filters['type'] != null) {
@@ -553,6 +556,9 @@ class LlmService {
       }
       if (filters['account_id'] != null) {
         query = query.eq('account_id', filters['account_id']);
+      }
+      if (requestedLabel != null) {
+        query = query.eq('transaction_labels.labels.name', requestedLabel);
       }
 
       final data = await query
@@ -562,11 +568,6 @@ class LlmService {
       final rows = (data as List)
           .map((row) => Map<String, dynamic>.from(row as Map))
           .where((row) {
-        if (requestedLabel != null &&
-            !_labelNames(row)
-                .any((label) => label.toLowerCase() == requestedLabel)) {
-          return false;
-        }
         final effectiveDate = _effectiveDate(row);
         if (since != null &&
             (effectiveDate == null || effectiveDate.isBefore(since))) {
