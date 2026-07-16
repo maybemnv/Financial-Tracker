@@ -374,12 +374,29 @@ class _TransactionCard extends ConsumerWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    '${tx.isInflow ? '+' : '-'}${_currency.format(tx.amount)}',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: color,
-                          fontFamilyFallback: AppTheme.monoFallback,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!tx.isTransfer && !tx.isInvestment)
+                        IconButton(
+                          onPressed: () => _edit(context),
+                          icon: const Icon(Icons.edit_outlined, size: 17),
+                          tooltip: 'Edit transaction',
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 32,
+                            height: 32,
+                          ),
                         ),
+                      Text(
+                        '${tx.isInflow ? '+' : '-'}${_currency.format(tx.amount)}',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: color,
+                                  fontFamilyFallback: AppTheme.monoFallback,
+                                ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(DateFormat('HH:mm').format(tx.effectiveDate),
@@ -427,6 +444,15 @@ class _TransactionCard extends ConsumerWidget {
       await ref.read(transactionProvider.notifier).delete(tx.id!);
     }
   }
+
+  Future<void> _edit(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddTransactionScreen(transaction: tx),
+      ),
+    );
+  }
 }
 
 class _MovementIcon extends StatelessWidget {
@@ -454,7 +480,9 @@ class _MovementIcon extends StatelessWidget {
 }
 
 class AddTransactionScreen extends ConsumerStatefulWidget {
-  const AddTransactionScreen({super.key});
+  const AddTransactionScreen({super.key, this.transaction});
+
+  final Transaction? transaction;
 
   @override
   ConsumerState<AddTransactionScreen> createState() =>
@@ -463,18 +491,35 @@ class AddTransactionScreen extends ConsumerStatefulWidget {
 
 class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _amountCtrl = TextEditingController();
-  final _merchantCtrl = TextEditingController();
-  final _vpaCtrl = TextEditingController();
-  final _bankCtrl = TextEditingController();
+  late final TextEditingController _amountCtrl;
+  late final TextEditingController _merchantCtrl;
+  late final TextEditingController _vpaCtrl;
+  late final TextEditingController _bankCtrl;
   final _selectedLabels = <TransactionLabel>[];
-  String _type = 'debit';
+  late String _type;
   String? _accountId;
   String? _destAccountId;
   DateTime? _transactedAt;
   bool _isSaving = false;
 
   bool get _needsDestination => _type == 'transfer' || _type == 'investment';
+  bool get _isEditing => widget.transaction != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final transaction = widget.transaction;
+    _amountCtrl = TextEditingController(
+      text: transaction?.amount.toString() ?? '',
+    );
+    _merchantCtrl = TextEditingController(text: transaction?.merchant ?? '');
+    _vpaCtrl = TextEditingController(text: transaction?.vpa ?? '');
+    _bankCtrl = TextEditingController(text: transaction?.bank ?? '');
+    _type = transaction?.type ?? 'debit';
+    _accountId = transaction?.accountId;
+    _transactedAt = transaction?.transactedAt;
+    _selectedLabels.addAll(transaction?.labels ?? const []);
+  }
 
   @override
   void dispose() {
@@ -519,7 +564,9 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
             ? 'Today, ${DateFormat('HH:mm').format(_transactedAt!)}'
             : DateFormat('dd MMM yyyy, HH:mm').format(_transactedAt!);
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Transaction')),
+      appBar: AppBar(
+        title: Text(_isEditing ? 'Edit Transaction' : 'Add Transaction'),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -527,12 +574,17 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
           child: ListView(
             children: [
               SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'debit', label: Text('Debit')),
-                  ButtonSegment(value: 'credit', label: Text('Credit')),
-                  ButtonSegment(value: 'transfer', label: Text('Transfer')),
-                  ButtonSegment(value: 'investment', label: Text('Invest')),
-                ],
+                segments: _isEditing
+                    ? const [
+                        ButtonSegment(value: 'debit', label: Text('Debit')),
+                        ButtonSegment(value: 'credit', label: Text('Credit')),
+                      ]
+                    : const [
+                        ButtonSegment(value: 'debit', label: Text('Debit')),
+                        ButtonSegment(value: 'credit', label: Text('Credit')),
+                        ButtonSegment(value: 'transfer', label: Text('Transfer')),
+                        ButtonSegment(value: 'investment', label: Text('Invest')),
+                      ],
                 selected: {_type},
                 onSelectionChanged: (value) => setState(() => _type = value.first),
               ),
@@ -625,7 +677,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 onPressed: _isSaving ? null : _submit,
                 child: _isSaving
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Save Transaction'),
+                    : Text(_isEditing ? 'Save Changes' : 'Save Transaction'),
               ),
             ],
           ),
@@ -667,7 +719,31 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     try {
       final amount = double.parse(_amountCtrl.text);
       final notifier = ref.read(transactionProvider.notifier);
-      if (_type == 'transfer') {
+      if (_isEditing) {
+        final original = widget.transaction!;
+        await notifier.update(
+          Transaction(
+            id: original.id,
+            amount: amount,
+            type: _type,
+            direction: _type == 'credit' ? 'inflow' : 'outflow',
+            accountId: _accountId,
+            merchant:
+                _merchantCtrl.text.trim().isEmpty ? null : _merchantCtrl.text.trim(),
+            vpa: _vpaCtrl.text.trim().isEmpty ? null : _vpaCtrl.text.trim(),
+            bank: _bankCtrl.text.trim().isEmpty ? null : _bankCtrl.text.trim(),
+            labels: List.unmodifiable(_selectedLabels),
+            rawSms: original.rawSms,
+            rawSmsHash: original.rawSmsHash,
+            source: original.source,
+            note: original.note,
+            usdAmount: original.usdAmount,
+            linkedInvoiceId: original.linkedInvoiceId,
+            transferGroupId: original.transferGroupId,
+            transactedAt: _transactedAt,
+          ),
+        );
+      } else if (_type == 'transfer') {
         await notifier.addTransfer(
           fromAccountId: _accountId!,
           toAccountId: _destAccountId!,
