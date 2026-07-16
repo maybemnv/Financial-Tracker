@@ -877,7 +877,7 @@ class _DailyFlowChart extends StatelessWidget {
   }
 }
 
-class _ScrollableChartViewport extends StatelessWidget {
+class _ScrollableChartViewport extends StatefulWidget {
   const _ScrollableChartViewport({
     required this.minWidth,
     required this.child,
@@ -887,14 +887,30 @@ class _ScrollableChartViewport extends StatelessWidget {
   final Widget child;
 
   @override
+  State<_ScrollableChartViewport> createState() =>
+      _ScrollableChartViewportState();
+}
+
+class _ScrollableChartViewportState extends State<_ScrollableChartViewport> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = max(constraints.maxWidth, minWidth).toDouble();
+        final width = max(constraints.maxWidth, widget.minWidth).toDouble();
         return Scrollbar(
+          controller: _scrollController,
           child: SingleChildScrollView(
+            controller: _scrollController,
             scrollDirection: Axis.horizontal,
-            child: SizedBox(width: width, child: child),
+            child: SizedBox(width: width, child: widget.child),
           ),
         );
       },

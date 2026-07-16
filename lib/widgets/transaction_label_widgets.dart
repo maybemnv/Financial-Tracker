@@ -116,26 +116,43 @@ class _CreateTransactionLabelDialogState
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _colors.map((color) {
-                final selected = color == _color;
-                return Tooltip(
-                  message: color,
+              children: [
+                ..._colors.map((color) {
+                  final selected = color == _color;
+                  return Tooltip(
+                    message: color,
+                    child: InkWell(
+                      onTap: () => setState(() => _color = color),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: TransactionLabel(name: '', color: color).colorValue,
+                          border: Border.all(
+                            color: AppTheme.ink,
+                            width: selected ? 3 : 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                Tooltip(
+                  message: 'Custom color',
                   child: InkWell(
-                    onTap: () => setState(() => _color = color),
+                    onTap: _pickCustomColor,
                     child: Container(
                       width: 30,
                       height: 30,
                       decoration: BoxDecoration(
-                        color: TransactionLabel(name: '', color: color).colorValue,
-                        border: Border.all(
-                          color: AppTheme.ink,
-                          width: selected ? 3 : 1.5,
-                        ),
+                        color: AppTheme.paper,
+                        border: Border.all(color: AppTheme.ink, width: 1.5),
                       ),
+                      child: const Icon(Icons.colorize_rounded, size: 18),
                     ),
                   ),
-                );
-              }).toList(),
+                ),
+              ],
             ),
           ],
         ),
@@ -157,5 +174,86 @@ class _CreateTransactionLabelDialogState
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
     Navigator.pop(context, (name: name, color: _color));
+  }
+
+  Future<void> _pickCustomColor() async {
+    final initial = TransactionLabel(name: '', color: _color).colorValue;
+    var red = (initial.r * 255.0).round().clamp(0, 255);
+    var green = (initial.g * 255.0).round().clamp(0, 255);
+    var blue = (initial.b * 255.0).round().clamp(0, 255);
+
+    final picked = await showDialog<Color>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Pick custom color'),
+          content: SizedBox(
+            width: 280,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Color.fromARGB(255, red, green, blue),
+                    border: Border.all(color: AppTheme.ink),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _rgbSlider('R', red, 0, (v) => setDialogState(() => red = v)),
+                _rgbSlider('G', green, 0, (v) => setDialogState(() => green = v)),
+                _rgbSlider('B', blue, 0, (v) => setDialogState(() => blue = v)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                Color.fromARGB(255, red, green, blue),
+              ),
+              child: const Text('Select'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (picked != null) {
+      setState(() {
+        final cr = (picked.r * 255).round();
+        final cg = (picked.g * 255).round();
+        final cb = (picked.b * 255).round();
+        _color = '#${cr.toRadixString(16).padLeft(2, '0')}${cg.toRadixString(16).padLeft(2, '0')}${cb.toRadixString(16).padLeft(2, '0').toUpperCase()}';
+      });
+    }
+  }
+
+  Widget _rgbSlider(String label, int value, int index, ValueChanged<int> onChanged) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 20,
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+        ),
+        Expanded(
+          child: Slider(
+            value: value.toDouble(),
+            min: 0,
+            max: 255,
+            divisions: 255,
+            onChanged: (v) => onChanged(v.round()),
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text('$value', style: const TextStyle(fontSize: 12)),
+        ),
+      ],
+    );
   }
 }
