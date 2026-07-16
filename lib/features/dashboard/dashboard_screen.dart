@@ -615,12 +615,14 @@ class _MonthlyTrendChart extends StatelessWidget {
     final maxY = maxValue == 0 ? 1.0 : maxValue * 1.2;
 
     return SizedBox(
-      height: 280,
+      height: 304,
       child: Column(
         children: [
           Expanded(
-            child: LineChart(
-              LineChartData(
+            child: _ScrollableChartViewport(
+              minWidth: points.length * 72.0 + 72,
+              child: LineChart(
+                LineChartData(
                 minX: 0,
                 maxX: max(0, points.length - 1).toDouble(),
                 minY: minY,
@@ -629,7 +631,7 @@ class _MonthlyTrendChart extends StatelessWidget {
                   show: true,
                   horizontalInterval: _niceInterval(maxY - minY),
                   getDrawingHorizontalLine: (value) => FlLine(
-                    color: Colors.white.withAlpha(18),
+                    color: AppTheme.ink.withAlpha(28),
                     strokeWidth: 1,
                   ),
                   drawVerticalLine: false,
@@ -698,6 +700,7 @@ class _MonthlyTrendChart extends StatelessWidget {
                     selector: (point) => point.savings,
                   ),
                 ],
+                ),
               ),
             ),
           ),
@@ -732,7 +735,7 @@ class _MonthlyTrendChart extends StatelessWidget {
           radius: 3,
           color: color,
           strokeWidth: 1,
-          strokeColor: Colors.white,
+          strokeColor: AppTheme.paper,
         ),
       ),
       belowBarData: BarAreaData(show: false),
@@ -762,19 +765,21 @@ class _DailyFlowChart extends StatelessWidget {
     final maxY = maxValue == 0 ? 1.0 : maxValue * 1.25;
 
     return SizedBox(
-      height: 290,
+      height: 304,
       child: Column(
         children: [
           Expanded(
-            child: BarChart(
-              BarChartData(
+            child: _ScrollableChartViewport(
+              minWidth: points.length * 30.0 + 72,
+              child: BarChart(
+                BarChartData(
                 maxY: maxY,
                 alignment: BarChartAlignment.spaceBetween,
                 gridData: FlGridData(
                   show: true,
                   horizontalInterval: _niceInterval(maxY),
                   getDrawingHorizontalLine: (value) => FlLine(
-                    color: Colors.white.withAlpha(18),
+                    color: AppTheme.ink.withAlpha(28),
                     strokeWidth: 1,
                   ),
                   drawVerticalLine: false,
@@ -853,6 +858,7 @@ class _DailyFlowChart extends StatelessWidget {
                       ],
                     ),
                 ],
+                ),
               ),
             ),
           ),
@@ -867,6 +873,31 @@ class _DailyFlowChart extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ScrollableChartViewport extends StatelessWidget {
+  const _ScrollableChartViewport({
+    required this.minWidth,
+    required this.child,
+  });
+
+  final double minWidth;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = max(constraints.maxWidth, minWidth).toDouble();
+        return Scrollbar(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(width: width, child: child),
+          ),
+        );
+      },
     );
   }
 }
@@ -1469,6 +1500,4 @@ double _niceInterval(double range) {
   if (rough <= 25000) return 5000;
   return 10000;
 }
-
-
 
