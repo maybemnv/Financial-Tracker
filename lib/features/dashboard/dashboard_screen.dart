@@ -201,8 +201,8 @@ class _DashboardContentState extends ConsumerState<_DashboardContent> {
           _SectionCard(
             title: 'Spending Mix',
             subtitle: summary.uncategorizedCount > 0
-                ? 'Uncategorized transactions are included so hidden spend stays visible'
-                : 'Spending split by category for ${monthTitleFormat.format(selectedMonth)}',
+                ? 'Unlabeled transactions are included so hidden spend stays visible'
+                : 'Spending split by labels for ${monthTitleFormat.format(selectedMonth)}',
             child: _CategoryBreakdown(categories: analytics.spendingCategories),
           ),
           const SizedBox(height: 24),
@@ -894,7 +894,7 @@ class _CategoryBreakdown extends StatelessWidget {
                 for (var index = 0; index < categories.length; index++)
                   PieChartSectionData(
                     value: categories[index].amount,
-                    color: _chartColors[index % _chartColors.length],
+                    color: _pointColor(categories[index], index),
                     title:
                         '${(categories[index].share * 100).toStringAsFixed(0)}%',
                     titleStyle: const TextStyle(
@@ -919,7 +919,7 @@ class _CategoryBreakdown extends StatelessWidget {
                   width: 12,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: _chartColors[index % _chartColors.length],
+                    color: _pointColor(category, index),
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
@@ -949,6 +949,14 @@ class _CategoryBreakdown extends StatelessWidget {
       ],
     );
   }
+}
+
+Color _pointColor(DashboardCategoryPoint point, int index) {
+  final raw = point.color?.replaceFirst('#', '');
+  if (raw == null || raw.length != 6) {
+    return _chartColors[index % _chartColors.length];
+  }
+  return Color(int.parse('FF$raw', radix: 16));
 }
 
 class _GoalTrackersSection extends StatelessWidget {
@@ -1079,9 +1087,9 @@ class _ActionItemsSection extends StatelessWidget {
         _ActionItemData(
           icon: Icons.label_off_outlined,
           color: AppTheme.accentGold,
-          title: 'Categorize recent spending',
+          title: 'Label recent spending',
           message:
-              '${summary.uncategorizedCount} selected-month transactions are still uncategorized, so category insights are less accurate than they should be.',
+              '${summary.uncategorizedCount} selected-month transactions are still unlabeled, so label insights are less accurate than they should be.',
         ),
       );
     }
@@ -1461,7 +1469,6 @@ double _niceInterval(double range) {
   if (rough <= 25000) return 5000;
   return 10000;
 }
-
 
 
 
