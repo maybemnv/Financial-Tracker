@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'transaction_label.dart';
+
 /// A single ledger entry: debit, credit, transfer leg, or investment leg.
 ///
 /// [type] captures the semantic kind of transaction for reporting. [direction]
@@ -13,8 +15,7 @@ class Transaction {
   final String? vpa;
   final String? merchant;
   final String? bank;
-  final String? category;
-  final List<String> tags;
+  final List<TransactionLabel> labels;
   final String? rawSms;
   final String? rawSmsHash;
   final String source; // sms | manual
@@ -38,8 +39,7 @@ class Transaction {
     this.vpa,
     this.merchant,
     this.bank,
-    this.category,
-    this.tags = const [],
+    this.labels = const [],
     this.rawSms,
     this.rawSmsHash,
     this.source = 'manual',
@@ -86,10 +86,7 @@ class Transaction {
       vpa: json['vpa'] as String?,
       merchant: json['merchant'] as String?,
       bank: json['bank'] as String?,
-      category: json['category'] as String?,
-      tags:
-          (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
-              const [],
+      labels: _labelsFromJson(json['transaction_labels']),
       rawSms: json['raw_sms'] as String?,
       rawSmsHash: json['raw_sms_hash'] as String?,
       source: json['source'] as String? ?? 'manual',
@@ -128,8 +125,6 @@ class Transaction {
       'vpa': vpa,
       'merchant': merchant,
       'bank': bank,
-      'category': category,
-      'tags': tags,
       'raw_sms': rawSms,
       'raw_sms_hash': rawSmsHash,
       'source': source,
@@ -151,8 +146,7 @@ class Transaction {
     String? vpa,
     String? merchant,
     String? bank,
-    String? category,
-    List<String>? tags,
+    List<TransactionLabel>? labels,
     String? rawSms,
     String? rawSmsHash,
     String? source,
@@ -176,8 +170,7 @@ class Transaction {
       vpa: vpa ?? this.vpa,
       merchant: merchant ?? this.merchant,
       bank: bank ?? this.bank,
-      category: category ?? this.category,
-      tags: tags ?? this.tags,
+      labels: labels ?? this.labels,
       rawSms: rawSms ?? this.rawSms,
       rawSmsHash: rawSmsHash ?? this.rawSmsHash,
       source: source ?? this.source,
@@ -198,4 +191,16 @@ class Transaction {
   /// column (append-only `[{"old": {...}, "new": {...}, "edited_at": "..."}]`).
   static String encodeEditHistory(List<Map<String, dynamic>> history) =>
       jsonEncode(history);
+
+  static List<TransactionLabel> _labelsFromJson(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .map((entry) => Map<String, dynamic>.from(entry as Map))
+        .map((entry) => entry['label'])
+        .whereType<Map>()
+        .map((label) => TransactionLabel.fromJson(
+              Map<String, dynamic>.from(label),
+            ))
+        .toList();
+  }
 }
