@@ -45,7 +45,7 @@ class LlmService {
       'function': {
         'name': 'get_transactions',
         'description':
-            'Query transactions with optional filters. Returns amount, type, category, merchant, tags, date, and flow direction.',
+            'Query transactions with optional filters. Returns amount, type, labels, merchant, date, and flow direction.',
         'parameters': {
           'type': 'object',
           'properties': {
@@ -55,10 +55,10 @@ class LlmService {
                   'Filter by type: debit, credit, transfer, investment',
               'enum': ['debit', 'credit', 'transfer', 'investment']
             },
-            'category': {
+            'label': {
               'type': 'string',
               'description':
-                  'Filter by category: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other'
+                  'Filter by an exact user-created transaction label, such as Food, Drinks, or Cigarettes.'
             },
             'days': {
               'type': 'number',
@@ -79,9 +79,9 @@ class LlmService {
     {
       'type': 'function',
       'function': {
-        'name': 'get_category_breakdown',
+        'name': 'get_label_breakdown',
         'description':
-            'Get spending broken down by category for a given period.',
+            'Get spending broken down by transaction labels for a given period. Multi-labelled transactions are split evenly so shares total 100%.',
         'parameters': {
           'type': 'object',
           'properties': {
@@ -481,8 +481,8 @@ class LlmService {
         return _getNetWorth();
       case 'get_transactions':
         return _getTransactions(input);
-      case 'get_category_breakdown':
-        return _getCategoryBreakdown(input);
+      case 'get_label_breakdown':
+        return _getLabelBreakdown(input);
       case 'get_cashflow_summary':
         return _getCashflowSummary(input);
       case 'get_goals':
@@ -541,17 +541,15 @@ class LlmService {
       final since =
           days != null ? DateTime.now().subtract(Duration(days: days)) : null;
 
+      final requestedLabel = (filters['label'] as String?)?.toLowerCase();
       var query = supabase
           .from('transactions')
           .select(
-              'amount, type, direction, category, merchant, vpa, tags, account_id, created_at, transacted_at, note')
+              'amount, type, direction, merchant, vpa, account_id, created_at, transacted_at, note, transaction_labels(label:labels(name, color))')
           .eq('is_deleted', false);
 
       if (filters['type'] != null) {
         query = query.eq('type', filters['type']);
-      }
-      if (filters['category'] != null) {
-        query = query.eq('category', filters['category']);
       }
       if (filters['account_id'] != null) {
         query = query.eq('account_id', filters['account_id']);
@@ -564,6 +562,11 @@ class LlmService {
       final rows = (data as List)
           .map((row) => Map<String, dynamic>.from(row as Map))
           .where((row) {
+        if (requestedLabel != null &&
+            !_labelNames(row)
+                .any((label) => label.toLowerCase() == requestedLabel)) {
+          return false;
+        }
         final effectiveDate = _effectiveDate(row);
         if (since != null &&
             (effectiveDate == null || effectiveDate.isBefore(since))) {
@@ -586,13 +589,13 @@ class LlmService {
         final direction = _isInflow(tx) ? '+' : '-';
         final date = _effectiveDate(tx);
         final merchant = tx['merchant'] ?? tx['note'] ?? tx['vpa'] ?? 'unknown';
-        final label = tx['category'] ?? tx['type'];
-        final tags = (tx['tags'] as List?)?.join(', ') ?? '';
+        final labels = _labelNames(tx);
+        final label = labels.isEmpty ? 'Unlabeled' : labels.join(', ');
         final dateLabel = date != null
             ? date.toIso8601String().split('T').first
             : 'unknown-date';
         lines.add(
-          '$dateLabel | $direction${tx['amount']} | $label | $merchant${tags.isNotEmpty ? ' [$tags]' : ''}',
+          '$dateLabel | $direction${tx['amount']} | $label | $merchant',
         );
       }
       return lines.join('\n');
@@ -601,20 +604,21 @@ class LlmService {
     }
   }
 
-  Future<String> _getCategoryBreakdown(Map<String, dynamic> input) async {
+  Future<String> _getLabelBreakdown(Map<String, dynamic> input) async {
     try {
       final days = (input['days'] as num?)?.toInt() ?? 30;
       final since = DateTime.now().subtract(Duration(days: days));
 
       final data = await supabase
           .from('transactions')
-          .select('category, amount, created_at, transacted_at')
+          .select(
+              'amount, created_at, transacted_at, transaction_labels(label:labels(name, color))')
           .eq('type', 'debit')
           .eq('is_deleted', false)
           .order('created_at', ascending: false)
           .limit(200);
 
-      final categories = <String, double>{};
+      final labels = <String, double>{};
       var total = 0.0;
       for (final rawTx in (data as List)) {
         final tx = Map<String, dynamic>.from(rawTx as Map);
@@ -623,16 +627,25 @@ class LlmService {
           continue;
         }
 
-        final category = (tx['category'] as String?) ?? 'Uncategorized';
         final amount = (tx['amount'] as num).toDouble();
-        categories.update(category, (v) => v + amount, ifAbsent: () => amount);
+        final transactionLabels = _labelNames(tx);
+        if (transactionLabels.isEmpty) {
+          labels.update('Unlabeled', (value) => value + amount,
+              ifAbsent: () => amount);
+        } else {
+          final splitAmount = amount / transactionLabels.length;
+          for (final label in transactionLabels) {
+            labels.update(label, (value) => value + splitAmount,
+                ifAbsent: () => splitAmount);
+          }
+        }
         total += amount;
       }
 
-      if (categories.isEmpty) return 'No spending in the last $days days.';
+      if (labels.isEmpty) return 'No spending in the last $days days.';
 
       final lines = <String>['Total spent in last $days days: $total'];
-      final sorted = categories.entries.toList()
+      final sorted = labels.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
       for (final entry in sorted) {
         final pct = (entry.value / total * 100).toStringAsFixed(1);
@@ -640,7 +653,7 @@ class LlmService {
       }
       return lines.join('\n');
     } catch (e) {
-      return 'Error computing category breakdown: $e';
+      return 'Error computing label breakdown: $e';
     }
   }
 
@@ -898,6 +911,18 @@ class LlmService {
       return DateTime.tryParse(createdAt);
     }
     return null;
+  }
+
+  List<String> _labelNames(Map<String, dynamic> row) {
+    final relationships = row['transaction_labels'];
+    if (relationships is! List) return const [];
+    return relationships
+        .whereType<Map>()
+        .map((relationship) => relationship['label'])
+        .whereType<Map>()
+        .map((label) => label['name'] as String?)
+        .whereType<String>()
+        .toList();
   }
 
   bool _isInflow(Map<String, dynamic> row) {
