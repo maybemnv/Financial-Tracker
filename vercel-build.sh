@@ -16,10 +16,10 @@ flutter config --enable-web
 
 : "${SUPABASE_URL:?ERROR: SUPABASE_URL is not set}"
 : "${SUPABASE_ANON_KEY:?ERROR: SUPABASE_ANON_KEY is not set}"
-: "${GROQ_API_KEY:?ERROR: GROQ_API_KEY is not set}"
+: "${GEMINI_API_KEY:?ERROR: GEMINI_API_KEY is not set}"
 
-printf "SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nGROQ_API_KEY=%s\n" \
-  "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$GROQ_API_KEY" > .env
+printf "SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nGEMINI_API_KEY=%s\n" \
+  "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$GEMINI_API_KEY" > .env
 
 flutter pub get
 flutter build web

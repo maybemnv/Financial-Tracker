@@ -3,12 +3,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:finance_tracker/features/transactions/transaction_list_screen.dart';
 import 'package:finance_tracker/models/account.dart';
+import 'package:finance_tracker/models/transaction.dart';
+import 'package:finance_tracker/models/transaction_label.dart';
 import 'package:finance_tracker/providers/account_provider.dart';
+import 'package:finance_tracker/providers/label_provider.dart';
 
 class _TestAccountNotifier extends AccountNotifier {
   _TestAccountNotifier() {
     state = AsyncValue.data([
       Account(id: 'cash', name: 'Cash', type: 'cash'),
+    ]);
+  }
+
+  @override
+  Future<void> load() async {}
+
+  @override
+  void subscribe() {}
+
+  @override
+  void unsubscribe() {}
+}
+
+class _TestLabelNotifier extends LabelNotifier {
+  _TestLabelNotifier() {
+    state = const AsyncValue.data([
+      TransactionLabel(id: 'food', name: 'Food', color: '#1D76DB'),
     ]);
   }
 
@@ -29,6 +49,7 @@ void main() {
       ProviderScope(
         overrides: [
           accountProvider.overrideWith((ref) => _TestAccountNotifier()),
+          labelProvider.overrideWith((ref) => _TestLabelNotifier()),
         ],
         child: const MaterialApp(
           home: AddTransactionScreen(),
@@ -62,5 +83,38 @@ void main() {
     expect(find.textContaining('Today,'), findsOneWidget,
         reason:
             'Selecting today should render a concrete Today, HH:mm transaction timestamp.');
+  });
+
+  testWidgets('pre-fills an older transaction for editing and keeps its labels',
+      (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith((ref) => _TestAccountNotifier()),
+          labelProvider.overrideWith((ref) => _TestLabelNotifier()),
+        ],
+        child: MaterialApp(
+          home: AddTransactionScreen(
+            transaction: Transaction(
+              id: 'old-transaction',
+              amount: 1000,
+              type: 'debit',
+              accountId: 'cash',
+              merchant: 'Corner Cafe',
+              bank: 'Cash',
+              labels: const [
+                TransactionLabel(id: 'food', name: 'Food', color: '#1D76DB'),
+              ],
+              transactedAt: DateTime(2026, 7, 8, 12, 30),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Edit Transaction'), findsOneWidget);
+    expect(find.text('Save Changes'), findsOneWidget);
+    expect(find.text('FOOD'), findsOneWidget);
+    expect(find.byDisplayValue('Corner Cafe'), findsOneWidget);
   });
 }

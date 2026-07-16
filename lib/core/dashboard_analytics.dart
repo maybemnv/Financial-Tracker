@@ -44,7 +44,7 @@ class DashboardAnalytics {
     var monthSpending = 0.0;
     var monthInvestments = 0.0;
     var monthUncategorized = 0;
-    final categoryTotals = <String, double>{};
+    final labelTotals = <String, _LabelTotal>{};
     final dailyTotals = <DateTime, _DailyAccumulator>{};
 
     for (final transaction in currentMonthTransactions) {
@@ -63,26 +63,37 @@ class DashboardAnalytics {
         monthSpending += transaction.amount;
         daily.spending += transaction.amount;
 
-        final category = _categoryLabel(transaction);
-        categoryTotals.update(
-          category,
-          (value) => value + transaction.amount,
-          ifAbsent: () => transaction.amount,
-        );
-        if (category == 'Uncategorized') {
+        final labels = transaction.labels;
+        if (labels.isEmpty) {
+          labelTotals.update(
+            'Unlabeled',
+            (value) => value..amount += transaction.amount,
+            ifAbsent: () => _LabelTotal(amount: transaction.amount),
+          );
           monthUncategorized += 1;
+        } else {
+          final splitAmount = transaction.amount / labels.length;
+          for (final label in labels) {
+            labelTotals.update(
+              label.name,
+              (value) => value..amount += splitAmount,
+              ifAbsent: () =>
+                  _LabelTotal(amount: splitAmount, color: label.color),
+            );
+          }
         }
       } else if (_isInvestmentOutflow(transaction)) {
         monthInvestments += transaction.amount;
       }
     }
 
-    final spendingCategories = categoryTotals.entries
+    final spendingCategories = labelTotals.entries
         .map(
           (entry) => DashboardCategoryPoint(
             label: entry.key,
-            amount: entry.value,
-            share: monthSpending == 0 ? 0 : entry.value / monthSpending,
+            amount: entry.value.amount,
+            color: entry.value.color,
+            share: monthSpending == 0 ? 0 : entry.value.amount / monthSpending,
           ),
         )
         .toList()
@@ -169,8 +180,7 @@ class DashboardAnalytics {
       totalTransactions: transactions.length,
       uncategorizedTransactions: transactions
           .where((transaction) => _isSpending(transaction))
-          .where(
-              (transaction) => _categoryLabel(transaction) == 'Uncategorized')
+          .where((transaction) => transaction.labels.isEmpty)
           .length,
       latestTransactionAt: transactions.isEmpty
           ? null
@@ -254,11 +264,20 @@ class DashboardCategoryPoint {
     required this.label,
     required this.amount,
     required this.share,
+    this.color,
   });
 
   final String label;
   final double amount;
   final double share;
+  final String? color;
+}
+
+class _LabelTotal {
+  _LabelTotal({required this.amount, this.color});
+
+  double amount;
+  final String? color;
 }
 
 class _MonthlyAccumulator {
@@ -285,14 +304,6 @@ bool _isSpending(Transaction transaction) {
 
 bool _isInvestmentOutflow(Transaction transaction) =>
     transaction.isInvestment && transaction.isOutflow;
-
-String _categoryLabel(Transaction transaction) {
-  final category = transaction.category?.trim();
-  if (category == null || category.isEmpty) {
-    return 'Uncategorized';
-  }
-  return category;
-}
 
 int _daysInMonth(DateTime date) => DateTime(date.year, date.month + 1, 0).day;
 

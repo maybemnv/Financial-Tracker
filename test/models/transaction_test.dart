@@ -1,4 +1,5 @@
 import 'package:finance_tracker/models/transaction.dart';
+import 'package:finance_tracker/models/transaction_label.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -70,14 +71,17 @@ void main() {
   });
 
   group('Transaction serialization', () {
-    test('round-trips direction, tags, and transactedAt', () {
+    test('round-trips direction, labels, and transactedAt', () {
       final original = Transaction(
         accountId: 'cash',
         amount: 499.99,
         type: 'investment',
         direction: 'outflow',
         merchant: 'Index Fund',
-        tags: const ['sip', 'long_term'],
+        labels: const [
+          TransactionLabel(id: 'label-1', name: 'SIP', color: '#1D76DB'),
+          TransactionLabel(id: 'label-2', name: 'Long term', color: '#0E8A16'),
+        ],
         source: 'manual',
         transferGroupId: '123e4567-e89b-12d3-a456-426614174000',
         transactedAt: DateTime(2026, 7, 5, 20, 15),
@@ -88,11 +92,23 @@ void main() {
         ...json,
         'id': 'tx-1',
         'created_at': '2026-07-05T20:16:00.000Z',
+        'transaction_labels': [
+          {
+            'label': {'id': 'label-1', 'name': 'SIP', 'color': '#1D76DB'},
+          },
+          {
+            'label': {
+              'id': 'label-2',
+              'name': 'Long term',
+              'color': '#0E8A16',
+            },
+          },
+        ],
       });
 
       expect(roundTrip.direction, 'outflow');
       expect(roundTrip.type, 'investment');
-      expect(roundTrip.tags, ['sip', 'long_term']);
+      expect(roundTrip.labels.map((label) => label.name), ['SIP', 'Long term']);
       expect(roundTrip.transferGroupId, original.transferGroupId);
       expect(roundTrip.transactedAt, original.transactedAt);
     });

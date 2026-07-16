@@ -18,8 +18,6 @@ Core ledger. Every financial event lives here — debits, credits, transfers, an
 | `vpa` | `text` | `nullable` | UPI VPA (e.g. `user@paytm`, `user@oksbi`) |
 | `merchant` | `text` | `nullable` | Merchant name extracted from SMS or manual entry |
 | `bank` | `text` | `nullable` | Bank name from SMS |
-| `category` | `text` | `nullable` | One of: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other, or null until categorized |
-| `tags` | `text[]` | `'{}'` | Cross-cutting labels. `career_investment` is a reserved tag — excluded from discretionary spending reports. |
 | `raw_sms` | `text` | `nullable` | Raw SMS text for audit trail. |
 | `raw_sms_hash` | `text` | `nullable` | `digest(raw_sms, 'sha256')` — used for duplicate detection instead of comparing full SMS text. |
 | `source` | `text` | `'manual'` | `sms` or `manual` |
@@ -59,13 +57,35 @@ CHECK (source IN ('sms', 'manual'))
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_type ON transactions(type);
 CREATE INDEX idx_transactions_created_at ON transactions(created_at DESC);
-CREATE INDEX idx_transactions_category ON transactions(category);
 CREATE INDEX idx_transactions_is_deleted ON transactions(is_deleted) WHERE is_deleted = false;
 CREATE INDEX idx_transactions_raw_sms_hash ON transactions(raw_sms_hash) WHERE raw_sms_hash IS NOT NULL;
 CREATE INDEX idx_transactions_transacted_at ON transactions(transacted_at DESC NULLS LAST);
 ```
 
 ---
+
+## Table: `labels`
+
+Reusable GitHub-style labels. Each has a user-selected color and can be attached to any number of transactions.
+
+| Column | Type | Default | Notes |
+|---|---|---|---|
+| `id` | `uuid PK` | `gen_random_uuid()` | |
+| `name` | `text` | | Case-insensitive unique name, e.g. `Food`, `Drinks`, `Cigarettes` |
+| `color` | `text` | | Six-digit hex color, e.g. `#1D76DB` |
+| `created_at` | `timestamptz` | `now()` | |
+
+## Table: `transaction_labels`
+
+Many-to-many join table between transactions and labels. It replaces the retired `transactions.category` and `transactions.tags` fields.
+
+| Column | Type | Notes |
+|---|---|---|
+| `transaction_id` | `uuid FK` | References `transactions.id` |
+| `label_id` | `uuid FK` | References `labels.id` |
+| `created_at` | `timestamptz` | Association creation time |
+
+The composite primary key prevents the same label being assigned twice to one transaction.
 
 ## Table: `accounts`
 

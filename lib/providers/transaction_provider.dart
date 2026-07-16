@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/dedup.dart';
 import '../core/supabase.dart';
 import '../models/transaction.dart';
+import '../models/transaction_label.dart';
 
 /// Loads, mutates, and live-syncs transactions.
 ///
@@ -25,7 +26,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
       final data = await SupabaseService()
           .client
           .from('transactions')
-          .select()
+          .select('*, transaction_labels(label:labels(id, name, color))')
           .eq('is_deleted', false)
           .order('created_at', ascending: false);
       final transactions = (data as List)
@@ -44,6 +45,11 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           table: 'transactions',
+          callback: (_) => load(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          table: 'transaction_labels',
           callback: (_) => load(),
         )
         .subscribe();
@@ -77,14 +83,13 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
         .insert(payload.toJson())
         .select();
     final inserted = (response as List?)?.firstOrNull;
-    if (inserted != null) {
-      state = state.whenData(
-        (list) =>
-            [Transaction.fromJson(inserted as Map<String, dynamic>), ...list],
+    if (inserted != null && payload.labels.isNotEmpty) {
+      await _replaceLabels(
+        inserted['id'] as String,
+        payload.labels,
       );
-    } else {
-      await load();
     }
+    await load();
     return true;
   }
 
@@ -97,7 +102,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     final existing = await client
         .from('transactions')
         .select(
-            'amount, type, direction, category, merchant, vpa, tags, note, account_id, edit_history')
+            'amount, type, direction, merchant, vpa, bank, note, account_id, edit_history')
         .eq('id', tx.id!)
         .maybeSingle();
     if (existing != null) {
@@ -117,6 +122,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     } else {
       await client.from('transactions').update(tx.toJson()).eq('id', tx.id!);
     }
+    await _replaceLabels(tx.id!, tx.labels);
     await load();
   }
 
@@ -137,6 +143,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     required double amount,
     String? note,
     DateTime? transactedAt,
+    List<TransactionLabel> labels = const [],
   }) async {
     await _addAccountMove(
       type: 'transfer',
@@ -145,6 +152,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
       amount: amount,
       note: note,
       transactedAt: transactedAt,
+      labels: labels,
     );
   }
 
@@ -155,6 +163,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     required double amount,
     String? note,
     DateTime? transactedAt,
+    List<TransactionLabel> labels = const [],
   }) async {
     await _addAccountMove(
       type: 'investment',
@@ -163,6 +172,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
       amount: amount,
       note: note,
       transactedAt: transactedAt,
+      labels: labels,
     );
   }
 
@@ -173,6 +183,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     required double amount,
     String? note,
     DateTime? transactedAt,
+    List<TransactionLabel> labels = const [],
   }) async {
     final groupId = _generateGroupId();
     final legs = [
@@ -185,6 +196,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
         transferGroupId: groupId,
         source: 'manual',
         transactedAt: transactedAt,
+        labels: labels,
       ),
       Transaction(
         accountId: toAccountId,
@@ -195,12 +207,42 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
         transferGroupId: groupId,
         source: 'manual',
         transactedAt: transactedAt,
+        labels: labels,
       ),
     ];
-    await SupabaseService().client.from('transactions').insert(
+    final inserted = await SupabaseService().client.from('transactions').insert(
           legs.map((t) => t.toJson()).toList(),
-        );
+        ).select('id');
+    if (labels.isNotEmpty) {
+      for (final row in inserted as List) {
+        await _replaceLabels(row['id'] as String, labels);
+      }
+    }
     await load();
+  }
+
+  Future<void> _replaceLabels(
+    String transactionId,
+    List<TransactionLabel> labels,
+  ) async {
+    final client = SupabaseService().client;
+    await client
+        .from('transaction_labels')
+        .delete()
+        .eq('transaction_id', transactionId);
+    if (labels.isEmpty) return;
+    final rows = labels
+        .where((label) => label.id != null)
+        .map(
+          (label) => {
+            'transaction_id': transactionId,
+            'label_id': label.id,
+          },
+        )
+        .toList();
+    if (rows.isNotEmpty) {
+      await client.from('transaction_labels').insert(rows);
+    }
   }
 
   String _defaultDirectionForType(String type) {
