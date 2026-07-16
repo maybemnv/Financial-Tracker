@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../models/account.dart';
 import '../../models/transaction.dart';
+import '../../models/transaction_label.dart';
 import '../../providers/account_provider.dart';
+import '../../providers/label_provider.dart';
 import '../../providers/transaction_provider.dart';
-import '../../widgets/newsprint_primitives.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/newsprint_primitives.dart';
+import '../../widgets/transaction_label_widgets.dart';
 
 final _currency =
     NumberFormat.currency(symbol: '\u20B9', decimalDigits: 2, locale: 'en_IN');
@@ -26,102 +28,59 @@ class TransactionListScreen extends ConsumerStatefulWidget {
 
 class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
   String _accountFilter = _allAccounts;
+  String? _labelFilter;
 
   @override
   Widget build(BuildContext context) {
     final transactionsAsync = ref.watch(transactionProvider);
     final accountsAsync = ref.watch(accountProvider);
+    final labelsAsync = ref.watch(labelProvider);
 
     return NewsprintPage(
       kicker: 'Ledger',
       title: 'Daily money ledger',
-      subtitle:
-          'Every inflow, outflow, transfer, and investment leg in one ruled stack.',
+      subtitle: 'Every inflow, outflow, transfer, and investment leg in one ruled stack.',
       child: Column(
         children: [
           accountsAsync.maybeWhen(
-            data: (accounts) {
-              if (accounts.isEmpty) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: NewsprintPanel(
-                  color: AppTheme.paperAlt,
-                  child: SizedBox(
-                    height: 44,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        _filterChip('All desks', _allAccounts),
-                        ...accounts.map((a) => _filterChip(a.name, a.id!)),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+            data: (accounts) => _AccountBar(
+              accounts: accounts,
+              selected: _accountFilter,
+              onSelected: (value) => setState(() => _accountFilter = value),
+            ),
+            orElse: () => const SizedBox.shrink(),
+          ),
+          labelsAsync.maybeWhen(
+            data: (labels) => _LabelBar(
+              labels: labels,
+              selectedId: _labelFilter,
+              onSelected: (id) => setState(() => _labelFilter = id),
+              onCreate: _createLabel,
+            ),
             orElse: () => const SizedBox.shrink(),
           ),
           Expanded(
             child: transactionsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
+              error: (error, _) => Center(
                 child: NewsprintNotice(
                   icon: Icons.error_outline_rounded,
                   title: 'Ledger feed interrupted',
-                  message: '$e',
+                  message: '$error',
                   color: AppTheme.redAccent,
                 ),
               ),
-              data: (transactions) {
-                final filtered = _accountFilter == _allAccounts
-                    ? transactions
-                    : transactions
-                        .where((t) => t.accountId == _accountFilter)
-                        .toList();
-
-                if (filtered.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.receipt_long,
-                    title: 'No transactions yet',
-                    subtitle:
-                        'Use the add button to open the ledger and record your first movement.',
-                  );
-                }
-
-                final sorted = [...filtered]
-                  ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
-
-                final grouped = <DateTime, List<Transaction>>{};
-                for (final tx in sorted) {
-                  final d = tx.effectiveDate;
-                  final key = DateTime(d.year, d.month, d.day);
-                  grouped.putIfAbsent(key, () => []).add(tx);
-                }
-
-                final items = <Object>[];
-                final sortedKeys = grouped.keys.toList()
-                  ..sort((a, b) => b.compareTo(a));
-                for (final key in sortedKeys) {
-                  items.add(key);
-                  items.addAll(grouped[key]!);
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () =>
-                      ref.read(transactionProvider.notifier).load(),
-                  child: ListView.builder(
-                    padding: EdgeInsets.zero,
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      if (item is DateTime) {
-                        return _DateHeader(date: item);
-                      }
-                      return _TransactionCard(tx: item as Transaction);
-                    },
-                  ),
-                );
-              },
+              data: (transactions) => _LedgerList(
+                transactions: transactions.where((transaction) {
+                  final accountMatches = _accountFilter == _allAccounts ||
+                      transaction.accountId == _accountFilter;
+                  final labelMatches = _labelFilter == null ||
+                      transaction.labels.any((label) => label.id == _labelFilter);
+                  return accountMatches && labelMatches;
+                }).toList(),
+                onRefresh: () => ref.read(transactionProvider.notifier).load(),
+                onLabelTap: (label) => setState(() => _labelFilter = label.id),
+              ),
             ),
           ),
         ],
@@ -129,24 +88,190 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
     );
   }
 
-  Widget _filterChip(String label, String value) {
-    final selected = _accountFilter == value;
+  Future<void> _createLabel() async {
+    final created = await showDialog<({String name, String color})>(
+      context: context,
+      builder: (_) => const CreateTransactionLabelDialog(),
+    );
+    if (created == null || !mounted) return;
+    try {
+      await ref.read(labelProvider.notifier).create(
+            name: created.name,
+            color: created.color,
+          );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create label: $error')),
+      );
+    }
+  }
+}
+
+class _AccountBar extends StatelessWidget {
+  const _AccountBar({
+    required this.accounts,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<Account> accounts;
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (accounts.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: NewsprintPanel(
+        color: AppTheme.paperAlt,
+        child: SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _chip('All desks', _allAccounts),
+              ...accounts.map((account) => _chip(account.name, account.id!)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, String value) {
+    final isSelected = selected == value;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
         label: Text(label),
-        selected: selected,
-        onSelected: (_) => setState(() => _accountFilter = value),
+        selected: isSelected,
+        onSelected: (_) => onSelected(value),
+        showCheckmark: false,
         backgroundColor: AppTheme.paper,
         selectedColor: AppTheme.ink,
-        checkmarkColor: AppTheme.paper,
         labelStyle: TextStyle(
-          color: selected ? AppTheme.paper : AppTheme.ink,
+          color: isSelected ? AppTheme.paper : AppTheme.ink,
           fontWeight: FontWeight.w800,
         ),
         side: const BorderSide(color: AppTheme.ink, width: 1.5),
         shape: const RoundedRectangleBorder(),
-        showCheckmark: false,
+      ),
+    );
+  }
+}
+
+class _LabelBar extends StatelessWidget {
+  const _LabelBar({
+    required this.labels,
+    required this.selectedId,
+    required this.onSelected,
+    required this.onCreate,
+  });
+
+  final List<TransactionLabel> labels;
+  final String? selectedId;
+  final ValueChanged<String?> onSelected;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: NewsprintPanel(
+        color: AppTheme.paperAlt,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('LABELS', style: Theme.of(context).textTheme.labelLarge),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: onCreate,
+                  icon: const Icon(Icons.add_rounded, size: 17),
+                  label: const Text('CREATE LABEL'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  label: const Text('All labels'),
+                  selected: selectedId == null,
+                  onSelected: (_) => onSelected(null),
+                  showCheckmark: false,
+                ),
+                ...labels.map(
+                  (label) => TransactionLabelPill(
+                    label: label,
+                    selected: selectedId == label.id,
+                    onTap: () => onSelected(
+                      selectedId == label.id ? null : label.id,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LedgerList extends StatelessWidget {
+  const _LedgerList({
+    required this.transactions,
+    required this.onRefresh,
+    required this.onLabelTap,
+  });
+
+  final List<Transaction> transactions;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<TransactionLabel> onLabelTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (transactions.isEmpty) {
+      return const EmptyState(
+        icon: Icons.receipt_long,
+        title: 'No transactions match',
+        subtitle: 'Clear a filter or add a movement to the ledger.',
+      );
+    }
+    final sorted = [...transactions]
+      ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+    final grouped = <DateTime, List<Transaction>>{};
+    for (final transaction in sorted) {
+      final date = transaction.effectiveDate;
+      final key = DateTime(date.year, date.month, date.day);
+      grouped.putIfAbsent(key, () => []).add(transaction);
+    }
+    final items = <Object>[];
+    final dates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+    for (final date in dates) {
+      items.add(date);
+      items.addAll(grouped[date]!);
+    }
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.builder(
+        padding: EdgeInsets.zero,
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final item = items[index];
+          if (item is DateTime) return _DateHeader(date: item);
+          return _TransactionCard(
+            tx: item as Transaction,
+            onLabelTap: onLabelTap,
+          );
+        },
       ),
     );
   }
@@ -162,17 +287,12 @@ class _DateHeader extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
-    final d = DateTime(date.year, date.month, date.day);
-
-    final String label;
-    if (d == today) {
-      label = 'Today';
-    } else if (d == yesterday) {
-      label = 'Yesterday';
-    } else {
-      label = DateFormat('EEE, dd MMM yyyy').format(date);
-    }
-
+    final current = DateTime(date.year, date.month, date.day);
+    final label = current == today
+        ? 'Today'
+        : current == yesterday
+            ? 'Yesterday'
+            : DateFormat('EEE, dd MMM yyyy').format(date);
     return Padding(
       padding: const EdgeInsets.only(top: 18, bottom: 10),
       child: Row(
@@ -180,15 +300,8 @@ class _DateHeader extends StatelessWidget {
           const Expanded(child: Divider()),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              label.toUpperCase(),
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: AppTheme.textSecondary,
-                letterSpacing: 1.1,
-              ),
-            ),
+            child: Text(label.toUpperCase(),
+                style: Theme.of(context).textTheme.labelMedium),
           ),
           const Expanded(child: Divider()),
         ],
@@ -198,39 +311,27 @@ class _DateHeader extends StatelessWidget {
 }
 
 class _TransactionCard extends ConsumerWidget {
-  const _TransactionCard({required this.tx});
+  const _TransactionCard({required this.tx, required this.onLabelTap});
 
   final Transaction tx;
+  final ValueChanged<TransactionLabel> onLabelTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isTransfer = tx.isTransfer;
-    final isInvestment = tx.isInvestment;
-
-    final color = isTransfer
+    final color = tx.isTransfer
         ? AppTheme.accentGold
-        : isInvestment
+        : tx.isInvestment
             ? AppTheme.accentPurple
             : tx.isInflow
                 ? AppTheme.primaryGreen
                 : AppTheme.redAccent;
-
-    final sign = tx.isInflow ? '+' : '-';
-    final timeStr = DateFormat('HH:mm').format(tx.effectiveDate);
     final title = tx.merchant ??
         tx.vpa ??
         tx.note ??
-        (isTransfer
-            ? 'Transfer'
-            : isInvestment
-                ? 'Investment move'
-                : 'Unknown');
-
+        (tx.isTransfer ? 'Transfer' : tx.isInvestment ? 'Investment move' : 'Unknown');
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      decoration: AppTheme.panelDecoration(
-        color: AppTheme.paper,
-      ),
+      decoration: AppTheme.panelDecoration(color: AppTheme.paper),
       child: InkWell(
         onLongPress: () => _confirmDelete(context, ref),
         child: Padding(
@@ -238,56 +339,31 @@ class _TransactionCard extends ConsumerWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration:
-                    AppTheme.panelDecoration(color: color.withAlpha(34)),
-                child: Icon(
-                  isTransfer
-                      ? Icons.swap_horiz_rounded
-                      : isInvestment
-                          ? Icons.trending_up_rounded
-                          : tx.isInflow
-                              ? Icons.arrow_downward_rounded
-                              : Icons.arrow_upward_rounded,
-                  color: color,
-                  size: 20,
-                ),
-              ),
+              _MovementIcon(transaction: tx, color: color),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 15),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 3),
-                    Text(
-                      _subtitle(),
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.textSecondary),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (tx.tags.isNotEmpty) ...[
+                    Text(_subtitle(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall),
+                    if (tx.labels.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
-                        children: tx.tags
-                            .map(
-                              (tag) => NewsprintTag(
-                                label: tag,
-                                backgroundColor: AppTheme.paperAlt,
-                                textColor: AppTheme.ink,
-                              ),
-                            )
+                        children: tx.labels
+                            .map((label) => TransactionLabelPill(
+                                  label: label,
+                                  onTap: () => onLabelTap(label),
+                                ))
                             .toList(),
                       ),
                     ],
@@ -299,20 +375,15 @@ class _TransactionCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '$sign${_currency.format(tx.amount)}',
-                    style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
-                      fontFamilyFallback: AppTheme.monoFallback,
-                    ),
+                    '${tx.isInflow ? '+' : '-'}${_currency.format(tx.amount)}',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: color,
+                          fontFamilyFallback: AppTheme.monoFallback,
+                        ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    timeStr,
-                    style: const TextStyle(
-                        fontSize: 11, color: AppTheme.textSecondary),
-                  ),
+                  Text(DateFormat('HH:mm').format(tx.effectiveDate),
+                      style: Theme.of(context).textTheme.labelSmall),
                 ],
               ),
             ],
@@ -325,45 +396,60 @@ class _TransactionCard extends ConsumerWidget {
   String _subtitle() {
     final parts = <String>[];
     if (tx.isTransfer) {
-      parts.add(tx.isInflow ? 'Transfer in' : 'Transfer out');
+      parts.add(tx.isInflow ? 'Transfer received' : 'Transfer sent');
     } else if (tx.isInvestment) {
-      parts.add(tx.isInflow ? 'Investment in' : 'Investment out');
-    } else if (tx.category != null) {
-      parts.add(tx.category!);
+      parts.add(tx.isInflow ? 'Investment received' : 'Investment sent');
+    } else {
+      parts.add(tx.isInflow ? 'Money received' : 'Money paid');
     }
-    if (tx.bank != null) {
-      parts.add(tx.bank!);
-    }
-    if (tx.vpa != null && tx.merchant != null) {
-      parts.add(tx.vpa!);
-    }
+    if (tx.bank != null && tx.bank!.trim().isNotEmpty) parts.add(tx.bank!);
+    if (tx.vpa != null && tx.merchant != null) parts.add(tx.vpa!);
     return parts.join(' | ');
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Delete transaction?'),
-        content: const Text(
-          'This soft-deletes the transaction. It stays in your audit history but will not appear in the app.',
-        ),
+        content: const Text('This keeps the record in the audit history.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppTheme.redAccent),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
         ],
       ),
     );
     if (confirmed == true && tx.id != null) {
       await ref.read(transactionProvider.notifier).delete(tx.id!);
     }
+  }
+}
+
+class _MovementIcon extends StatelessWidget {
+  const _MovementIcon({required this.transaction, required this.color});
+
+  final Transaction transaction;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = transaction.isTransfer
+        ? Icons.swap_horiz_rounded
+        : transaction.isInvestment
+            ? Icons.trending_up_rounded
+            : transaction.isInflow
+                ? Icons.arrow_downward_rounded
+                : Icons.arrow_upward_rounded;
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: AppTheme.panelDecoration(color: color.withAlpha(34)),
+      child: Icon(icon, color: color, size: 20),
+    );
   }
 }
 
@@ -380,41 +466,24 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   final _amountCtrl = TextEditingController();
   final _merchantCtrl = TextEditingController();
   final _vpaCtrl = TextEditingController();
-  final _tagCtrl = TextEditingController();
-  final _tagFocus = FocusNode();
-
+  final _bankCtrl = TextEditingController();
+  final _selectedLabels = <TransactionLabel>[];
   String _type = 'debit';
-  String _category = 'Other';
   String? _accountId;
   String? _destAccountId;
   DateTime? _transactedAt;
-  final List<String> _tags = [];
   bool _isSaving = false;
+
+  bool get _needsDestination => _type == 'transfer' || _type == 'investment';
 
   @override
   void dispose() {
     _amountCtrl.dispose();
     _merchantCtrl.dispose();
     _vpaCtrl.dispose();
-    _tagCtrl.dispose();
-    _tagFocus.dispose();
+    _bankCtrl.dispose();
     super.dispose();
   }
-
-  void _addTag() {
-    final raw = _tagCtrl.text.trim();
-    if (raw.isEmpty) return;
-    final tag = raw.toLowerCase();
-    if (!_tags.contains(tag)) {
-      setState(() => _tags.add(tag));
-    }
-    _tagCtrl.clear();
-    _tagFocus.requestFocus();
-  }
-
-  void _removeTag(String tag) => setState(() => _tags.remove(tag));
-
-  bool get _needsDestination => _type == 'transfer' || _type == 'investment';
 
   Future<void> _pickDateTime() async {
     final date = await showDatePicker(
@@ -422,44 +491,25 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       initialDate: _transactedAt ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(primary: AppTheme.primaryGreen),
-        ),
-        child: child!,
-      ),
     );
     if (date == null || !mounted) return;
-
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_transactedAt ?? DateTime.now()),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(primary: AppTheme.primaryGreen),
-        ),
-        child: child!,
-      ),
     );
-    if (time == null) return;
-
+    if (time == null || !mounted) return;
     setState(() {
-      _transactedAt = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
+      _transactedAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final accountsAsync = ref.watch(accountProvider);
-    final accounts =
-        accountsAsync.maybeWhen(data: (a) => a, orElse: () => <Account>[]);
-
+    final accounts = ref.watch(accountProvider).maybeWhen(
+          data: (items) => items,
+          orElse: () => <Account>[],
+        );
+    final labelsAsync = ref.watch(labelProvider);
     final now = DateTime.now();
     final dateLabel = _transactedAt == null
         ? 'Now (tap to set)'
@@ -468,7 +518,6 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 _transactedAt!.day == now.day)
             ? 'Today, ${DateFormat('HH:mm').format(_transactedAt!)}'
             : DateFormat('dd MMM yyyy, HH:mm').format(_transactedAt!);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Add Transaction')),
       body: Padding(
@@ -485,109 +534,65 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                   ButtonSegment(value: 'investment', label: Text('Invest')),
                 ],
                 selected: {_type},
-                onSelectionChanged: (v) => setState(() => _type = v.first),
+                onSelectionChanged: (value) => setState(() => _type = value.first),
               ),
               const SizedBox(height: 16),
-              InkWell(
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: const RoundedRectangleBorder(
+                    side: BorderSide(color: AppTheme.ink, width: 2)),
                 onTap: _pickDateTime,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                  decoration: BoxDecoration(
-                    border:
-                        Border.all(color: AppTheme.textSecondary.withAlpha(80)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.calendar_today_outlined,
-                          size: 18, color: AppTheme.textSecondary),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Transaction date & time',
-                            style: TextStyle(
-                                fontSize: 11, color: AppTheme.textSecondary),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            dateLabel,
-                            style: const TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.chevron_right,
-                          color: AppTheme.textSecondary, size: 18),
-                    ],
-                  ),
-                ),
+                leading: const Icon(Icons.calendar_today_outlined),
+                title: const Text('Transaction date & time'),
+                subtitle: Text(dateLabel),
+                trailing: const Icon(Icons.chevron_right_rounded),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _amountCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Amount (\u20B9)',
-                  prefixText: '\u20B9 ',
-                ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                validator: (v) {
-                  if (v == null || v.isEmpty) return 'Required';
-                  if (double.tryParse(v) == null) return 'Invalid number';
-                  return null;
+                decoration: const InputDecoration(labelText: 'Amount (\u20B9)', prefixText: '\u20B9 '),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Required';
+                  return double.tryParse(value) == null ? 'Invalid number' : null;
                 },
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _accountId,
-                decoration: InputDecoration(
-                  labelText: _needsDestination ? 'From account' : 'Account',
-                ),
+                decoration: InputDecoration(labelText: _needsDestination ? 'From account' : 'Account'),
                 items: accounts
-                    .map(
-                      (a) => DropdownMenuItem(
-                        value: a.id ?? '',
-                        child: Text(a.name),
-                      ),
-                    )
+                    .map((account) => DropdownMenuItem(
+                          value: account.id ?? '',
+                          child: Text(account.name),
+                        ))
                     .toList(),
-                onChanged: (v) => setState(() => _accountId = v),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Select an account' : null,
+                onChanged: (value) => setState(() => _accountId = value),
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Select an account'
+                    : null,
               ),
               const SizedBox(height: 12),
               if (_needsDestination) ...[
                 DropdownButtonFormField<String>(
                   initialValue: _destAccountId,
-                  decoration: InputDecoration(
-                    labelText: _type == 'transfer'
-                        ? 'To account'
-                        : 'Destination account',
-                  ),
+                  decoration: const InputDecoration(labelText: 'To account'),
                   items: accounts
-                      .map(
-                        (a) => DropdownMenuItem(
-                          value: a.id ?? '',
-                          child: Text(a.name),
-                        ),
-                      )
+                      .map((account) => DropdownMenuItem(
+                            value: account.id ?? '',
+                            child: Text(account.name),
+                          ))
                       .toList(),
-                  onChanged: (v) => setState(() => _destAccountId = v),
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Select destination' : null,
+                  onChanged: (value) => setState(() => _destAccountId = value),
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Select destination'
+                      : null,
                 ),
                 const SizedBox(height: 12),
-              ],
-              if (!_needsDestination) ...[
+              ] else ...[
                 TextFormField(
                   controller: _merchantCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'Merchant / Description'),
+                  decoration: const InputDecoration(labelText: 'Merchant / sender / receiver'),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -595,34 +600,31 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                   decoration: const InputDecoration(labelText: 'VPA / UPI ID'),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: _category,
-                  decoration: const InputDecoration(labelText: 'Category'),
-                  items: AppConstants.categories
-                      .map(
-                        (c) => DropdownMenuItem(value: c, child: Text(c)),
-                      )
-                      .toList(),
-                  onChanged: (v) => setState(() => _category = v!),
+                TextFormField(
+                  controller: _bankCtrl,
+                  decoration: const InputDecoration(labelText: 'Bank / source account'),
                 ),
+                const SizedBox(height: 12),
               ],
-              const SizedBox(height: 16),
-              _TagInput(
-                tags: _tags,
-                controller: _tagCtrl,
-                focusNode: _tagFocus,
-                onAdd: _addTag,
-                onRemove: _removeTag,
+              labelsAsync.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (_, __) => const Text('Labels are unavailable right now.'),
+                data: (labels) => _LabelSelector(
+                  labels: labels,
+                  selected: _selectedLabels,
+                  onChanged: (selected) => setState(() {
+                    _selectedLabels
+                      ..clear()
+                      ..addAll(selected);
+                  }),
+                  onCreate: _createLabel,
+                ),
               ),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: _isSaving ? null : _submit,
                 child: _isSaving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text('Save Transaction'),
               ),
             ],
@@ -632,16 +634,35 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     );
   }
 
+  Future<TransactionLabel?> _createLabel() async {
+    final created = await showDialog<({String name, String color})>(
+      context: context,
+      builder: (_) => const CreateTransactionLabelDialog(),
+    );
+    if (created == null || !mounted) return null;
+    try {
+      return await ref.read(labelProvider.notifier).create(
+            name: created.name,
+            color: created.color,
+          );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not create label: $error')),
+        );
+      }
+      return null;
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_needsDestination && _accountId == _destAccountId) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Choose different source and destination accounts')),
+        const SnackBar(content: Text('Choose different source and destination accounts')),
       );
       return;
     }
-
     setState(() => _isSaving = true);
     try {
       final amount = double.parse(_amountCtrl.text);
@@ -652,6 +673,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
           toAccountId: _destAccountId!,
           amount: amount,
           transactedAt: _transactedAt,
+          labels: List.unmodifiable(_selectedLabels),
         );
       } else if (_type == 'investment') {
         await notifier.addInvestment(
@@ -659,26 +681,26 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
           toAccountId: _destAccountId!,
           amount: amount,
           transactedAt: _transactedAt,
+          labels: List.unmodifiable(_selectedLabels),
         );
       } else {
-        final tx = Transaction(
+        await notifier.add(Transaction(
           amount: amount,
           type: _type,
           accountId: _accountId,
-          merchant: _merchantCtrl.text.isNotEmpty ? _merchantCtrl.text : null,
-          vpa: _vpaCtrl.text.isNotEmpty ? _vpaCtrl.text : null,
-          category: _category,
-          tags: List.unmodifiable(_tags),
+          merchant: _merchantCtrl.text.trim().isEmpty ? null : _merchantCtrl.text.trim(),
+          vpa: _vpaCtrl.text.trim().isEmpty ? null : _vpaCtrl.text.trim(),
+          bank: _bankCtrl.text.trim().isEmpty ? null : _bankCtrl.text.trim(),
+          labels: List.unmodifiable(_selectedLabels),
           source: 'manual',
           transactedAt: _transactedAt,
-        );
-        await notifier.add(tx);
+        ));
       }
       if (mounted) Navigator.pop(context);
-    } catch (e) {
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
+          SnackBar(content: Text('Failed to save: $error')),
         );
       }
     } finally {
@@ -687,88 +709,58 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   }
 }
 
-class _TagInput extends StatelessWidget {
-  const _TagInput({
-    required this.tags,
-    required this.controller,
-    required this.focusNode,
-    required this.onAdd,
-    required this.onRemove,
+class _LabelSelector extends StatelessWidget {
+  const _LabelSelector({
+    required this.labels,
+    required this.selected,
+    required this.onChanged,
+    required this.onCreate,
   });
 
-  final List<String> tags;
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final VoidCallback onAdd;
-  final void Function(String) onRemove;
+  final List<TransactionLabel> labels;
+  final List<TransactionLabel> selected;
+  final ValueChanged<List<TransactionLabel>> onChanged;
+  final Future<TransactionLabel?> Function() onCreate;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Tags',
-          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-        ),
-        const SizedBox(height: 6),
         Row(
           children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => onAdd(),
-                decoration: InputDecoration(
-                  hintText: 'e.g. freelance, emi, reimbursable',
-                  hintStyle: const TextStyle(
-                      fontSize: 13, color: AppTheme.textSecondary),
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide:
-                        BorderSide(color: AppTheme.textSecondary.withAlpha(80)),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add),
-              style: IconButton.styleFrom(
-                backgroundColor: AppTheme.primaryGreen,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.all(10),
-              ),
+            Text('Labels', style: Theme.of(context).textTheme.labelLarge),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () async {
+                final label = await onCreate();
+                if (label != null) onChanged([...selected, label]);
+              },
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('CREATE LABEL'),
             ),
           ],
         ),
-        if (tags.isNotEmpty) ...[
-          const SizedBox(height: 10),
+        const SizedBox(height: 6),
+        if (labels.isEmpty)
+          const Text('Create a label to classify this transaction.')
+        else
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: tags
-                .map(
-                  (tag) => Chip(
-                    label: Text(tag, style: const TextStyle(fontSize: 12)),
-                    deleteIcon: const Icon(Icons.close, size: 14),
-                    onDeleted: () => onRemove(tag),
-                    backgroundColor: AppTheme.primaryGreen.withAlpha(30),
-                    deleteIconColor: AppTheme.primaryGreen,
-                    side:
-                        BorderSide(color: AppTheme.primaryGreen.withAlpha(80)),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                )
-                .toList(),
+            spacing: 8,
+            runSpacing: 8,
+            children: labels.map((label) {
+              final isSelected = selected.any((item) => item.id == label.id);
+              return TransactionLabelPill(
+                label: label,
+                selected: isSelected,
+                onTap: () => onChanged(
+                  isSelected
+                      ? selected.where((item) => item.id != label.id).toList()
+                      : [...selected, label],
+                ),
+              );
+            }).toList(),
           ),
-        ],
       ],
     );
   }
