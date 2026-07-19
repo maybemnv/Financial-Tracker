@@ -64,6 +64,21 @@ styling whenever possible.
 - App pages must not use decorative illustration enrichment
 - Data hierarchy and type contrast carry the visual load
 
+## Charts
+
+Charts belong to the same newsprint system as everything else (binding on the
+Analytics work in `docs/PRD.md` §8):
+
+- `fl_chart` only; square corners, strong ruled axes, warm paper background
+- No gradients, glow, 3D, gauges, or decorative charts; one value axis per
+  chart (never dual-axis)
+- Ink for structure; accent/positive/negative only where a delta or state
+  demands it; mono numerals for values
+- Currency values and axis units always visible; tooltips carry full values
+- Every chart ships an accessible text summary, a tabular alternative, and an
+  empty state
+- KPI numbers are metric strips/stat blocks, not mini-charts
+
 ## What Pages Must Share
 
 - Warm paper background and dark ink shell
