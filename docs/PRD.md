@@ -1,394 +1,466 @@
-# PRD: Personal UPI Finance Tracker
+# PRD: Personal Finance Tracker (v2)
 
-A cross-platform (Android + Windows) personal finance system. Built solo, fast, with strict deadlines, designed to compound into resume material and a self-knowledge tool.
+Single-owner personal finance system. Flutter Web app deployed on Vercel, backed
+by Supabase (Postgres + Realtime), state managed with Riverpod, charts with
+`fl_chart`, and a Gemini-powered read-only finance agent.
 
----
-
-## 1. Requirements
-
-### Features & Functionality
-
-- UPI transaction capture via SMS (Android)
-- Manual entry (both platforms)
-- Cross-device real-time sync (Supabase)
-- Categories: Food, Travel, Shopping, Work, Family, Health, Subscriptions, Other
-- Cross-cutting tags (e.g. "startup", "freelance", "gift")
-- Rule-based + LLM-fallback categorization
-- Goals table: name, target_amount, allocated_amount, % funded
-- Dashboard: Earned / Spent / Saved / Net + category pie + trend chart
-- Finance agent (Claude-powered NL Q&A: "can I afford X?", "what did I waste money on?")
-- Invoice sidebar: collapsible side panel logging freelance invoices with columns — Invoiced Amount (USD), Received in PayPal, Amount in Bank — to track outstanding vs. realized income
-- Net Worth Card: Net Worth = Cash + PayPal + Investments - Debt, displayed as a historical chart
-- Career Investment Tag: special tag applied to Keyboard, Claude, ChatGPT, Hosting, Domains, Courses — excluded from discretionary-spend calculations
-- Invoice Metrics: derived fields for PayPal fee loss, FX conversion loss, effective INR/USD rate; enables agent questions like "How much money did PayPal cost me this year?"
-
-### Tech Stack
-
-- **Frontend** : Flutter (Android + Windows, single codebase)
-- **Backend/DB** : Supabase (Postgres, Realtime, REST via `supabase_flutter`)
-- **SMS parsing** : `another_telephony` / `flutter_sms_inbox` + regex
-- **Charts** : `fl_chart`
-- **Agent/LLM** : Anthropic API (Claude) — categorization fallback + NL query agent via tool-use (8 tools)
-- **State management** : Riverpod (locked, no mid-build flip-flopping)
-
-### Concepts Touched (resume-relevant)
-
-- Cross-platform app development (Flutter)
-- Real-time data sync architecture
-- SQL schema design + Postgres
-- Regex-based unstructured text parsing (SMS)
-- Rule engines + LLM-fallback hybrid classification
-- Agentic tool-use (LLM querying a database to answer NL questions)
-- Data visualization
-
-### Time, Effort & Timeline
-
-| Phase                                         | Effort  | Deadline |
-| --------------------------------------------- | ------- | -------- |
-| Planning (this doc + diagrams)                | 1–2 hrs | Day 0    |
-| Phase 1 — MVP                                 | 4–6 hrs | Day 1    |
-| Phase 2 — SMS capture                         | 2–3 hrs | Day 2    |
-| Phase 3 — Smart categorization + goals polish | 2–3 hrs | Day 3    |
-| Phase 4 — Finance agent                       | 2–3 hrs | Day 4    |
-
-**Total: ~12–17 hrs across 4–5 days.** Each phase ships something usable — no big-bang integration risk.
-
-### Milestones
-
-- **M1** : Add a manual transaction on phone, see it appear on laptop within seconds
-- **M2** : A real UPI SMS gets auto-parsed and shows up correctly categorized
-- **M3** : Goals dashboard shows live % funded after a manual allocation
-- **M4** : Ask the agent "can I afford a new keyboard?" and get a real, data-backed answer
+> **Document status.** This v2 PRD supersedes the original day-0 build plan
+> (Android + Windows + SMS capture + Claude agent). That plan shipped its MVP and
+> is preserved in git history. Claims that no longer match the deployed product —
+> native platforms, SMS auto-capture, Claude API, budget envelopes, "no auth
+> forever" — are removed here, not carried forward.
 
 ---
 
-## 2. Sources
+## 1. Current product (verified against code)
 
-Reference material to pull from when stuck — visit before reinventing:
+What exists and works in production today:
 
-- **Flutter + Supabase** : official `supabase_flutter` quickstart docs — auth-free table setup for single-user apps
-- **SMS parsing on Android/Flutter** : `another_telephony` pub.dev docs + GitHub issues for permission handling on Android 13+
-- **fl_chart** : pub.dev examples gallery — pie + line chart recipes, copy-paste starting points
-- **UPI SMS format samples** : your own inbox — collect 3–5 real (masked) SMS from different transactions before writing regex, don't guess formats upfront
-- **Claude API tool-use** : Anthropic docs on tool calling — same pattern as DataLens, you've done this before
-- **Riverpod docs** : quickstart for basic provider pattern, skip codegen for v1
+- **Ledger** — manual entry of debits, credits, double-entry transfers, and
+  investment moves; every row belongs to an account; soft delete; immutable
+  `edit_history`; user-set `transacted_at` with `created_at` fallback;
+  edit screen for debit/credit rows with pre-filled form.
+- **Accounts** — Cash, bank (Kotak/PSB), PayPal, investment accounts. Balances
+  are derived by `fn_account_balance()` from `opening_balance` + transaction
+  legs; net worth by `fn_net_worth()`. No stored balance column.
+- **Labels** — GitHub-style many-to-many labels with user-chosen colors
+  (create only; no rename/archive/merge/delete yet).
+- **Briefing (dashboard)** — month selector, hero summary, metric grid, account
+  balances, six-month trend line chart, daily bar chart, label pie chart, goal
+  trackers, action items — all computed client-side from the full ledger.
+- **Goals** — create goal, allocate positive amounts, soft delete. Emergency
+  Fund pinned by `type`, funded % progress bars.
+- **Invoices** — freelance invoice drawer with USD/PayPal/bank receipt tracking.
+- **Agent Desk** — Gemini 2.5 Flash with 10 read-only tools querying Supabase;
+  chat history persisted in `chat_sessions`.
+- **Recurring items** — `recurring_expenses` and `recurring_income` tables used
+  as agent context (no UI surfacing yet).
+- **Monthly snapshots** — previous-month aggregate written client-side on first
+  open of a new month.
 
----
+Known defects (fixed by this PRD's roadmap):
 
-## 3. Goals
-
-### Outcome Goals
-
-- A working app on your phone and laptop that tracks every rupee, syncs live, and tells you what's going on with your money without manual spreadsheet work
-
-### Self-Oriented / Journey-Based Goals
-
-- Prove you can take a personal itch (no-tooling money tracking) and ship a real tool for yourself, end to end, without external pressure
-- Practice scoping discipline — Phase 1 in one sitting, resist scope creep mid-build (log ideas to backlog instead of derailing)
-- Build something that directly visualizes progress toward Phone/Keyboard/Monitor — turning first-paycheck energy into a visible, growing number
-- Use this as low-stakes repetition of the Analytics Depot stack (Supabase, agent tool-use) to deepen those skills outside contractor pressure
-
----
-
-## 4. Planning — Before You Touch Code
-
-### Mind Map
-
-```
-Finance Tracker
-├── Data Capture
-│   ├── SMS listener (Android) → regex parser → transactions table
-│   ├── Manual entry form (both platforms)
-│   └── Invoice entry (manual) → invoices table
-├── Storage (Supabase)
-│   ├── transactions
-│   ├── category_rules
-│   ├── goals
-│   └── invoices
-├── Categorization
-│   ├── Rule match (VPA/keyword → category + tags)
-│   └── LLM fallback (Claude) for unmatched
-├── Sync
-│   └── Supabase Realtime → both devices reflect changes <2s
-├── Visualization
-│   ├── Summary cards (Earned/Spent/Saved/Net)
-│   ├── Category pie chart
-│   ├── Trend chart
-│   └── Goals progress bars
-└── Agent
-    ├── Claude tool-use → query Supabase → aggregate → answer NL question
-    └── Context injected per query: current balance, monthly burn, goal progress, committed recurring spend
-```
-
-### System Architecture
-
-```
-┌─────────────────┐         ┌─────────────────┐
-│   Android App   │         │   Windows App   │
-│  (Flutter)      │         │  (Flutter)      │
-│                 │         │                 │
-│ SMS Listener ───┼──┐      │                 │
-│ Manual Entry    │  │      │ Manual Entry    │
-│ Dashboard/Charts│  │      │ Dashboard/Charts│
-│ Goals UI        │  │      │ Goals UI        │
-│ Agent Chat      │  │      │ Agent Chat      │
-│ Invoice Sidebar │  │      │ Invoice Sidebar │
-└────────┬────────┘  │      └────────┬────────┘
-         │           │               │
-         │      ┌────▼───────────────▼─────┐
-         └─────►│   Supabase (Postgres)     │
-                │   - transactions           │
-                │   - category_rules         │
-                │   - goals                  │
-                │   - invoices               │
-                │   Realtime subscriptions   │
-                └─────────────┬──────────────┘
-                              │
-                      ┌───────▼────────┐
-                      │  Claude API    │
-                      │  - categorize  │
-                      │  - agent Q&A   │
-                      └────────────────┘
-```
-
-### Database Schema (final — lock before coding)
-
-**transactions**
-
-| Column     | Type        | Notes                      |
-| ---------- | ----------- | -------------------------- |
-| id         | uuid PK     | default gen_random_uuid()  |
-| account_id | uuid FK     | references accounts.id     |
-| amount     | numeric     |                            |
-| type       | text        | debit / credit / transfer / investment |
-| vpa        | text        | nullable                   |
-| merchant   | text        | nullable                   |
-| bank       | text        | nullable                   |
-| category   | text        | nullable until categorized |
-| tags       | text[]      | default '{}' — custom free-form tags |
-| raw_sms    | text        | nullable                   |
-| raw_sms_hash | text      | nullable — sha256 for dedup |
-| source     | text        | sms / manual               |
-| note       | text        | nullable — user memo       |
-| usd_amount | numeric     | nullable — for forex txns  |
-| linked_invoice_id | uuid | nullable — connects PayPal/bank receipt to the invoice it pays |
-| transfer_group_id | uuid | nullable — links the two rows in a transfer |
-| transacted_at | timestamptz | nullable — when the money actually moved (user-set); falls back to created_at |
-| is_deleted | boolean     | default false               |
-| deleted_at | timestamptz | nullable                    |
-| edit_history | jsonb     | default '[]' — immutable audit trail |
-| created_at | timestamptz | default now()              |
-| updated_at | timestamptz | default now()              |
-
-**category_rules**
-
-| Column        | Type    | Notes                           |
-| ------------- | ------- | ------------------------------- |
-| id            | uuid PK |                                 |
-| match_pattern | text    | substring match on vpa/merchant |
-| category      | text    |                                 |
-| tags          | text[]  | default '{}'                    |
-| priority      | int     | lower = checked first           |
-
-**goals**
-
-| Column           | Type        | Notes         |
-| ---------------- | ----------- | ------------- |
-| id               | uuid PK     |               |
-| name             | text        |               |
-| type             | text        | emergency_fund / custom |
-| target_amount    | numeric     |               |
-| allocated_amount | numeric     | default 0     |
-| created_at       | timestamptz | default now() |
-
-**invoices**
-
-| Column         | Type        | Notes                    |
-| -------------- | ----------- | ------------------------ |
-| id             | uuid PK     |                          |
-| client         | text        |                          |
-| description    | text        | nullable                 |
-| invoiced_usd   | numeric     | amount invoiced in USD   |
-| received_paypal| numeric     | amount received via PayPal|
-| received_bank  | numeric     | amount received in bank  |
-| status         | text        | pending / paid / partial |
-| invoice_date   | date        |                          |
-| created_at     | timestamptz | default now()            |
-| updated_at     | timestamptz | default now()            |
-
-### accounts
-
-| Column      | Type        | Notes                              |
-| ----------- | ----------- | ---------------------------------- |
-| id          | uuid PK     |                                    |
-| name        | text        | SBI, Kotak, PayPal, Cash           |
-| type        | text        | bank / wallet / paypal / cash      |
-| opening_balance | numeric | balance at opening_date |
-| opening_date | date       | when tracking started |
-| created_at  | timestamptz | default now()                      |
-
-> Every transaction belongs to an account.
-**recurring_expenses**
-
-| Column      | Type        | Notes                              |
-| ----------- | ----------- | ---------------------------------- |
-| id          | uuid PK     |                                    |
-| name        | text        | e.g. "Spotify", "SBI SIP"         |
-| amount      | numeric     |                                    |
-| frequency   | text        | monthly / weekly / yearly          |
-| category    | text        |                                    |
-| next_due    | date        | nullable                           |
-| created_at  | timestamptz | default now()                      |
-
-> Used by the agent to compute "committed money" — what's already spoken for before the month begins.
-
-### Endpoints / Interactions (all via Supabase client SDK — no custom backend needed)
-
-| Action                            | Table          | Operation                                                |
-| --------------------------------- | -------------- | -------------------------------------------------------- |
-| Insert parsed/manual transaction  | transactions   | insert                                                   |
-| Fetch transaction list (filtered) | transactions   | select + filters                                         |
-| Update category/tags on edit      | transactions   | update                                                   |
-| Subscribe to live changes         | transactions   | realtime channel                                         |
-| Fetch/create rules                | category_rules | select/insert                                            |
-| Fetch/update goals                | goals          | select/update                                            |
-| Categorize via LLM                | —              | Claude API call (not Supabase)                           |
-| Agent query                       | —              | Claude API call w/ Supabase aggregate results as context |
-
-### Pre-Build Decisions (lock now, no mid-build flip-flopping)
-
-- State management: **Riverpod**
-- Navigation: bottom nav bar -- 4 screen tabs (Transactions, Dashboard, Goals, Agent) + 5th Invoices tab that opens end drawer
-- No auth for v1 — single anon Supabase key, RLS open (acceptable for personal single-device-pair use)
-- Currency formatting: ₹, 2 decimals, locale en_IN
-- Transaction dates: `transacted_at` is user-set (when money moved); falls back to `created_at` (server timestamp). Display and balance calculation use `COALESCE(transacted_at, created_at)`.
-- Agent model: Haiku 4.5 (default) + Sonnet 4 (switcher in settings). Both support tool-use.
-- Time format: 24hr clock (HH:mm) throughout the app
+| # | Defect | Consequence |
+|---|---|---|
+| D1 | Cash expenses recorded against a bank account (data-level; the form never enforced deliberate account choice historically) | Bank balances understate, Cash overstates; account-filtered reports wrong |
+| D2 | The label "TRANSFER TO OTHER" holds money sent to family but reads as an internal transfer | Family support is invisible in reporting and conflated with account transfers |
+| D3 | Multi-label expenses are split evenly across labels (`DashboardAnalytics`, `get_label_breakdown`) | Category totals do not reconcile; per-label numbers are fabricated fractions |
+| D4 | Full-ledger `SELECT` with no pagination; full reload on every Realtime event | Slow loads that get worse every month |
+| D5 | `anon_all` RLS on every table; Gemini key shipped in the browser bundle | Anyone with the URL + anon key can read/write all finance data |
+| D6 | Goal allocation is an unaudited read-then-write on `allocated_amount` | No history, no corrections, race-prone |
+| D7 | Widget test uses `find.byDisplayValue`, breaking the test gate | `flutter test` cannot act as a release gate |
+| D8 | Installed PWA resume (mobile Brave shortcut) can blank-screen when the browser suspends it and the WebGL context is lost | App unusable after a switch until manual reload |
 
 ---
 
-### Best Practices (lock now, no mid-build flip-flopping)
+## 2. Tech stack (locked)
 
-1. **Never let AI modify money** — AI can categorize, summarize, answer questions. It should NEVER edit transactions, delete transactions, or move money. Those actions require explicit user confirmation.
+| Layer | Choice | Status |
+|---|---|---|
+| Frontend | Flutter Web (single codebase, mobile-first) | Locked |
+| Deployment | Vercel (`vercel-build.sh` → `build/web`) | Locked |
+| Backend/DB | Supabase — Postgres, Realtime, RPCs; **planned:** Auth + one Edge Function | Locked |
+| State | Riverpod (StateNotifier) | Locked — no second state system |
+| Charts | `fl_chart` | Locked — no second chart library |
+| AI | Gemini 2.5 Flash (currently browser-side; moving server-side behind a Supabase Edge Function) | Locked |
+| Design | Brutal Newsprint Workbench (`docs/design.md`) | Locked |
 
-2. **Soft-delete everything** — Instead of deleting, use `is_deleted` boolean + `deleted_at` timestamp. One accidental swipe shouldn't erase six months of data.
-
-3. **Double-entry style transfers** — When money moves between accounts (SBI → Kotak), don't create an expense. Create a transfer out + transfer in. Otherwise spending reports become nonsense.
-
-4. **Immutable transaction history** — When a transaction changes, store old value, new value, and `edited_at`. Audit trail matters in compliance-heavy environments.
-
-5. **Make dashboards boring** — The metrics you'll actually check: Current Cash, Net Worth, Savings Rate, Monthly Spend, Emergency Fund Progress. Everything else (17 charts, AI insights, pie charts everywhere) is secondary.
-
----
-
-## 5. Execution — Strict Deadlines, Dopamine-Driven
-
-Rules of engagement:
-
-- Each phase = one sitting, timeboxed. If it runs over, ship what works and move the rest to `BACKLOG.md` — don't let scope rot the deadline.
-- End of each phase = visible win (M1–M4). Demo it to yourself before moving on.
-- No new feature ideas mid-phase — write them down, keep moving.
-
-| Day   | Phase                                  | Deadline | Win Condition                                 |
-| ----- | -------------------------------------- | -------- | --------------------------------------------- |
-| Day 0 | Planning (this doc, schema lock)       | 1–2 hrs  | Schema finalized, no design decisions left    |
-| Day 1 | Phase 1 — MVP                          | 4–6 hrs  | M1: cross-device manual entry sync works      |
-| Day 2 | Phase 2 — SMS capture                  | 2–3 hrs  | M2: real SMS auto-categorized correctly       |
-| Day 3 | Phase 3 — Goals + smart categorization | 2–3 hrs  | M3: goal % funded updates live                |
-| Day 4 | Phase 4 — Finance agent                | 2–3 hrs  | M4: agent answers "can I afford X?" correctly |
-
-Each milestone hit = proof the planning phase paid off — decisions made once, not re-litigated per phase.
+No new backend server, microservice, event-sourcing system, or generalized
+analytics framework. The only new infrastructure permitted is the already
+planned Supabase Edge Function.
 
 ---
 
-## 6. Boss Battle — Trial & Error Challenge
+## 3. Hard product boundaries (locked)
 
-A standalone mini-challenge to stress-test the system end to end, run **after Phase 4** .
-
-**The Challenge: "Survive a Week"**
-
-1. For 7 days, log every transaction (auto via SMS + manual for cash/edge cases)
-2. On day 7, ask the agent three questions cold:
-   - "How much did I earn this week?"
-   - "What category did I overspend in?"
-   - "Am I closer to funding [a goal]?"
-3. Manually verify each answer against raw transaction data
-4. Any mismatch = bug — log it, fix it, re-run the same three questions
-
-**Failure modes to expect (and learn from):**
-
-- SMS parser misses a bank format → add regex pattern, re-test
-- LLM miscategorizes a merchant → add explicit rule, re-test
-- Agent aggregates wrong date range → fix query, re-test
-- Realtime sync lag/missed update → check subscription setup
-
-  **Win condition** : all three answers match manual verification, with zero manual fixes needed during the week (only logged + fixed _after_ ).
-
-This is the actual proof the system works — not the build, but a week of real use surviving contact with messy reality.
-
----
-
-## 7. Future Features (Backlog — Do Not Touch Until Boss Battle Passes)
-
-Ordered roughly by value vs. effort. Everything here is post-v1.
-
-### Tier 1 — High value, low lift (ship these next)
-
-**Monthly Budget Envelopes**
-Set a per-category budget (e.g. Food = ₹8,000/month). Dashboard shows remaining per envelope in real time. A red indicator triggers when >80% spent. This directly fixes the "spent without tracking" problem.
-
-**Committed Money View**
-Uses the `recurring_expenses` table. Before the month begins, shows: income expected − committed spend (SIPs, subscriptions, recurring) = actually free money. Prevents the illusion of a healthy balance when SIPs haven't hit yet.
-
-**Weekly Digest Notification (Android)**
-Every Sunday, a local notification summarises: spent this week, top category, how far from nearest goal. No server needed — scheduled local notification on Android.
-
-**USD ↔ INR Forex Layer**
-Auto-fetch live exchange rate (free tier: exchangerate-api.com) when logging invoice receipts. Store `usd_amount` + `inr_equivalent` + `rate_at_time`. Lets the agent answer "how much did Vineet's payment actually land as in rupees."
+- **Single owner only.** No organization, member, sharing, household, or
+  multi-user model. Authentication exists to protect one person's data, not to
+  add users.
+- **No budgets.** No envelopes, rollover budgets, or budget alerts. Anomaly
+  awareness comes from the user's own baseline, not targets.
+- **AI reads, never moves money.** AI may read, classify, summarize, forecast,
+  and answer. It must never create, modify, delete, allocate, or move money
+  without explicit user review and confirmation.
+- **Soft delete everywhere.** Financial records are never physically deleted.
+- **Balances are derived.** `opening_balance` + transactions. No mutable
+  balance column, ever.
+- **Transfers are two linked legs** (`transfer_group_id`) and do not change net
+  worth. The `transfer` type is reserved **exclusively** for money moving
+  between accounts the owner holds.
+- **Investments are asset movements**, not personal spending.
+- **All existing production data is preserved** through every migration.
+- **Web-only, mobile-first UI**, preserving the Brutal Newsprint Workbench
+  design system. No native Android or Windows app is in scope. The product is
+  used via **Brave browser** on desktop and as a **Brave Add to Home Screen**
+  shortcut (installed PWA) on mobile. Helium/Zen are possible future browsers.
+  All recovery/resume logic must stay browser-agnostic — never hardcoded to one
+  engine or OS.
+- **Navigation stays at five primary destinations.** Analytics becomes a tab;
+  invoice access moves to an app-bar/drawer action. No further tabs unless the
+  Analytics tab genuinely cannot contain a feature.
 
 ---
 
-### Tier 2 — High value, more effort
+## 4. Canonical financial metrics
 
-**Investment Tracker (Manual)**
-A new `investments` table: SIP name, fund name, amount per month, start date, current NAV (manual update). Dashboard shows: total invested vs. current value, XIRR (computed client-side). No API needed in v1 — manual NAV entry is fine. This turns the app into your full money picture.
+These definitions are the single source of truth. The database RPCs, Briefing,
+Analytics, exports, and Agent Desk answers must all use them identically.
 
-**Savings Rate Card**
-One number on the dashboard: `(income − total spend) / income × 100`. Just a percentage. Turns abstract goals into a single metric you can move week over week. Target: 20%+.
+| # | Metric | Definition |
+|---|---|---|
+| 1 | **Income** | External inflows classified as earned or received money: `credit` rows (including PayPal payouts/deposits). Excludes transfer and investment inflow legs. |
+| 2 | **Total Outflow** | All external `debit` outflows — Personal Spend **plus** Family Support. Excludes transfer and investment legs. |
+| 3 | **Personal Spend** | Debit outflows whose primary label is **not** flagged `exclude_from_personal_spend`. Unlabeled and `Needs primary label` expenses count as Personal Spend (visible in their own buckets) until classified. |
+| 4 | **Family Support** | Debit outflows whose primary label is `FAMILY` (a label with `exclude_from_personal_spend = true`). Reduces the paying account and net worth; counted in Total Outflow; **never** in Personal Spend. |
+| 5 | **Internal Transfer** | Two linked legs between owned accounts. Excluded from income, all spending metrics, and net-worth change. |
+| 6 | **Investment Contribution** | `investment` outflow leg from a liquid account into an owned investment account. Excluded from spending and net-worth change. |
+| 7 | **Net Cash Surplus** | `Income − Total Outflow`. The default "savings" number everywhere a single figure is shown. |
+| 8 | **Personal Savings After Own Spend** | `Income − Personal Spend`. Shown alongside Net Cash Surplus for context only — it is **not** retained money, because Family Support has also left the accounts. UI copy must not present it as money kept. |
+| 9 | **Savings Rate** | `Net Cash Surplus / Income × 100` (0 when income is 0). |
 
-**Cash Transaction Support**
-Manual entry already exists but cash has no VPA/merchant. Add a "Cash" source type with optional location tag. Lets you log the Hauz Khas chai without it showing as uncategorized noise.
-
-**Export to CSV / PDF**
-One-tap monthly export. Useful for ITR filing as a contractor — all freelance income + categorized expenses in one file.
-
----
-
-### Tier 3 — Future Manav problems
-
-**Liquid Fund Tracker**
-Once you start investing in liquid funds (post emergency fund), track units held + current NAV + redemption value. Needs manual NAV entry or a free MF API (mfapi.in — free, no auth).
-
-**SGB / Gold ETF Tracker**
-Log SGB units + purchase price. Auto-fetch current gold price and show P&L. Simple but satisfying once you hold any.
-
-**NPS Contribution Log**
-Track monthly NPS Tier 1 contributions + cumulative corpus. Simple table, no API. Mostly for tax clarity at year end — 80CCD(1B) ₹50,000 deduction is easy to forget.
-
-**Tax Summary View**
-End of financial year: total freelance income received (from invoices table), total 80C-eligible investments, estimated tax liability. Not financial advice — just a number to take to a CA or use for advance tax filing.
-
-**Agent Memory**
-Right now the agent has no memory between sessions. Future: store agent Q&A history in Supabase, inject last 5 exchanges as context. Makes "what did I ask last week" answerable and the agent feel genuinely persistent.
-
-**Multi-currency Invoice Support**
-If you ever take on non-INR clients beyond AD — GBP, EUR, etc. Extend `invoices` table with `currency` column, store raw foreign amount + INR equivalent at receipt date.
+Reconciliation invariant: for any filter window,
+`Total Outflow = Personal Spend + Family Support`, and the sum of primary-label
+buckets (including `Unlabeled` and `Needs primary label`) equals Total Outflow
+when excluded labels are shown, or Personal Spend when they are hidden.
 
 ---
 
-### Won't Do (log here so you stop reconsidering)
+## 5. Accounting correctness requirements
 
-- Auth / multi-user — this is a personal tool, single anon key is fine forever
-- Automated NAV/stock price fetch with paid APIs — free manual entry is good enough
-- Bank statement PDF import — too much regex hell for too little gain when SMS works
-- Notifications for every transaction — noise, not signal
+### 5.1 Account integrity (fixes D1)
+
+Invariant set:
+
+- Every transaction belongs to an explicitly selected account. A cash expense
+  uses the Cash account ID; a Kotak expense uses the Kotak account ID; a PayPal
+  expense uses the PayPal account ID.
+- The application must **never** silently substitute a default bank account for
+  Cash. The selected account is always visible in the add and edit forms. The
+  last-used account may be pre-suggested for convenience, but it stays visible
+  and changeable before save.
+- A transaction changes the derived balance of exactly one account (its own);
+  transfer/investment pairs change exactly the two accounts on their legs.
+- Cash spending reduces Cash and net worth. Bank spending reduces only the
+  selected bank account and net worth.
+- Editing a transaction's account reverses the effect on the old account and
+  applies it to the new one — this falls out of derived balances automatically
+  and must be covered by tests, not reimplemented.
+- **Existing potentially misassigned cash transactions are never silently
+  guessed or rewritten.** A focused review step lists candidate rows (manual
+  outflows against bank accounts in the affected period); the owner reassigns
+  each through the normal audited edit flow.
+
+Acceptance tests:
+
+1. Cash debit reduces Cash, not Kotak.
+2. Kotak debit reduces Kotak, not Cash.
+3. Editing a debit from Cash → Kotak moves the derived effect completely.
+4. Internal transfer changes both linked accounts and leaves net worth unchanged.
+5. Account-filtered ledger totals and analytics totals reconcile with
+   `fn_account_balance` for every account.
+
+### 5.2 Family support semantics (fixes D2)
+
+- Rename the production label `TRANSFER TO OTHER` → `FAMILY` via an
+  identity-preserving `UPDATE labels SET name = 'FAMILY'` (same row, same `id`,
+  all `transaction_labels` joins untouched). Never delete-and-recreate.
+- Family payments are **normal debit outflows** from the selected Cash or bank
+  account: they reduce that account, reduce net worth, and count toward Total
+  Outflow. They must **not** use the `transfer` type.
+- They are excluded from Personal Spend and reported separately as **Family
+  Support** in Briefing, Analytics, and Agent Desk answers.
+- Reporting mechanism (smallest possible): one flag on labels —
+  `labels.exclude_from_personal_spend boolean NOT NULL DEFAULT false` — read
+  through the primary-label system. No category taxonomy, no policy engine.
+
+Acceptance tests:
+
+1. A `FAMILY`-labeled debit reduces the paying account and net worth.
+2. It appears in Total Outflow and Family Support, never in Personal Spend.
+3. `Total Outflow = Personal Spend + Family Support` for any period.
+4. The renamed label keeps its ID and all historical transaction joins.
+5. Agent Desk distinguishes "spent on myself" from "sent to family."
+
+---
+
+## 6. Goals redesign (fixes D6)
+
+**Accounting rule:** goal allocation is **earmarking, not money movement**.
+Allocating ₹5,000 to a goal changes no account balance and no net worth; it
+assigns part of already-existing money to a purpose. UI copy must reflect this.
+
+Required capabilities (useful, not bloated):
+
+- Create a goal; edit name; edit target amount; optional target date; edit type
+  where valid.
+- Add funds; remove/correct an allocation (negative adjustment); reallocate
+  earmarked funds from one goal to another (one negative + one positive entry).
+- Status: `active`, `paused`, `completed`, `archived`; restore from archive;
+  auto-show completed when funded ≥ target; soft-delete only when safe (no
+  contribution history), otherwise archive.
+- Pin Emergency Fund above custom goals (by `type`, as today).
+- Show saved, target, remaining, % funded, and latest allocation.
+- Guards: allocated total can never go negative; warn before reducing target
+  below the allocated amount; overfunding only after explicit confirmation.
+- Compact goal-detail view with edit actions and allocation history.
+- Agent Desk context can explain goal progress and affordability but cannot
+  modify allocations.
+
+Data model (adopted — it materially improves correctness over mutating
+`allocated_amount` directly, which currently loses history and races):
+
+- `goal_contributions`: `id`, `goal_id`, `amount` (positive or negative),
+  `note`, `created_at`, `user_id` (after ownership migration). Corrections are
+  new negative rows, not edits.
+- The allocated total is **derived from contributions** (or maintained by one
+  transactional RPC that inserts the contribution and updates the total
+  atomically — either way, stored total and history must never drift).
+- `goals` gains `status`, `target_date` (nullable), `updated_at`.
+
+Estimated completion appears only when enough real contribution history exists
+(≥ 3 contributions across ≥ 2 distinct months); never fabricated from one
+allocation.
+
+Non-goals: multiple goal tables, recurring-goal rules, automatic transfers,
+generic ledger/event-sourcing framework.
+
+---
+
+## 7. Briefing tab (lightweight — no large charts)
+
+Briefing shows numbers, not visualizations:
+
+- Income, Total Outflow, Personal Spend, Family Support, Net Cash Surplus (all
+  for the selected month)
+- Current Net Worth
+- Account balances
+- Upcoming obligations (from recurring items)
+- Latest transaction timestamp
+- One concise financial status message
+
+The current Briefing line/bar/pie charts move to (or are replaced by) the
+Analytics tab. Stat values render as compact metric strips/cards in the
+existing newsprint style.
+
+---
+
+## 8. Analytics tab — restrained chart specification
+
+**Hard cap: exactly four primary charts.** Every chart answers a
+decision-relevant question and drills into the filtered ledger. Do not add a
+chart merely because data exists.
+
+Default range 12 months; selectors 1M, 3M, 6M, 12M, YTD, All where meaningful.
+
+| # | Chart | Form | Spec |
+|---|---|---|---|
+| 1 | **Monthly Cash Flow** | Grouped vertical bars | Income vs Total Outflow by month. Tap a bar → ledger filtered to that month + direction. Personal Spend and Family Support appear as supporting KPI values or a toggle — never additional permanent bar series. |
+| 2 | **Spending by Primary Label** | Sorted **horizontal** bars (replaces the pie) | Default data: Personal Spend only. Visible toggle to include excluded outflows (Family). Top 7 labels + `Other`. Label names and exact ₹ readable on mobile. Tap a label → filtered ledger. Contextual labels never double-count. |
+| 3 | **Daily Cumulative Personal Spend** | Two lines | Current month vs previous month aligned by day number. Partial current month clearly handled (line stops at today). No artificial budget/target line. Tap a point → that day's ledger. |
+| 4 | **Net Worth History** | Line | Real monthly snapshots + current derived value only — never fabricated historical per-account balances. Current value clearly marked. Tap a point → that month's snapshot detail. |
+
+Non-chart analytical components:
+
+- Current account balances — cards or compact table, not a chart.
+- Top merchants — ranked list with values, not a chart.
+- Goal progress — progress bars and cards, not pie charts.
+- Recurring obligations — ordered list by due date.
+- Family Support — separate KPI with ledger drill-down.
+- Optional tiny goal-contribution sparkline only where real history exists.
+
+Chart rules (all four charts):
+
+- `fl_chart` only; Brutal Newsprint visual language — square corners, strong
+  rules, warm paper background, readable labels.
+- No gradients, glow, 3D, gauges, or decorative charts. One value axis per
+  chart — never dual-axis.
+- Always show currency values and clear axis units; tooltips with full values.
+- Accessible text summary and tabular alternative for every chart; empty
+  states; render only the active analytics section.
+
+---
+
+## 9. Security, performance, reliability (summary)
+
+Fully specified in `docs/enhancement.md`; the requirements are:
+
+- **Auth + RLS:** one Supabase owner account (Google + magic link), `user_id`
+  ownership on all tables, owner-only policies replacing `anon_all`,
+  fail-closed RPCs. (D5)
+- **Server-side AI:** Gemini behind an authenticated Supabase Edge Function;
+  key removed from the bundle and rotated. (D5)
+- **Primary labels + audit:** exactly one primary label per new/edited expense;
+  one transactional RPC per edit; one audit entry per logical change. (D3)
+- **Performance:** cursor pagination (50/page), server-side filtering,
+  aggregate RPCs, snapshot/live-month split, lazy tabs. (D4)
+- **Installed-PWA resume resilience:** bootstrap surface (no blank screen),
+  browser-agnostic JS/Dart lifecycle handshake with bounded WebGL-context-loss
+  recovery, session/realtime refresh on resume, and draft persistence. (D8)
+
+Performance targets: warm launch interactive < 3 s on a mid-range mobile PWA;
+cold 4G < 6 s; Briefing aggregate p95 < 500 ms; ledger first paint downloads
+one page.
+
+---
+
+## 10. Roadmap (dependency-ordered)
+
+| Phase | Scope | Priority |
+|---|---|---|
+| 0 | Current deployed baseline + known defects (D1–D8) recorded | — |
+| 1 | Test gate repair, backup, migration safety | Must |
+| 2 | Owner authentication, ownership backfill, RLS, scoped RPCs | Must |
+| 3 | Secure Gemini Edge Function + key rotation | Must |
+| 4 | Cash/account correctness + Family-support semantics | Must |
+| 5 | Primary-label auditing + label lifecycle | Must |
+| 6 | Goals redesign | Must |
+| 7 | Pagination, aggregate RPCs, snapshots, performance | Must |
+| 8 | Briefing slim-down + four-chart Analytics tab | Must |
+| 9 | Upcoming obligations + deterministic cash-flow forecast | Should |
+| 10 | Quick capture + merchant normalization | Should |
+| 11 | Installed-PWA resume resilience (browser-agnostic) + production acceptance | Must |
+| — | Monthly digest, automated backup | Later |
+| — | Google Pay screenshot import | Future backlog |
+
+The detailed checklist is `docs/TODO.md`.
+
+---
+
+## 11. Feature additions
+
+Each feature states: user problem, minimal data-model change, reused
+capability, non-goals, acceptance, and priority.
+
+### 11.1 Upcoming obligations (Phase 9 — Should)
+
+- **Problem:** recurring data exists but nothing answers "what's about to hit?"
+- **Data model:** none new. Reuses `recurring_expenses` + `recurring_income`
+  (optional additive columns only if needed: e.g. `account_id`, `is_paused`).
+- **Shows:** name, expected amount, expected date, account if known, days
+  remaining, status (upcoming / expected today / overdue / confirmed).
+- **Non-goals:** no separate subscriptions system — a subscription is a
+  filtered recurring expense with optional metadata; no reminders/notification
+  infrastructure.
+- **Acceptance:** obligations list matches recurring rows; statuses correct
+  around due-date boundaries; confirmed items link to the matching transaction.
+
+### 11.2 Deterministic cash-flow forecast (Phase 9 — Should)
+
+- **Problem:** "how much is actually safe to spend before the next inflow?"
+- **Inputs:** current liquid balances, known recurring inflows/outflows, recent
+  average Personal Spend, explicit upcoming obligations.
+- **Output:** 30-day projected liquid balance, obligations due before next
+  expected inflow, estimated available amount until next inflow, and the
+  assumptions used — presented as an estimate, never authoritative.
+- **Data model:** none. Pure computation over existing data.
+- **Non-goals:** no ML; investment-account value is not spendable cash;
+  earmarked goal allocations are **not** treated as money that left an account
+  (they are context, shown as "earmarked" alongside the projection).
+- **Acceptance:** projection reproducible by hand from its stated inputs;
+  excludes investment balances; states assumptions.
+
+### 11.3 Quick capture (Phase 10 — Should)
+
+- **Problem:** entry friction is the biggest threat to data completeness.
+- **Behavior:** one-field input — `250 biryani cash`, `500 sent to mummy kotak`
+  — parsed into a reviewable draft (amount, direction/type, account, merchant/
+  note, primary label, date/time). **User confirms before saving**; saving goes
+  through the same audited write path as the full form.
+- **Parsing:** deterministic rules first (amount token, account-name match,
+  label keyword match — reusing the retained Dart parser machinery and label
+  data); Gemini only as fallback, and its output is still just a draft.
+- **Data model:** none.
+- **Non-goals:** no auto-save, no SMS integration, no NLP framework.
+- **Acceptance:** the two example utterances parse correctly; ambiguous input
+  degrades to a partially-filled draft, never a wrong silent save.
+
+### 11.4 Merchant normalization (Phase 10 — Should)
+
+- **Problem:** `SWIGGY*ORDER8837`-style variants fragment merchant analytics.
+- **Data model:** one minimal table `merchant_aliases` (`id`, `match_pattern`,
+  `canonical_name`, `user_id`, `created_at`). Raw merchant/VPA values are
+  preserved on the transaction for audit; normalization applies at read time.
+- **Reuses:** the ranked top-merchants list and ledger filters.
+- **Non-goals:** no merchant intelligence system, no enrichment APIs.
+- **Acceptance:** aliased variants roll up to one display merchant in
+  analytics; raw value still visible on the transaction detail.
+
+### 11.5 Monthly digest (Later)
+
+Concise month-in-review generated from the **same aggregate RPCs** as the UI:
+income, Total Outflow, Personal Spend, Family Support, savings change, largest
+labels/merchants, goal progress, significant recurring charges. No separate
+analytics pipeline. Rejected if it ever computes numbers the UI cannot
+reconcile.
+
+### 11.6 Automated backup (Later — operational, not a screen)
+
+Recurring Supabase export (schema + rows) scheduled after the security
+migration. Documented as an ops runbook task; no product UI.
+
+---
+
+## 12. Future backlog: Google Pay screenshot import
+
+**Deferred. Not part of any committed phase. No implementation now.**
+
+Intended future workflow (reviewed import, nothing automatic):
+
+1. User uploads one or more Google Pay transaction-history screenshots.
+2. OCR or a vision model extracts candidate transactions.
+3. A review table presents candidates; the user edits or rejects rows.
+4. Dedupe compares date, amount, direction, merchant/VPA, and nearby existing
+   entries.
+5. **Only explicitly confirmed rows are imported**, through the standard
+   audited write path.
+6. Screenshot retention only if a privacy/storage design is intentionally
+   approved later.
+
+Constraints: no automatic insertion; no Google Pay credentials or scraping; no
+bank-statement parser as a prerequisite; no attachment tables added in the
+current phase to "prepare" for this.
+
+Likely minimal interfaces when picked up: an import-review screen, a candidate
+DTO (date, amount, direction, merchant, VPA, confidence), and reuse of the
+existing dedupe hash/window checks. Acceptance: zero rows created without
+explicit confirmation; dedupe prevents double-import of an existing ledger row.
+
+---
+
+## 13. Explicitly out of scope / rejected
+
+| Item | Status |
+|---|---|
+| Bank-statement CSV/PDF import; statement export | Out of scope now |
+| Direct bank / Account Aggregator integrations | Rejected |
+| Google Pay OCR implementation | Deferred (see §12) |
+| Shared wallets, household/multi-user anything | Rejected (boundary) |
+| Budgets, envelopes, rollover, budget alerts | Rejected (boundary) |
+| Tax-management modules | Rejected |
+| Gamification | Rejected |
+| ML-based anomaly detection | Rejected (deterministic baselines only) |
+| Investment holdings, market prices, return calculations | Out of scope — contributions/allocation only |
+| Separate subscription data model | Rejected — recurring expenses cover it |
+| Event-sourcing system | Rejected |
+| New infrastructure beyond the planned Edge Function | Rejected |
+| AI streaming, transaction attachments | Out of scope now |
+
+---
+
+## 14. Overengineering guardrails
+
+Reject or defer anything that:
+
+- Requires a new service when Supabase already supports it.
+- Requires a new table without a clear correctness reason.
+- Adds a separate screen where a section or filter suffices.
+- Duplicates existing analytics.
+- Adds AI where deterministic rules are sufficient.
+- Requires historical data that does not exist (never fabricate).
+- Produces numbers that cannot be reconciled to ledger totals.
+- Adds more than the four approved primary charts.
+- Expands the product into accounting software for multiple people.
+
+Every future proposal must state: user problem, minimal data-model change,
+reused capability, non-goals, acceptance criteria, and Must/Should/Later/
+Rejected.

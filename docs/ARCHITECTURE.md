@@ -14,6 +14,8 @@ graph TB
 
     subgraph Supabase["Supabase (Postgres + Realtime)"]
         TX[transactions]
+        LB[labels]
+        TL[transaction_labels]
         CR[category_rules]
         GL[goals]
         IV[invoices]
@@ -21,6 +23,7 @@ graph TB
         RE[recurring_expenses]
         RI[recurring_income]
         MS[monthly_snapshots]
+        CS[chat_sessions]
     end
 
     subgraph Gemini["Gemini API (2.5 Flash)"]
@@ -44,12 +47,12 @@ graph TD
     AppShell["AppShell (Scaffold + endDrawer)"] --> AppTabs["AppTabs (IndexedStack)"]
     AppShell --> InvoiceSidebar["InvoiceSidebar (endDrawer)"]
 
-    AppTabs --> Tab0["0: TransactionListScreen"]
-    AppTabs --> Tab1["1: DashboardScreen"]
-    AppTabs --> Tab2["2: GoalsScreen"]
-    AppTabs --> Tab3["3: AgentChatScreen"]
+    AppTabs --> Tab0["0: TransactionListScreen (Ledger)"]
+    AppTabs --> Tab1["1: DashboardScreen (Briefing)"]
+    AppTabs --> Tab2["2: GoalsScreen (Targets)"]
+    AppTabs --> Tab3["3: AgentChatScreen (Agent Desk)"]
 
-    Tab0 --> FAB["FAB"] --> AddTx["AddTransactionScreen (push)"]
+    Tab0 --> FAB["FAB"] --> AddTx["AddTransactionScreen (push, also edit mode)"]
     Tab2 --> AddGoal["Add Goal Dialog"]
     Tab2 --> Allocate["Allocate Dialog"]
     Tab1 --> PieChart["Category Pie Chart"]
@@ -58,12 +61,15 @@ graph TD
     BottomNav -->|index 4| InvoiceSidebar
 ```
 
-5 bottom nav items:
-- Transactions (index 0, FAB visible)
-- Dashboard (index 1)
-- Goals (index 2)
-- Agent (index 3)
+5 bottom nav items (labels as shipped):
+- Ledger (index 0, FAB visible; card edit button pushes `AddTransactionScreen` in edit mode)
+- Briefing (index 1)
+- Targets (index 2)
+- Agent Desk (index 3)
 - Invoices (index 4 — opens end drawer instead of switching tab)
+
+**Planned (Phase 8):** Analytics becomes the fifth primary destination; invoice
+access moves to an app-bar/drawer action so the bar stays at five items.
 
 ---
 
@@ -131,38 +137,34 @@ sequenceDiagram
     participant App
     participant Provider as TransactionNotifier
     participant Supabase
-    participant Claude
 
     alt Manual Entry
         User->>App: Fill form + tap Save
         App->>Provider: add(tx)
         Provider->>Supabase: INSERT ... RETURNING *
+        Provider->>Supabase: replace transaction_labels rows
         Supabase-->>Provider: inserted row
-        Provider->>App: prepend to list
-        App-->>User: success toast
-    else SMS Auto-Capture
-        Note over App: Android only
-        SMS->>App: onSmsReceived
-        App->>App: SmsParser.parse(raw)
-        alt parse succeeded
-            App->>Provider: add(tx)
-            Provider->>Supabase: INSERT
-            App-->>User: toast "₹500 at Swiggy"
-        else no match
-            App-->>User: toast "Unrecognised SMS"
-        end
+        Provider->>App: reload list
+        App-->>User: success
     else Realtime Sync
-        Note over App: Other device
+        Note over App: Other device/tab
         Supabase-->>Provider: PostgresChanges event
-        Provider->>Supabase: SELECT (reload)
+        Provider->>Supabase: SELECT (full reload — Phase 7 replaces with patching)
         Provider->>App: rebuild UI
     else Edit / Delete
-        User->>App: swipe or tap edit
+        User->>App: tap edit / long-press delete
         App->>Provider: update(tx) or delete(id)
-        Provider->>Supabase: UPDATE or soft DELETE
+        Provider->>Supabase: UPDATE (+ edit_history) or soft DELETE
         Provider->>App: refresh list
     end
 ```
+
+Transfers and investments insert **two linked legs** (`transfer_group_id`,
+explicit `direction` per leg) via `addTransfer`/`addInvestment`.
+
+**Planned (Phase 5):** the update path (separate field UPDATE + label
+replacement) is replaced by one `save_transaction_with_labels` RPC that writes
+fields, labels, and primary label atomically with a single audit entry.
 
 ---
 
@@ -172,88 +174,60 @@ sequenceDiagram
 sequenceDiagram
     actor User
     participant App as AgentChatScreen
-    participant CS as ClaudeService
+    participant LS as LlmService
     participant Supabase
-    participant Claude
+    participant Gemini
 
     User->>App: "Can I afford a new keyboard?"
-    App->>CS: sendMessage(question)
-    CS->>Claude: POST /v1/messages (with tool definitions)
+    App->>LS: sendMessage(question)
+    LS->>Gemini: POST /chat/completions (10 tool definitions, tool_choice auto)
 
-    loop Tool-use loop (up to 10 rounds)
-        Claude-->>CS: tool_use: get_net_worth
-        CS->>Supabase: fn_net_worth() RPC
-        Supabase-->>CS: 45000
-        CS->>Claude: tool_result: 45000
-
-        Claude-->>CS: tool_use: get_transactions
-        CS->>Supabase: SELECT transactions (30d)
-        Supabase-->>CS: filtered list
-        CS->>Claude: tool_result: [transactions...]
+    loop Tool-call loop (up to 10 rounds)
+        Gemini-->>LS: tool_calls: get_net_worth
+        LS->>Supabase: fn_net_worth() RPC
+        Supabase-->>LS: 45000
+        LS->>Gemini: role:tool result 45000
 
         opt More tools needed
-            Claude-->>CS: tool_use: get_goals / get_recurring_expenses
-            CS->>Supabase: SELECT from relevant table
-            Supabase-->>CS: data
-            CS->>Claude: tool_result: data
+            Gemini-->>LS: tool_calls: get_transactions / get_goals / ...
+            LS->>Supabase: SELECT from relevant table
+            Supabase-->>LS: data
+            LS->>Gemini: role:tool result
         end
     end
 
-    Claude-->>CS: text response
-    CS-->>App: render answer bubble
+    Gemini-->>LS: text response
+    LS->>Supabase: persist chat_sessions (best-effort)
+    LS-->>App: render answer bubble
     App-->>User: answer with data citations
 ```
 
-Agent uses **tool-use pattern** — Claude decides which tools to call at each turn. Model switcher: Haiku 4.5 (default, `claude-haiku-4-5-20251001`) or Sonnet 4 (`claude-sonnet-4-20250514`). Both support tool-use.
+Agent uses the **tool-call pattern** — Gemini decides which of the 10 read-only
+tools to call each turn (`gemini-2.5-flash` via the OpenAI-compatible
+endpoint). No tool can modify data.
+
+**Planned (Phase 3):** this entire loop moves into an authenticated Supabase
+Edge Function; the browser sends only the conversation and receives the answer
+plus privacy-safe tool-activity metadata. `GEMINI_API_KEY` leaves the client
+bundle and is rotated.
 
 ---
 
-## SMS Pipeline
+## Parsing and Classification (dormant)
 
-```mermaid
-graph LR
-    subgraph Android["Android"]
-        SM["Telephony<br/>SMS Receiver"] -->|raw text| SP["SmsParser<br/>(regex engine)"]
-        SP -->|match| TX[Transaction object]
-        SP -->|no match| NULL["null (skip)"]
-    end
+Native SMS capture was **removed** with the Android runner; the app is
+web-only. Two building blocks are retained for the Phase 10 quick-capture
+feature and remain unused at runtime today:
 
-    subgraph Parse["Regex Patterns"]
-        P1["Pattern 1: ₹XX debited/credited to YY"]
-        P2["Pattern 2: Rs.XX spent at YY"]
-        P3["Pattern 3: Trf to YY ₹XX"]
-        P4["Pattern 4: INR XX is debited from YY"]
-    end
+- `lib/features/sms/sms_parser.dart` — pure Dart regex parser for UPI-style
+  bank messages (future paste/import parsing).
+- `category_rules` table + `CategoryRule` model — priority-ordered matching
+  engine, dormant since labels replaced categories/tags (migration `00005`).
 
-    SP --> P1
-    SP --> P2
-    SP --> P3
-    SP --> P4
-
-    TX --> TN["TransactionNotifier<br/>.add()"]
-    TN --> SUP["Supabase INSERT"]
-
-    TN --> TOAST["Toast: added"]
-```
-
----
-
-## Categorization Pipeline
-
-```mermaid
-flowchart LR
-    TX["New Transaction<br/>(no category)"] --> RULES{"Match<br/>category_rules<br/>by priority?"}
-
-    RULES -->|yes| ASSIGN["Assign category + tags"]
-    RULES -->|no| CLAUDE["Send to Claude API<br/>for categorization"]
-
-    CLAUDE --> CLAUDE_RESP{"Claude returned<br/>category?"}
-    CLAUDE_RESP -->|yes| ASSIGN
-    CLAUDE_RESP -->|no| MANUAL["Leave uncategorized<br/>User categorises manually"]
-
-    ASSIGN --> UPDATE["TransactionNotifier.update()"]
-    UPDATE --> DONE["Transaction categorised"]
-```
+**Planned (Phase 10):** quick capture parses one-field input (`250 biryani
+cash`) deterministically first (amount token, account-name match, label
+keywords), with Gemini as fallback — always producing a reviewable draft,
+never a silent save.
 
 ---
 
@@ -261,16 +235,39 @@ flowchart LR
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| State management | Riverpod (StateNotifier) | Simple, no codegen, testable |
+| State management | Riverpod (StateNotifier) | Simple, no codegen, testable. Locked — no second state system. |
 | Navigation | IndexedStack + bottom nav | Preserves tab state, fast switching |
-| Invoice access | End drawer via 5th nav item | No dedicated screen needed |
-| Data sync | Supabase Realtime (PostgresChanges) | Sub-second cross-device, no polling |
-| SMS integration | Stub + plugin | Real device needed, deferred |
-| Agent approach | Claude tool-use (8 tools) | Claude decides which queries to run per turn — no pre-fetching, smarter context selection |
-| Agent models | Haiku 4.5 (default) + Sonnet 4 | Switcher in settings menu; both support tool-use |
+| Invoice access | End drawer via 5th nav item | No dedicated screen needed (moves to app-bar action when Analytics takes the slot, Phase 8) |
+| Data sync | Supabase Realtime (PostgresChanges) | Sub-second cross-device, no polling. Full-reload handler is defect D4; row patching planned (Phase 7). |
+| SMS integration | Removed (web-only); pure Dart parser retained | Feeds future quick-capture/paste parsing, not runtime capture |
+| Agent approach | Gemini tool-calls (10 read-only tools) | Model decides which queries to run per turn — no pre-fetching. Browser-direct today; Edge Function planned (Phase 3). |
+| Agent model | `gemini-2.5-flash` via OpenAI-compatible endpoint | Single model; no switcher |
 | Transaction dates | `transacted_at` (user-set) + `created_at` (server) | `transacted_at` is the actual money-move date; falls back to `created_at` for display/balance calculation |
 | Ledger direction | `direction` column (`inflow`/`outflow`) | Independent of `type` — the RPC uses `direction` directly so transfer/investment legs balance correctly. Model helpers `isInflow`/`isOutflow` fall back to `type` for backward compatibility. |
+| Account selection | Explicit, required, always visible in forms | Cash spends must hit Cash, bank spends the selected bank; never a silent default (PRD §5.1) |
 | Dashboard refresh | `WidgetsBindingObserver` + `ref.invalidate()` | On mount and app resume, all providers are invalidated so metrics reflect the latest DB state. Pull-to-refresh also reloads the transaction provider. |
-| Dashboard analytics | `DashboardAnalytics.fromTransactions()` | Pure computation class that aggregates transactions into `currentMonth` summary, `monthlyTrend` per-month buckets, and `spendingCategories` pie chart data. |
-| No auth | Single anon key | Personal tool, 2 devices max |
-| Charts | fl_chart | Pie + line, battle-tested Flutter lib |
+| Dashboard analytics | `DashboardAnalytics.fromTransactions()` | Pure computation over the full ledger — replaced by aggregate RPCs + canonical metrics in Phases 7–8 (its even multi-label split is defect D3) |
+| Auth | None today (single anon key) — **being replaced** | Single-owner Supabase Auth + owner-only RLS is Phase 2; open policies are defect D5, not an accepted end state |
+| Charts | fl_chart | Locked — no second chart library. Analytics is capped at four primary charts (PRD §8). |
+
+---
+
+## Planned Architecture Changes (summary)
+
+In dependency order (details in `docs/enhancement.md` / `docs/TODO.md`):
+
+1. **Auth gate** wrapping the app shell: session restore → owner check →
+   finance providers. Fail-closed for non-owners.
+2. **Supabase Edge Function** for Agent Desk (the only new infrastructure).
+3. **Correctness layer:** explicit-account enforcement + Family Support flag,
+   primary labels with one transactional save RPC, goal contributions.
+4. **Data layer:** cursor-paginated ledger, row-level Realtime patching,
+   aggregate RPCs (`get_briefing_summary`, `get_analytics`,
+   `get_account_balances`), monthly + account-balance snapshots.
+5. **Presentation:** numbers-only Briefing; separate Analytics tab with exactly
+   four charts; lazy tab initialization.
+ 6. **Web platform:** `flutter_bootstrap.js` startup surface, browser-agnostic
+    JS/Dart resume handshake with bounded WebGL-context-loss recovery, 24-hour
+    local drafts (installed-PWA resume reliability for the mobile Brave
+    shortcut; Brave on desktop + Helium/Zen possible future browsers — no
+    native app).

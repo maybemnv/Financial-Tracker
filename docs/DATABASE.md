@@ -2,6 +2,8 @@
 
 Postgres database hosted on Supabase. All tables use UUID primary keys with `gen_random_uuid()`. Timestamps use `timestamptz` with `now()` defaults.
 
+This file documents the **current deployed schema** (migrations `00001`–`00005`) plus a [Planned schema changes](#planned-schema-changes) section for the approved roadmap (`docs/enhancement.md`, `docs/TODO.md`). Canonical financial-metric definitions live in `docs/PRD.md` §4 and bind every aggregate built on this schema.
+
 ---
 
 ## Table: `transactions`
@@ -71,9 +73,11 @@ Reusable GitHub-style labels. Each has a user-selected color and can be attached
 | Column | Type | Default | Notes |
 |---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
-| `name` | `text` | | Case-insensitive unique name, e.g. `Food`, `Drinks`, `Cigarettes` |
+| `name` | `text` | | Case-insensitive unique name, e.g. `Food`, `Drinks`, `FAMILY` |
 | `color` | `text` | | Six-digit hex color, e.g. `#1D76DB` |
 | `created_at` | `timestamptz` | `now()` | |
+
+> **Family Support.** The production label previously named `TRANSFER TO OTHER` represents money sent to family. It is renamed to `FAMILY` via an identity-preserving `UPDATE` (same row/ID, all joins retained — never delete-and-recreate). Family payments are normal debit outflows, **not** `transfer`-type rows. Planned: `exclude_from_personal_spend boolean NOT NULL DEFAULT false` (true for `FAMILY`) drives the Personal Spend vs Family Support split through the primary-label system. See [Planned schema changes](#planned-schema-changes).
 
 ## Table: `transaction_labels`
 
@@ -112,7 +116,7 @@ CHECK (type IN ('cash', 'bank', 'paypal', 'investment'))
 
 ## Table: `category_rules`
 
-Rule engine for auto-categorization. When a transaction comes in (via SMS), the first matching rule by priority assigns the category and tags.
+Rule engine for auto-categorization. **Currently dormant:** the table and Dart model exist, but no client code queries it since categories/tags were replaced by labels (migration `00005`). Retained for the quick-capture deterministic parser (Phase 10); columns will migrate from category/tags to label references when that phase lands.
 
 | Column | Type | Default | Notes |
 |---|---|---|---|
@@ -133,6 +137,8 @@ CREATE INDEX idx_category_rules_priority ON category_rules(priority);
 ## Table: `goals`
 
 Savings goals with manual allocation tracking.
+
+> **Allocation is earmarking, not money movement.** Allocating to a goal changes no account balance and no net worth — it assigns existing money to a purpose. Today `allocated_amount` is mutated directly by the client (read-then-write, no history — defect D6); the Goals redesign replaces this with a `goal_contributions` history table and one transactional RPC. See [Planned schema changes](#planned-schema-changes).
 
 | Column | Type | Default | Notes |
 | --- | --- | --- | --- |
@@ -269,12 +275,12 @@ CREATE INDEX idx_monthly_snapshots_year_month ON monthly_snapshots(year DESC, mo
 
 ## Table: `chat_sessions`
 
-Persists the Claude agent's message history so context survives app restarts. Consistent with the single-anon-key, no-auth design (see ARCHITECTURE.md), this table is global like every other table — there is **no `user_id`**. The client keeps one rolling session: it loads the most recently updated row on launch and rewrites it after each completed turn.
+Persists the Agent Desk (Gemini) message history so context survives app restarts. Currently global with **no `user_id`** (pre-auth design); gains ownership in the Phase 2 migration. The client keeps one rolling session: it loads the most recently updated row on launch and rewrites it after each completed turn.
 
 | Column | Type | Default | Notes |
 |---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
-| `messages` | `jsonb` | `'[]'` | Claude API message array, including tool-use turns needed for context continuity. |
+| `messages` | `jsonb` | `'[]'` | OpenAI-compatible message array (Gemini endpoint), including tool-call turns needed for context continuity. |
 | `created_at` | `timestamptz` | `now()` | |
 | `updated_at` | `timestamptz` | `now()` | Auto-updated by trigger |
 
@@ -359,8 +365,10 @@ $$ LANGUAGE plpgsql;
 | Table | Publication | Enabled |
 |---|---|---|
 | `transactions` | `supabase_realtime` | Yes |
+| `labels` | `supabase_realtime` | Yes (migration `00005`) |
+| `transaction_labels` | `supabase_realtime` | Yes (migration `00005`) |
 
-Additional tables can be added as needed:
+The client also opens channels on `accounts`, `goals`, and `invoices`; add them to the publication as needed:
 
 ```sql
 ALTER PUBLICATION supabase_realtime ADD TABLE accounts;
@@ -372,14 +380,16 @@ ALTER PUBLICATION supabase_realtime ADD TABLE invoices;
 
 ## Row Level Security
 
-All tables use open RLS for the single anon key (v1 design — no auth):
+**Current state (defect D5 — being replaced, not an accepted production design):** all tables use open RLS for the single anon key:
 
 ```sql
 ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all" ON <table> FOR ALL USING (true);
 ```
 
-Applied to: `transactions`, `category_rules`, `goals`, `invoices`, `accounts`, `recurring_expenses`, `recurring_income`, `monthly_snapshots`, `chat_sessions`
+Applied to: `transactions`, `labels`, `transaction_labels`, `category_rules`, `goals`, `invoices`, `accounts`, `recurring_expenses`, `recurring_income`, `monthly_snapshots`, `chat_sessions`
+
+**Planned (Phase 2, `docs/TODO.md`):** every `anon_all` policy is replaced by owner-only `SELECT`/`INSERT`/`UPDATE`/soft-delete policies requiring `user_id = auth.uid()` plus membership in a private `app_owner` registry; physical `DELETE` stays revoked; policies fail closed when owner configuration is missing.
 
 ---
 
@@ -395,7 +405,33 @@ These are enforced at the application layer (not in SQL constraints):
 | **Double-entry transfers** | A transfer creates two rows in `transactions` — one with `direction = outflow` from source account, one with `direction = inflow` to destination account — linked by `transfer_group_id`. |
 | **Investments are not expenses** | `type = 'investment'` with `direction = outflow` decreases cash balance but does not count as spending in reports. Net worth is unchanged. |
 | **Balances are derived, not stored** | `accounts` has `opening_balance` + `opening_date`. Current balance is computed by `fn_account_balance()` as `opening + SUM(inflows) - SUM(outflows)` on transactions after the opening date. No `balance` column to drift out of sync. |
-| **AI never modifies data** | No agent function can `UPDATE`, `DELETE`, or `INSERT` transactions. Agent is read-only + categorization-only. |
+| **Explicit account integrity** | Every transaction belongs to an explicitly selected account (Cash expense → Cash ID, Kotak expense → Kotak ID). The client must never silently substitute a default bank account. A transaction moves the derived balance of exactly its own account; editing the account reverses/reapplies via derivation. Historical misassigned rows are corrected only through individually audited edits, never bulk guesses. |
+| **Family Support is spending, not transfer** | `FAMILY`-labeled debits are external outflows: they reduce the paying account, reduce net worth, count in Total Outflow, are excluded from Personal Spend, and never use the `transfer` type. `transfer` is reserved for owner-account moves. |
+| **Goal allocation is earmarking** | Goal allocations/contributions never write to `transactions` and never change an account balance or net worth. |
+| **AI never modifies data** | No agent function can `UPDATE`, `DELETE`, or `INSERT` transactions, goals, or allocations. Agent is read/classify/summarize/forecast/answer only; any write requires explicit user review and confirmation in the UI. |
+
+---
+
+## Planned schema changes
+
+Approved by `docs/enhancement.md` / `docs/TODO.md`. All additive; all preserve
+existing data. Nothing here exists in migrations yet.
+
+| Phase | Change | Justification (correctness reason) |
+|---|---|---|
+| 2 | `user_id uuid` on every protected table + private `app_owner` registry; owner-aware unique keys (`(user_id, year, month)` snapshots, `(user_id, lower(name))` labels) | Required for owner-only RLS; without it every row is world-readable via the anon key (D5) |
+| 5 | `transactions.primary_label_id uuid` (nullable) | Single-attribution spending reports; removes even-split double-counting (D3) |
+| 5 | Label lifecycle: `state` (`active`/`archived`/`merged`/`deleted`), `merged_into_id`, timestamps; immutable label audit records | Rename/archive/merge/delete without losing history or joins |
+| 4 | `labels.exclude_from_personal_spend boolean NOT NULL DEFAULT false` | Smallest mechanism separating Personal Spend from Family Support (D2); one flag, no taxonomy |
+| 6 | `goal_contributions` (`id`, `goal_id`, `amount` ±, `note`, `created_at`, `user_id`); `goals.status`, `goals.target_date`, `goals.updated_at` | Allocation history, corrections, reallocation, pace — direct `allocated_amount` mutation loses history and races (D6). Total derived from (or transactionally consistent with) contributions |
+| 7 | Owner-scoped monthly `account_balance_snapshots`; snapshot metadata (source period, calc version) | Per-account net-worth history without fabricating values; identifies stale snapshots |
+| 7 | Aggregate RPCs: `get_briefing_summary(month)`, `get_analytics(period, filters)`, `get_account_balances()` | Stops full-ledger recalculation per render (D4); one definition of the canonical metrics |
+| 5 | `save_transaction_with_labels` transactional RPC | Atomic field+label+primary writes with exactly one audit entry |
+| 10 | `merchant_aliases` (`id`, `match_pattern`, `canonical_name`, `user_id`, `created_at`) | Merchant-variant rollup at read time; raw values preserved for audit |
+
+Explicitly **not** planned: budgets tables, subscription tables (recurring
+expenses cover it), attachment tables (would only serve the deferred Google
+Pay import), holdings/market-price tables, event-sourcing tables.
 
 ---
 
@@ -411,4 +447,5 @@ These are enforced at the application layer (not in SQL constraints):
 | `RecurringExpense` | `lib/models/recurring_expense.dart` | `recurring_expenses` |
 | `RecurringIncome` | `lib/models/recurring_income.dart` | `recurring_income` |
 | `MonthlySnapshot` | `lib/models/monthly_snapshot.dart` | `monthly_snapshots` |
-| (attachments) | _backlog_ | Invoice PDFs, receipts, screenshots attached to transactions — not in schema yet. |
+| `TransactionLabel` | `lib/models/transaction_label.dart` | `labels` (+ `transaction_labels` join) |
+| (attachments) | _future backlog_ | Deliberately absent. Would only serve the deferred Google Pay screenshot import; not added in the current phases. |
