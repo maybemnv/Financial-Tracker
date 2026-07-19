@@ -342,6 +342,11 @@ No ownership or policy migration starts until this phase is complete.
 - [ ] Add form affordances that make Cash vs bank selection obvious at entry
   time on a 360-pixel layout (e.g. account chips or grouped dropdown), within
   the existing design system.
+- [ ] **Enforce at the schema boundary, not just the form.** Make
+  `transactions.account_id` `NOT NULL` in a migration (after auditing and
+  backfilling any existing null rows), or route all writes through an RPC
+  that rejects null accounts. A form-only requirement is bypassed by direct
+  Supabase inserts and existing null-account rows.
 - [ ] Verify quick paths added later (quick capture, review flows) route
   through the same explicit-account validation.
 
@@ -372,8 +377,15 @@ No ownership or policy migration starts until this phase is complete.
 
 - [ ] Migration: `labels.exclude_from_personal_spend boolean NOT NULL DEFAULT
   false`; set `true` for `FAMILY`.
+- [ ] **Restrict the toggle to the `FAMILY` label only.** Exposing it as a
+  general toggle breaks the canonical invariant: non-FAMILY exclusions would
+  be removed from Personal Spend without counting toward Family Support,
+  causing `Total Outflow = Personal Spend + Family Support` to fail. If a
+  future use case requires excluding another label, redefine Family Support
+  to include every excluded label, or add an intermediate subtotal — do not
+  ship an unrestricted toggle.
 - [ ] Extend the label model/provider with the flag; expose it in label
-  management UI as a single clearly-worded toggle (no taxonomy).
+  management UI restricted to the `FAMILY` label (no general taxonomy).
 - [ ] Implement the canonical metrics (PRD §4) in shared computation code and
   any existing aggregates: Income, Total Outflow, Personal Spend, Family
   Support, Net Cash Surplus, Personal Savings After Own Spend, Savings Rate.
@@ -398,7 +410,9 @@ No ownership or policy migration starts until this phase is complete.
 
 ### Phase 4 exit criteria
 
-- [ ] No path can save a transaction without an explicit, visible account.
+- [ ] No path can save a transaction without an explicit, visible account,
+  enforced at both the form and database level (`account_id NOT NULL`
+  constraint or RPC-only writes that reject null).
 - [ ] Reviewed historical rows reconcile with real account balances.
 - [ ] Family Support is a first-class reported metric, distinct from both
   Personal Spend and internal transfers.
@@ -809,6 +823,13 @@ No ownership or policy migration starts until this phase is complete.
 
 - [ ] Line from completed monthly snapshots plus the current live derived
   value; current value clearly marked.
+- [ ] **Snapshots must capture net worth as of month-end, not at current
+  time.** The existing `MonthlySnapshotJob` calls `fn_net_worth()` which is
+  unbounded, so post-month transactions leak into the prior month's snapshot.
+  Add an as-of-timestamp parameter to `fn_net_worth()` or compute the snapshot
+  value from transactions with `transacted_at <= last day of month`.
+- [ ] Repair/invalidate existing `net_worth` snapshot values before treating
+  them as historical chart data.
 - [ ] Never fabricate or interpolate historical values that data cannot
   support; mark unavailable periods.
 - [ ] Point tap shows the relevant month and available account snapshot data.
