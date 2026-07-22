@@ -14,6 +14,8 @@ class NewsprintShell extends StatelessWidget {
     required this.onInvoiceTap,
     required this.child,
     this.floatingActionButton,
+    this.onSignOut,
+    this.onManageLabels,
   });
 
   final int currentIndex;
@@ -22,6 +24,8 @@ class NewsprintShell extends StatelessWidget {
   final VoidCallback onInvoiceTap;
   final Widget child;
   final Widget? floatingActionButton;
+  final VoidCallback? onSignOut;
+  final VoidCallback? onManageLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +76,35 @@ class NewsprintShell extends StatelessWidget {
                                 letterSpacing: 1.2,
                               ),
                         ),
+                        IconButton(
+                          onPressed: onInvoiceTap,
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.only(left: 8),
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Invoices',
+                          icon: const Icon(Icons.request_quote_outlined,
+                              size: 18, color: AppTheme.paperMuted),
+                        ),
+                        if (onManageLabels != null)
+                          IconButton(
+                            onPressed: onManageLabels,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.only(left: 8),
+                            constraints: const BoxConstraints(),
+                            tooltip: 'Manage labels',
+                            icon: const Icon(Icons.sell_outlined,
+                                size: 18, color: AppTheme.paperMuted),
+                          ),
+                        if (onSignOut != null)
+                          IconButton(
+                            onPressed: onSignOut,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.only(left: 8),
+                            constraints: const BoxConstraints(),
+                            tooltip: 'Sign out',
+                            icon: const Icon(Icons.logout_rounded,
+                                size: 18, color: AppTheme.paperMuted),
+                          ),
                       ],
                     ),
                   ],
@@ -106,22 +139,22 @@ class NewsprintShell extends StatelessWidget {
                   onTap: () => onTabSelected(1),
                 ),
                 _NavItem(
-                  icon: Icons.flag_rounded,
-                  label: 'Targets',
+                  icon: Icons.insights_rounded,
+                  label: 'Analytics',
                   active: currentIndex == 2,
                   onTap: () => onTabSelected(2),
                 ),
                 _NavItem(
-                  icon: Icons.forum_rounded,
-                  label: 'Desk',
+                  icon: Icons.flag_rounded,
+                  label: 'Targets',
                   active: currentIndex == 3,
                   onTap: () => onTabSelected(3),
                 ),
                 _NavItem(
-                  icon: Icons.request_quote_rounded,
-                  label: 'Invoices',
-                  active: false,
-                  onTap: onInvoiceTap,
+                  icon: Icons.forum_rounded,
+                  label: 'Desk',
+                  active: currentIndex == 4,
+                  onTap: () => onTabSelected(4),
                 ),
               ],
             ),

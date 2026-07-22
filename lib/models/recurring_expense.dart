@@ -10,6 +10,20 @@ class RecurringExpense {
   final DateTime? nextDue;
   final DateTime? createdAt;
 
+  /// Account the money is expected to move through, when known (Phase 9.1).
+  final String? accountId;
+
+  /// Paused obligations are listed but excluded from the forecast.
+  final bool isPaused;
+
+  /// The ledger row that settled the current cycle, and the due date it
+  /// settled. Without this link a confirmed obligation would keep appearing in
+  /// the forecast beside the transaction that already paid it.
+  final String? confirmedTransactionId;
+  final DateTime? confirmedFor;
+
+  final bool isDeleted;
+
   RecurringExpense({
     this.id,
     required this.name,
@@ -18,6 +32,11 @@ class RecurringExpense {
     this.category,
     this.nextDue,
     this.createdAt,
+    this.accountId,
+    this.isPaused = false,
+    this.confirmedTransactionId,
+    this.confirmedFor,
+    this.isDeleted = false,
   });
 
   factory RecurringExpense.fromJson(Map<String, dynamic> json) {
@@ -33,6 +52,13 @@ class RecurringExpense {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
+      accountId: json['account_id'] as String?,
+      isPaused: json['is_paused'] as bool? ?? false,
+      confirmedTransactionId: json['confirmed_transaction_id'] as String?,
+      confirmedFor: json['confirmed_for'] != null
+          ? DateTime.parse(json['confirmed_for'] as String)
+          : null,
+      isDeleted: json['is_deleted'] as bool? ?? false,
     );
   }
 

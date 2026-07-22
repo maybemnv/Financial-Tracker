@@ -131,8 +131,9 @@ void main() {
     });
   });
 
-  test('splits a multi-label transaction so the pie remains a full spending mix',
-      () {
+  test(
+      'attributes a multi-label expense once (no even-split) — Needs primary '
+      'label until a primary is chosen (D3)', () {
     final analytics = DashboardAnalytics.fromTransactions(
       [
         Transaction(
@@ -149,10 +150,32 @@ void main() {
       now: DateTime(2026, 7, 10),
     );
 
-    expect(analytics.spendingCategories, hasLength(2));
-    expect(analytics.spendingCategories.every((point) => point.amount == 500),
-        isTrue);
-    expect(analytics.spendingCategories.fold<double>(
-        0, (total, point) => total + point.share), closeTo(1, 0.001));
+    // The full ₹1000 lands in exactly one bucket — never split into fractions.
+    expect(analytics.spendingCategories, hasLength(1));
+    expect(analytics.spendingCategories.single.label, 'Needs primary label');
+    expect(analytics.spendingCategories.single.amount, 1000);
+  });
+
+  test('attributes a multi-label expense to its explicit primary label', () {
+    final analytics = DashboardAnalytics.fromTransactions(
+      [
+        Transaction(
+          amount: 1000,
+          type: 'debit',
+          direction: 'outflow',
+          createdAt: DateTime(2026, 7, 3),
+          primaryLabelId: 'food',
+          labels: const [
+            TransactionLabel(id: 'food', name: 'Food', color: '#1D76DB'),
+            TransactionLabel(id: 'drinks', name: 'Drinks', color: '#B60205'),
+          ],
+        ),
+      ],
+      now: DateTime(2026, 7, 10),
+    );
+
+    expect(analytics.spendingCategories, hasLength(1));
+    expect(analytics.spendingCategories.single.label, 'Food');
+    expect(analytics.spendingCategories.single.amount, 1000);
   });
 }

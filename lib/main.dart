@@ -2,10 +2,9 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'app.dart';
-import 'core/monthly_snapshot.dart';
 import 'core/supabase.dart';
 import 'core/theme.dart';
+import 'features/auth/auth_gate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +20,8 @@ void main() async {
   SupabaseService();
   try {
     await SupabaseService().init();
-    MonthlySnapshotJob.runIfNeeded();
+    // The monthly-snapshot backfill now runs after the owner is authenticated
+    // (AppShell.initState), since it requires an owner-scoped session post-RLS.
   } catch (e) {
     initError ??= 'Supabase: $e';
   }
@@ -32,14 +32,17 @@ void main() async {
         title: 'Finance Tracker',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.theme,
-        home: initError != null ? _ErrorScreen(initError) : const AppShell(),
+        home:
+            initError != null ? BootErrorScreen(initError) : const AuthGate(),
       ),
     ),
   );
 }
 
-class _ErrorScreen extends StatelessWidget {
-  const _ErrorScreen(this.message);
+/// Fallback surface shown when initialization (dotenv/Supabase) fails during
+/// boot. Public so the boot-failure path can be exercised in a smoke test.
+class BootErrorScreen extends StatelessWidget {
+  const BootErrorScreen(this.message, {super.key});
 
   final String message;
 

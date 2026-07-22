@@ -7,11 +7,15 @@ import '../../models/account.dart';
 import '../../models/transaction.dart';
 import '../../models/transaction_label.dart';
 import '../../providers/account_provider.dart';
+import '../../core/ledger_query.dart';
+import '../../providers/aggregate_provider.dart';
 import '../../providers/label_provider.dart';
+import '../../providers/ledger_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/newsprint_primitives.dart';
 import '../../widgets/transaction_label_widgets.dart';
+import '../labels/review_queue_screen.dart';
 
 final _currency =
     NumberFormat.currency(symbol: '\u20B9', decimalDigits: 2, locale: 'en_IN');
@@ -27,12 +31,42 @@ class TransactionListScreen extends ConsumerStatefulWidget {
 }
 
 class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
-  String _accountFilter = _allAccounts;
-  String? _labelFilter;
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  /// Requests the next page while the user is still a screen away from the
+  /// end, so paging is invisible. The notifier suppresses concurrent calls,
+  /// so firing on every scroll frame is safe.
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 600) {
+      ref.read(ledgerProvider.notifier).loadMore();
+    }
+  }
+
+  void _updateQuery(LedgerQuery Function(LedgerQuery) change) {
+    final notifier = ref.read(ledgerProvider.notifier);
+    notifier.setQuery(change(ref.read(ledgerProvider).query));
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final transactionsAsync = ref.watch(transactionProvider);
+    final ledger = ref.watch(ledgerProvider);
     final accountsAsync = ref.watch(accountProvider);
     final labelsAsync = ref.watch(labelProvider);
 
@@ -45,44 +79,36 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
           accountsAsync.maybeWhen(
             data: (accounts) => _AccountBar(
               accounts: accounts,
-              selected: _accountFilter,
-              onSelected: (value) => setState(() => _accountFilter = value),
+              selected: ledger.query.accountId ?? _allAccounts,
+              onSelected: (value) => _updateQuery((q) => value == _allAccounts
+                  ? q.copyWith(clearAccount: true)
+                  : q.copyWith(accountId: value)),
             ),
             orElse: () => const SizedBox.shrink(),
           ),
           labelsAsync.maybeWhen(
+            // Merged and deleted labels stay readable for historical
+            // attribution but are noise as filters; archived ones remain
+            // useful for finding older transactions.
             data: (labels) => _LabelBar(
-              labels: labels,
-              selectedId: _labelFilter,
-              onSelected: (id) => setState(() => _labelFilter = id),
+              labels: labels
+                  .where((l) => l.isActive || l.isArchived)
+                  .toList(growable: false),
+              selectedId: ledger.query.labelId,
+              onSelected: (id) => _updateQuery((q) => id == null
+                  ? q.copyWith(clearLabel: true)
+                  : q.copyWith(labelId: id)),
               onCreate: _createLabel,
             ),
             orElse: () => const SizedBox.shrink(),
           ),
-          Expanded(
-            child: transactionsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(
-                child: NewsprintNotice(
-                  icon: Icons.error_outline_rounded,
-                  title: 'Ledger feed interrupted',
-                  message: '$error',
-                  color: AppTheme.redAccent,
-                ),
-              ),
-              data: (transactions) => _LedgerList(
-                transactions: transactions.where((transaction) {
-                  final accountMatches = _accountFilter == _allAccounts ||
-                      transaction.accountId == _accountFilter;
-                  final labelMatches = _labelFilter == null ||
-                      transaction.labels.any((label) => label.id == _labelFilter);
-                  return accountMatches && labelMatches;
-                }).toList(),
-                onRefresh: () => ref.read(transactionProvider.notifier).load(),
-                onLabelTap: (label) => setState(() => _labelFilter = label.id),
-              ),
-            ),
-          ),
+          const _ReviewBanner(),
+          Expanded(child: _LedgerBody(
+            ledger: ledger,
+            scrollController: _scrollController,
+            onLabelTap: (label) =>
+                _updateQuery((q) => q.copyWith(labelId: label.id)),
+          )),
         ],
       ),
     );
@@ -105,6 +131,137 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
         SnackBar(content: Text('Could not create label: $error')),
       );
     }
+  }
+}
+
+/// Surfaces unattributed spend where it is noticed. Only appears when there is
+/// something to fix — expenses carrying several labels with no primary, whose
+/// amount currently counts toward no category at all.
+class _ReviewBanner extends ConsumerWidget {
+  const _ReviewBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Whole-ledger count from the aggregate: the rows needing review are
+    // usually old ones, which the first page does not contain.
+    final pending = ref.watch(needsPrimaryCountProvider);
+    if (pending == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Material(
+        color: AppTheme.paperAlt,
+        child: InkWell(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ReviewQueueScreen()),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                const Icon(Icons.rule_rounded, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '$pending expense${pending == 1 ? '' : 's'} '
+                    "need${pending == 1 ? 's' : ''} a primary label — "
+                    'until then the amount counts under no category.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, size: 18),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Paged ledger body: first-page load, error, empty, rows, and the
+/// next-page footer. A next-page failure keeps the rows already on screen and
+/// offers a localized retry instead of blanking the list (TODO 7.2).
+class _LedgerBody extends ConsumerWidget {
+  const _LedgerBody({
+    required this.ledger,
+    required this.scrollController,
+    required this.onLabelTap,
+  });
+
+  final LedgerState ledger;
+  final ScrollController scrollController;
+  final ValueChanged<TransactionLabel> onLabelTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ledger.isLoadingFirstPage) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (ledger.error != null) {
+      return Center(
+        child: NewsprintNotice(
+          icon: Icons.error_outline_rounded,
+          title: 'Ledger feed interrupted',
+          message: '${ledger.error}',
+          color: AppTheme.redAccent,
+        ),
+      );
+    }
+
+    return _LedgerList(
+      transactions: ledger.rows,
+      scrollController: scrollController,
+      onRefresh: () => ref.read(ledgerProvider.notifier).refresh(),
+      onLabelTap: onLabelTap,
+      footer: _PageFooter(ledger: ledger),
+    );
+  }
+}
+
+class _PageFooter extends ConsumerWidget {
+  const _PageFooter({required this.ledger});
+
+  final LedgerState ledger;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ledger.pageError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          children: [
+            Text('Could not load more.',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 6),
+            OutlinedButton(
+              onPressed: () => ref.read(ledgerProvider.notifier).loadMore(),
+              child: const Text('RETRY'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (ledger.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: SizedBox(
+              width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      );
+    }
+    if (!ledger.hasMore && ledger.rows.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: Text('End of ledger',
+              style: Theme.of(context).textTheme.labelSmall),
+        ),
+      );
+    }
+    return const SizedBox(height: 8);
   }
 }
 
@@ -229,11 +386,17 @@ class _LedgerList extends StatelessWidget {
     required this.transactions,
     required this.onRefresh,
     required this.onLabelTap,
+    this.scrollController,
+    this.footer,
   });
 
   final List<Transaction> transactions;
   final Future<void> Function() onRefresh;
   final ValueChanged<TransactionLabel> onLabelTap;
+  final ScrollController? scrollController;
+
+  /// Next-page spinner, retry, or end-of-list marker.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -244,29 +407,32 @@ class _LedgerList extends StatelessWidget {
         subtitle: 'Clear a filter or add a movement to the ledger.',
       );
     }
-    final sorted = [...transactions]
-      ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+    // The server already returns rows in (effective date DESC, id DESC)
+    // order; re-sorting here would fight the cursor and could reorder rows
+    // across a page boundary.
     final grouped = <DateTime, List<Transaction>>{};
-    for (final transaction in sorted) {
+    for (final transaction in transactions) {
       final date = transaction.effectiveDate;
       final key = DateTime(date.year, date.month, date.day);
       grouped.putIfAbsent(key, () => []).add(transaction);
     }
     final items = <Object>[];
-    final dates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-    for (final date in dates) {
-      items.add(date);
-      items.addAll(grouped[date]!);
+    for (final entry in grouped.entries) {
+      items.add(entry.key);
+      items.addAll(entry.value);
     }
+    if (footer != null) items.add(footer!);
 
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView.builder(
+        controller: scrollController,
         padding: EdgeInsets.zero,
         itemCount: items.length,
         itemBuilder: (context, index) {
           final item = items[index];
           if (item is DateTime) return _DateHeader(date: item);
+          if (item is Widget) return item;
           return _TransactionCard(
             tx: item as Transaction,
             onLabelTap: onLabelTap,
@@ -499,11 +665,21 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   late String _type;
   String? _accountId;
   String? _destAccountId;
+  String? _primaryLabelId;
   DateTime? _transactedAt;
   bool _isSaving = false;
 
   bool get _needsDestination => _type == 'transfer' || _type == 'investment';
   bool get _isEditing => widget.transaction != null;
+
+  /// Only expenses attribute to a primary label (PRD §4).
+  bool get _isExpense => _type == 'debit';
+
+  /// An expense that carries labels must name exactly one of them primary,
+  /// otherwise its spend cannot be attributed. No labels at all is fine — the
+  /// row reports as Unlabeled.
+  bool get _needsPrimaryLabel =>
+      _isExpense && _selectedLabels.isNotEmpty && _primaryLabelId == null;
 
   @override
   void initState() {
@@ -519,6 +695,24 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     _accountId = transaction?.accountId;
     _transactedAt = transaction?.transactedAt;
     _selectedLabels.addAll(transaction?.labels ?? const []);
+    _primaryLabelId = transaction?.primaryLabelId;
+    _syncPrimaryLabel();
+  }
+
+  /// Keeps the primary label consistent with the current selection: drop it if
+  /// its label was deselected, and choose it automatically when there is only
+  /// one candidate so the common single-label case needs no extra tap.
+  void _syncPrimaryLabel() {
+    final ids = _selectedLabels
+        .map((label) => label.id)
+        .whereType<String>()
+        .toList(growable: false);
+    if (_primaryLabelId != null && !ids.contains(_primaryLabelId)) {
+      _primaryLabelId = null;
+    }
+    if (_primaryLabelId == null && ids.length == 1) {
+      _primaryLabelId = ids.first;
+    }
   }
 
   @override
@@ -661,14 +855,22 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
               labelsAsync.when(
                 loading: () => const LinearProgressIndicator(),
                 error: (_, __) => const Text('Labels are unavailable right now.'),
+                // Only assignable labels: save_transaction_with_labels rejects
+                // archived or merged ones, so offering them would be a trap.
                 data: (labels) => _LabelSelector(
-                  labels: labels,
+                  labels:
+                      labels.where((l) => l.isAssignable).toList(growable: false),
                   selected: _selectedLabels,
+                  primaryLabelId: _primaryLabelId,
+                  showPrimaryPicker: _isExpense,
                   onChanged: (selected) => setState(() {
                     _selectedLabels
                       ..clear()
                       ..addAll(selected);
+                    _syncPrimaryLabel();
                   }),
+                  onPrimaryChanged: (id) =>
+                      setState(() => _primaryLabelId = id),
                   onCreate: _createLabel,
                 ),
               ),
@@ -715,6 +917,14 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       );
       return;
     }
+    if (_needsPrimaryLabel) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose which label this expense counts under'),
+        ),
+      );
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       final amount = double.parse(_amountCtrl.text);
@@ -733,6 +943,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
             vpa: _vpaCtrl.text.trim().isEmpty ? null : _vpaCtrl.text.trim(),
             bank: _bankCtrl.text.trim().isEmpty ? null : _bankCtrl.text.trim(),
             labels: List.unmodifiable(_selectedLabels),
+            primaryLabelId: _primaryLabelId,
             rawSms: original.rawSms,
             rawSmsHash: original.rawSmsHash,
             source: original.source,
@@ -768,6 +979,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
           vpa: _vpaCtrl.text.trim().isEmpty ? null : _vpaCtrl.text.trim(),
           bank: _bankCtrl.text.trim().isEmpty ? null : _bankCtrl.text.trim(),
           labels: List.unmodifiable(_selectedLabels),
+          primaryLabelId: _primaryLabelId,
           source: 'manual',
           transactedAt: _transactedAt,
         ));
@@ -791,12 +1003,20 @@ class _LabelSelector extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     required this.onCreate,
+    required this.primaryLabelId,
+    required this.showPrimaryPicker,
+    required this.onPrimaryChanged,
   });
 
   final List<TransactionLabel> labels;
   final List<TransactionLabel> selected;
   final ValueChanged<List<TransactionLabel>> onChanged;
   final Future<TransactionLabel?> Function() onCreate;
+
+  /// The label this expense's full amount attributes to (PRD §4, D3).
+  final String? primaryLabelId;
+  final bool showPrimaryPicker;
+  final ValueChanged<String?> onPrimaryChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -837,6 +1057,45 @@ class _LabelSelector extends StatelessWidget {
               );
             }).toList(),
           ),
+        if (showPrimaryPicker && selected.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text('Counts under',
+              style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 2),
+          Text(
+            selected.length == 1
+                ? 'The full amount attributes to this label.'
+                : 'Pick the one label this expense counts under. The others '
+                    'stay attached for search and filtering, but the amount is '
+                    'never split across them.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final label in selected)
+                if (label.id != null)
+                  ChoiceChip(
+                    label: Text(label.name),
+                    selected: label.id == primaryLabelId,
+                    onSelected: (_) => onPrimaryChanged(label.id),
+                  ),
+            ],
+          ),
+          if (primaryLabelId == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Choose one to save.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppTheme.redAccent),
+              ),
+            ),
+        ],
       ],
     );
   }

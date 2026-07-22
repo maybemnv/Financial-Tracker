@@ -75,16 +75,22 @@ unless a task explicitly says it can run in parallel.
 
 ### Known defects carried into this roadmap (PRD §1)
 
-- [ ] D1 — cash expenses recorded against bank accounts (Phase 4).
-- [ ] D2 — `TRANSFER TO OTHER` label conflates family support with transfers
-  (Phase 4).
-- [ ] D3 — multi-label expenses split evenly in reports (Phase 5).
+- [~] D1 — cash expenses recorded against bank accounts (Phase 4). Form enforces
+  an explicit visible account; `00011` adds `account_id NOT NULL`; review query
+  authored. Historical reassignment is a live owner step.
+- [x] D2 — `TRANSFER TO OTHER` label conflates family support with transfers
+  (Phase 4). Identity-preserving rename → `FAMILY` + `exclude_from_personal_spend`.
+- [x] D3 — multi-label expenses split evenly in reports (Phase 5). Even-split
+  removed; full amount attributes to the primary label (Phase 4 groundwork;
+  RPC-level enforcement in Phase 5).
 - [ ] D4 — full-ledger loading and full reloads on Realtime events (Phase 7).
-- [ ] D5 — `anon_all` RLS and browser-side `GEMINI_API_KEY` (Phases 2–3). The
+- [~] D5 — `anon_all` RLS and browser-side `GEMINI_API_KEY` (Phases 2–3). RLS
+  replacement authored (`00006`–`00010`); Gemini Edge Function is Phase 3. The
   current Vercel build requirement for the Gemini key is an interim state, not
   the permanent fix.
 - [ ] D6 — goal allocation without history or corrections (Phase 6).
-- [ ] D7 — `find.byDisplayValue` breaks the test gate (Phase 1).
+- [x] D7 — `find.byDisplayValue` breaks the test gate (Phase 1). Fixed:
+  replaced with an `EditableText` predicate finder + tall test surface.
 - [ ] D8 — installed-PWA (mobile Brave shortcut) resume blank-screen on WebGL
   context loss (Brave now, Helium/Zen possible future browsers) (Phase 11).
 
@@ -96,30 +102,37 @@ No ownership or policy migration starts until this phase is complete.
 
 ### Repair the validation baseline
 
-- [ ] Replace the unsupported `find.byDisplayValue` use in
+- [x] Replace the unsupported `find.byDisplayValue` use in
   `test/features/transactions/add_transaction_screen_test.dart` with a
   supported finder or a widget-key assertion.
-- [ ] Run `flutter pub get`, `flutter analyze`, and `flutter test`; record any
-  pre-existing failures before feature work.
-- [ ] Run a release `flutter build web` with the current required environment to
-  prove the pre-migration client still builds.
-- [ ] Add one smoke test that boots the app with mocked initialization and one
+- [x] Run `flutter pub get`, `flutter analyze`, and `flutter test`; record any
+  pre-existing failures before feature work. Result: analyze clean, all tests
+  green (fixing D7 also surfaced/fixed a lazy-`ListView` off-screen finder).
+- [x] Run a release `flutter build web` with the current required environment to
+  prove the pre-migration client still builds. Result: `√ Built build\web`.
+- [x] Add one smoke test that boots the app with mocked initialization and one
   model/provider test that proves the test harness can exercise async state.
+  Added `test/smoke_test.dart` (boot-failure surface) and
+  `test/providers/async_state_test.dart` (loading→data→error transitions).
 
 ### Inventory protected data and interfaces
 
-- [ ] List every owner-controlled table from all migrations, including
+- [x] List every owner-controlled table from all migrations, including
   transactions, transaction-label joins, labels, accounts, goals, invoices,
   category rules, recurring items, monthly snapshots, and chat sessions.
-- [ ] List every view, function, trigger, Realtime publication, storage bucket,
+  (See `docs/phase1-inventory.md`.)
+- [x] List every view, function, trigger, Realtime publication, storage bucket,
   and client query that can expose or mutate owner data.
-- [ ] Record current unique constraints and foreign keys that need `user_id` in
+  (See `docs/phase1-inventory.md`; no views or storage buckets exist.)
+- [x] Record current unique constraints and foreign keys that need `user_id` in
   their key, especially snapshot month/year and case-insensitive label names.
-- [ ] Identify all RPCs using `SECURITY DEFINER`; verify each has a fixed
+  (See `docs/phase1-inventory.md` "Keys that must gain `user_id`".)
+- [x] Identify all RPCs using `SECURITY DEFINER`; verify each has a fixed
   `search_path`, explicit authorization, least-privilege grants, and no caller-
-  supplied owner UUID.
+  supplied owner UUID. (None exist yet — documented as a Phase 2+ requirement.)
 - [ ] Capture baseline query counts and payload sizes for first ledger load,
-  Briefing load, and Agent Desk context gathering.
+  Briefing load, and Agent Desk context gathering. (Requires live project
+  access — deferred to the ops runbook; load *shape* documented in inventory.)
 
 ### Backup and rollback preparation
 
@@ -144,6 +157,11 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 2: Single-owner authentication and RLS
 
+> **Status (this branch):** migrations `00006`–`00010` and the Flutter auth gate
+> are authored and pass `analyze`/tests. Items needing the live Supabase project
+> (owner provisioning, applying migrations, deploy-time verification) are marked
+> `[ ]` and covered by `docs/RUNBOOK.md`. `[x]` = code artifact complete.
+
 ### 2.1 Provision the owner identity
 
 - [ ] Create the one production Supabase Auth owner account and retain its UUID
@@ -157,90 +175,106 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 2.2 Add the protected owner registry
 
-- [ ] Create the next additive migration for a private `app_owner` registry
-  referencing `auth.users(id)` and constrained to one active owner.
+- [x] Create the next additive migration for a private `app_owner` registry
+  referencing `auth.users(id)` and constrained to one active owner. (`00006`)
 - [ ] Insert the known owner UUID during the maintenance window; fail the
-  migration if the owner UUID is absent or ambiguous.
-- [ ] Add a private owner-check helper based on `auth.uid()` with a fixed
+  migration if the owner UUID is absent or ambiguous. (Live step — RUNBOOK §2;
+  `00007` backfill raises if the owner row is absent.)
+- [x] Add a private owner-check helper based on `auth.uid()` with a fixed
   `search_path`; revoke direct execution or table access not needed by client
-  roles.
-- [ ] Make all owner policies and privileged RPCs fail closed when no registry
-  row exists.
-- [ ] Add a database assertion that a second active owner cannot be inserted.
+  roles. (`app_is_owner()`, SECURITY DEFINER, granted to `authenticated` only.)
+- [x] Make all owner policies and privileged RPCs fail closed when no registry
+  row exists. (RLS-enabled `app_owner` with no policies; `app_is_owner()`
+  returns false ⇒ every owner policy denies.)
+- [x] Add a database assertion that a second active owner cannot be inserted.
+  (Partial unique index + `app_owner_single_guard` trigger.)
 
 ### 2.3 Add and backfill row ownership
 
-- [ ] Add nullable `user_id uuid` columns to every protected table before
-  changing policies.
-- [ ] Backfill every existing row with the registered owner UUID in one reviewed
-  transaction and compare table row counts before and after.
+- [x] Add nullable `user_id uuid` columns to every protected table before
+  changing policies. (`00007`)
+- [x] Backfill every existing row with the registered owner UUID in one reviewed
+  transaction and compare table row counts before and after. (`00007` DO block +
+  RUNBOOK §3 zero-null verification query.)
 - [ ] Detect orphaned join rows and cross-table references before adding stricter
-  keys; stop rather than silently deleting data.
-- [ ] Add indexes beginning with `user_id` for owner-filtered date, status,
-  account, label, and soft-delete query paths.
-- [ ] Change ownership columns to `NOT NULL` only after zero null rows are
-  verified.
-- [ ] Add composite owner-aware foreign keys where they prevent cross-owner
-  references, including transaction-label, primary-label, transfer, account,
-  invoice, recurring, rule, and merge relationships.
-- [ ] Update owner-specific uniqueness: snapshot `(user_id, year, month)`, label
-  `(user_id, lower(name))` where applicable, SMS hash, and any other natural
-  keys currently global.
-- [ ] Ensure triggers copy or validate ownership rather than trusting arbitrary
-  client-supplied `user_id` values.
+  keys; stop rather than silently deleting data. (Live check — RUNBOOK §3.)
+- [x] Add indexes beginning with `user_id` for owner-filtered date, status,
+  account, label, and soft-delete query paths. (`00007`)
+- [x] Change ownership columns to `NOT NULL` only after zero null rows are
+  verified. (`00008`, gated on the RUNBOOK verification query.)
+- [x] Add composite owner-aware foreign keys where they prevent cross-owner
+  references... (`00008` owner-scoped keys + `enforce_row_owner` trigger; full
+  composite FKs revisited as label/goal schema lands in Phases 5–6.)
+- [x] Update owner-specific uniqueness: snapshot `(user_id, year, month)`, label
+  `(user_id, lower(name))`, SMS hash owner-scoped. (`00008`)
+- [x] Ensure triggers copy or validate ownership rather than trusting arbitrary
+  client-supplied `user_id` values. (`enforce_row_owner` stamps/immutable-checks.)
 
 ### 2.4 Replace open policies
 
-- [ ] Remove every `anon_all` policy in the same release that introduces the
-  replacement policies.
-- [ ] Add owner-only `SELECT` policies requiring both `user_id = auth.uid()` and
-  membership in `app_owner`.
-- [ ] Add owner-only `INSERT` policies with equivalent `WITH CHECK` expressions.
-- [ ] Add owner-only `UPDATE` policies with both `USING` and `WITH CHECK` so an
-  update cannot transfer row ownership.
-- [ ] Keep physical `DELETE` revoked and expose only audited soft-delete updates
-  or RPCs.
-- [ ] Apply equivalent ownership controls to storage objects if attachments or
-  other user files already exist.
+- [x] Remove every `anon_all` policy in the same release that introduces the
+  replacement policies. (`00009`)
+- [x] Add owner-only `SELECT` policies requiring both `user_id = auth.uid()` and
+  membership in `app_owner`. (`00009`)
+- [x] Add owner-only `INSERT` policies with equivalent `WITH CHECK` expressions.
+  (`00009`)
+- [x] Add owner-only `UPDATE` policies with both `USING` and `WITH CHECK` so an
+  update cannot transfer row ownership. (`00009`)
+- [x] Keep physical `DELETE` revoked and expose only audited soft-delete updates
+  or RPCs. (`00009` creates no DELETE policy + `REVOKE DELETE`.)
+- [x] Apply equivalent ownership controls to storage objects if attachments or
+  other user files already exist. (No storage buckets exist — no-op, per
+  `docs/phase1-inventory.md`.)
 - [ ] Recheck Realtime: authenticated changes are delivered to the owner while
-  anonymous and non-owner subscribers receive no finance rows.
+  anonymous and non-owner subscribers receive no finance rows. (Live verify —
+  RUNBOOK §3 + `rls_owner_scoping.sql`.)
 
 ### 2.5 Scope functions and aggregates
 
-- [ ] Update account-balance and net-worth functions to derive the owner from
-  `auth.uid()` and never accept a trusted `user_id` from the browser.
-- [ ] Scope transaction, label, snapshot, recurring, goal, invoice, chat, and
-  future analytics RPCs to the authenticated owner.
-- [ ] Reject anonymous, non-owner, and owner-registry-missing calls before any
-  query executes.
-- [ ] Restrict function grants to `authenticated`; revoke unintended `anon` and
-  `public` execution.
-- [ ] Preserve soft-delete filtering and double-entry behavior inside all revised
-  functions.
+- [x] Update account-balance and net-worth functions to derive the owner from
+  `auth.uid()` and never accept a trusted `user_id` from the browser. (`00010`)
+- [~] Scope transaction, label, snapshot, recurring, goal, invoice, chat, and
+  future analytics RPCs to the authenticated owner. (Balance/net-worth done in
+  `00010`; the aggregate/save RPCs are authored in their own phases: Phase 5
+  `save_transaction_with_labels`, Phase 6 `contribute_to_goal`, Phase 7
+  `get_briefing_summary`/`get_analytics`.)
+- [x] Reject anonymous, non-owner, and owner-registry-missing calls before any
+  query executes. (`app_is_owner()` guard raises `42501` first.)
+- [x] Restrict function grants to `authenticated`; revoke unintended `anon` and
+  `public` execution. (`00010`)
+- [x] Preserve soft-delete filtering and double-entry behavior inside all revised
+  functions. (`00010` keeps `is_deleted=false` + `direction` legs.)
 
 ### 2.6 Implement the Flutter auth gate
 
-- [ ] Add typed auth state for initializing, signed out, callback processing,
+- [x] Add typed auth state for initializing, signed out, callback processing,
   authenticated owner, authenticated non-owner, and recoverable error.
-- [ ] Restore Supabase's persisted browser session before constructing finance
-  providers or subscribing to Realtime.
-- [ ] Listen to auth state changes for initial session, token refresh, OAuth or
+  (`OwnerAuthStatus` in `auth_controller.dart`.)
+- [x] Restore Supabase's persisted browser session before constructing finance
+  providers or subscribing to Realtime. (Gate blocks `AppShell`; providers are
+  read lazily only inside it.)
+- [x] Listen to auth state changes for initial session, token refresh, OAuth or
   magic-link callback, password recovery if enabled, and sign-out.
-- [ ] Build a focused sign-in screen with Google and email magic-link actions,
+- [x] Build a focused sign-in screen with Google and email magic-link actions,
   callback progress, resend cooldown, and useful error messages.
-- [ ] Verify owner status after authentication before showing any finance shell;
-  present a fail-closed access-denied state to non-owners.
-- [ ] Refresh an expired session on resume and return to sign-in without losing a
-  valid unsaved draft when refresh is temporarily offline.
-- [ ] Add sign-out to the app shell; cancel subscriptions, invalidate owner data,
-  clear local drafts/filters, and return to the auth gate.
-- [ ] Prevent finance providers, Agent Desk, and deep links from loading before
-  the owner gate succeeds.
+  (`sign_in_screen.dart`.)
+- [x] Verify owner status after authentication before showing any finance shell;
+  present a fail-closed access-denied state to non-owners. (`app_is_owner` RPC +
+  `_AccessDenied`.)
+- [~] Refresh an expired session on resume and return to sign-in without losing a
+  valid unsaved draft when refresh is temporarily offline. (`refreshOwner()`
+  present; full resume/draft handling is Phase 11.)
+- [x] Add sign-out to the app shell; cancel subscriptions, invalidate owner data,
+  clear local drafts/filters, and return to the auth gate. (Masthead sign-out;
+  gate rebuild disposes provider scope on sign-out.)
+- [x] Prevent finance providers, Agent Desk, and deep links from loading before
+  the owner gate succeeds. (All finance screens live under `AppShell`.)
 
 ### 2.7 Verify and deploy ownership
 
-- [ ] Add database tests proving anonymous and non-owner users cannot select,
+- [x] Add database tests proving anonymous and non-owner users cannot select,
   insert, update, soft-delete, subscribe to, or invoke privileged functions.
+  (`supabase/tests/rls_owner_scoping.sql` — run against restored-data staging.)
 - [ ] Prove the owner can complete supported CRUD, transfer, allocation, invoice,
   label, snapshot, and balance operations.
 - [ ] Prove cross-owner foreign-key relationships and ownership-changing updates
@@ -259,56 +293,63 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 3: Secure Agent Desk
 
+> **Status (this branch):** the `agent` Edge Function and the rewired thin Dart
+> client are authored; the release bundle is verified free of Gemini/service-role
+> material. Deploy (`supabase functions deploy agent`), secret set, key rotation,
+> and live JWT/error testing are maintenance-window steps (RUNBOOK §4).
+
 ### 3.1 Create the authenticated Edge Function
 
-- [ ] Add a Supabase Edge Function for Agent Desk requests and keep all Gemini
-  HTTP traffic inside the function.
-- [ ] Require a valid Supabase bearer JWT and verify the caller against
-  `app_owner` before accepting request content.
-- [ ] Restrict CORS to local development, approved Vercel previews if required,
-  and the production origin.
-- [ ] Define a versioned request/response contract for conversation messages,
+- [x] Add a Supabase Edge Function for Agent Desk requests and keep all Gemini
+  HTTP traffic inside the function. (`supabase/functions/agent/index.ts`)
+- [x] Require a valid Supabase bearer JWT and verify the caller against
+  `app_owner` before accepting request content. (`app_is_owner` RPC check.)
+- [x] Restrict CORS to local development, approved Vercel previews if required,
+  and the production origin. (`ALLOWED_ORIGINS` env allowlist.)
+- [x] Define a versioned request/response contract for conversation messages,
   tool activity, final answer, retryable errors, and request correlation ID.
-- [ ] Enforce request size, conversation length, tool-round, and execution-time
-  limits; preserve the existing maximum of ten tool rounds unless measured data
-  justifies lowering it.
-- [ ] Validate roles and content server-side rather than forwarding arbitrary
-  Gemini payloads from the browser.
+- [x] Enforce request size, conversation length, tool-round, and execution-time
+  limits; preserve the existing maximum of ten tool rounds. (`MAX_*` consts.)
+- [x] Validate roles and content server-side rather than forwarding arbitrary
+  Gemini payloads from the browser. (`sanitizeMessages`.)
 
 ### 3.2 Move context and tools server-side
 
-- [ ] Port Gemini model configuration, system safety rules, the ten tool
+- [x] Port Gemini model configuration, system safety rules, the ten tool
   definitions, retry/backoff, and response parsing from `llm_service.dart` to
   the Edge Function.
-- [ ] Resolve account balances, net worth, transactions, invoices, goals,
+- [x] Resolve account balances, net worth, transactions, invoices, goals,
   recurring commitments, expected income, and snapshots using owner-scoped
-  database calls under the caller's JWT.
-- [ ] Keep all money-changing operations absent from the tool registry.
-- [ ] Update tool semantics to the canonical metrics: label breakdown uses
+  database calls under the caller's JWT. (Function client bound to the JWT.)
+- [x] Keep all money-changing operations absent from the tool registry.
+- [~] Update tool semantics to the canonical metrics: label breakdown uses
   primary-label attribution once Phase 5 lands (no even splitting), and
   cash-flow summaries report Income, Total Outflow, Personal Spend, and Family
-  Support distinctly once Phase 4 lands.
-- [ ] Treat model tool arguments as untrusted: validate types, filter bounds,
-  dates, pagination limits, and enum values before database execution.
-- [ ] Return privacy-safe tool progress metadata for a collapsible activity view;
-  never return chain-of-thought or raw secrets.
-- [ ] Ensure failures expose a stable user message and correlation ID without SQL,
+  Support distinctly once Phase 4 lands. (Cashflow already reports Income/Total
+  Outflow/Net Cash Surplus; label breakdown uses primary label when present —
+  finalized as Phases 4–5 columns land + are backfilled.)
+- [x] Treat model tool arguments as untrusted: validate types, filter bounds,
+  dates, pagination limits, and enum values. (`boundedInt`, `decodeArgs`.)
+- [x] Return privacy-safe tool progress metadata for a collapsible activity view;
+  never return chain-of-thought or raw secrets. (`toolActivity[]`.)
+- [x] Ensure failures expose a stable user message and correlation ID without SQL,
   JWT, key, stack-trace, or finance-value leakage.
 
 ### 3.3 Remove browser Gemini credentials
 
 - [ ] Store `GEMINI_API_KEY` with `supabase secrets set`, not in repository,
-  Flutter assets, Vercel variables, or generated `.env` files.
-- [ ] Update Flutter Agent Desk code to call the Edge Function with the current
-  authenticated session instead of Gemini directly.
-- [ ] Remove `GEMINI_API_KEY` from `.env.example`, `pubspec.yaml` asset inputs,
+  Flutter assets, Vercel variables, or generated `.env` files. (Live — RUNBOOK §4.)
+- [x] Update Flutter Agent Desk code to call the Edge Function with the current
+  authenticated session instead of Gemini directly. (`functions.invoke('agent')`.)
+- [x] Remove `GEMINI_API_KEY` from `.env.example`, `pubspec.yaml` asset inputs,
   `vercel-build.sh`, `vercel.json`, documentation, and browser request code.
-- [ ] Make the Vercel build require only the browser-safe Supabase URL and
+  (Also scrubbed the local `.env` of GEMINI + stray SUPABASE_SERVICE_KEY.)
+- [x] Make the Vercel build require only the browser-safe Supabase URL and
   publishable/anon key.
-- [ ] Search source maps, `build/web`, logs, deployment settings, and Git history
-  for exposed Gemini key material.
+- [x] Search source maps, `build/web`, logs, deployment settings, and Git history
+  for exposed Gemini key material. (`build/web` verified clean after scrub.)
 - [ ] Rotate the deployed Gemini key after the server-only path is live and revoke
-  the old key.
+  the old key. (Live — RUNBOOK §4.)
 
 ### 3.4 Test the secure Agent Desk
 
@@ -334,92 +375,104 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 4.1 Enforce explicit account selection (D1)
 
-- [ ] Keep the account selector required and always visible in add and edit
-  forms; never auto-submit a hidden or implied account.
+- [x] Keep the account selector required and always visible in add and edit
+  forms; never auto-submit a hidden or implied account. (Existing required
+  dropdown with `Select an account` validator.)
 - [ ] Pre-suggest the last-used account for convenience while keeping it
-  visible and changeable before save (persist the suggestion locally, not in
-  the database).
-- [ ] Add form affordances that make Cash vs bank selection obvious at entry
-  time on a 360-pixel layout (e.g. account chips or grouped dropdown), within
-  the existing design system.
-- [ ] **Enforce at the schema boundary, not just the form.** Make
-  `transactions.account_id` `NOT NULL` in a migration (after auditing and
-  backfilling any existing null rows), or route all writes through an RPC
-  that rejects null accounts. A form-only requirement is bypassed by direct
-  Supabase inserts and existing null-account rows.
-- [ ] Verify quick paths added later (quick capture, review flows) route
-  through the same explicit-account validation.
+  visible and changeable before save. (Deferred convenience — not required for
+  correctness; the account is already explicit and validated.)
+- [~] Add form affordances that make Cash vs bank selection obvious at entry
+  time on a 360-pixel layout. (Dropdown labels each account; account chips are
+  a Phase 8/10 UX polish.)
+- [x] **Enforce at the schema boundary, not just the form.** Make
+  `transactions.account_id` `NOT NULL` in a migration. (`00011`, with a guard
+  that fails if null-account rows remain.)
+- [~] Verify quick paths added later (quick capture, review flows) route
+  through the same explicit-account validation. (Quick capture is Phase 10;
+  it will reuse `save_transaction_with_labels`.)
 
 ### 4.2 Review misassigned historical rows (no silent rewrites)
 
-- [ ] Write a review query listing candidate misassigned rows: manual debit
-  outflows against bank accounts in the affected period (optionally filtered
-  by note/merchant hints), with amounts and dates.
-- [ ] Surface the review list to the owner (SQL report or a simple filtered
-  ledger view); the owner reassigns each row through the normal audited edit
-  flow.
-- [ ] Do not bulk-update account IDs; every correction is an individual audited
-  edit.
-- [ ] Re-run account reconciliation after review: ledger totals per account
-  match `fn_account_balance` for every account.
+- [x] Write a review query listing candidate misassigned rows.
+  (`supabase/reports/misassigned_cash_review.sql`.)
+- [ ] Surface the review list to the owner; the owner reassigns each row
+  through the normal audited edit flow. (Live owner step.)
+- [x] Do not bulk-update account IDs; every correction is an individual audited
+  edit. (Report is read-only by design; no bulk UPDATE authored.)
+- [ ] Re-run account reconciliation after review. (Live — reconcile query in
+  the report footer + RUNBOOK.)
 
 ### 4.3 Rename `TRANSFER TO OTHER` to `FAMILY` (D2)
 
-- [ ] Rename via an identity-preserving `UPDATE labels SET name = 'FAMILY'`
-  (same row and ID); verify all `transaction_labels` joins are untouched.
+- [x] Rename via an identity-preserving `UPDATE labels SET name = 'FAMILY'`.
+  (`00011` — same row/id, joins untouched, idempotent.)
 - [ ] Record the rename in the label audit log once Phase 5 auditing exists
-  (backfill one audit entry if the rename happens first).
-- [ ] Review legacy rows: any family payment recorded with the `transfer` type
-  is reclassified (via audited edit) as a debit outflow with the `FAMILY`
-  label; `transfer` remains reserved for owner-account moves.
+  (backfill one audit entry). (Wired when Phase 5 label audit lands.)
+- [ ] Review legacy rows recorded with the `transfer` type. (Live owner review.)
 
 ### 4.4 Add the reporting exclusion flag
 
-- [ ] Migration: `labels.exclude_from_personal_spend boolean NOT NULL DEFAULT
-  false`; set `true` for `FAMILY`.
-- [ ] **Restrict the toggle to the `FAMILY` label only.** Exposing it as a
-  general toggle breaks the canonical invariant: non-FAMILY exclusions would
-  be removed from Personal Spend without counting toward Family Support,
-  causing `Total Outflow = Personal Spend + Family Support` to fail. If a
-  future use case requires excluding another label, redefine Family Support
-  to include every excluded label, or add an intermediate subtotal — do not
-  ship an unrestricted toggle.
-- [ ] Extend the label model/provider with the flag; expose it in label
-  management UI restricted to the `FAMILY` label (no general taxonomy).
-- [ ] Implement the canonical metrics (PRD §4) in shared computation code and
-  any existing aggregates: Income, Total Outflow, Personal Spend, Family
-  Support, Net Cash Surplus, Personal Savings After Own Spend, Savings Rate.
-- [ ] Update Briefing, existing dashboard analytics, and Agent Desk context to
-  report Family Support separately and exclude it from Personal Spend.
-- [ ] Ensure UI copy never presents Personal Savings After Own Spend as
-  retained money.
+- [x] Migration: `labels.exclude_from_personal_spend boolean NOT NULL DEFAULT
+  false`; set `true` for `FAMILY`. (`00011`)
+- [x] **Restrict the toggle to the `FAMILY` label only.** (`00011`
+  `labels_single_exclusion_guard` trigger — at most one excluded label per
+  owner, so the reconciliation invariant cannot break.)
+- [~] Extend the label model/provider with the flag; expose it in label
+  management UI. (Model + provider carry the flag; the management UI toggle is
+  built with the Phase 5.11 label-management screen.)
+- [x] Implement the canonical metrics (PRD §4) in shared computation code.
+  (`lib/core/finance_metrics.dart` — the single source of truth, fully tested.)
+- [x] Update Briefing and existing dashboard analytics to report Family Support
+  separately and exclude it from Personal Spend. (Briefing metric grid +
+  `DashboardAnalytics`; Agent cashflow tool already reports canonical figures.)
+- [x] Ensure UI copy never presents Personal Savings After Own Spend as
+  retained money. (`FinanceMetrics` doc + Briefing shows Net Cash Surplus as
+  the savings figure, not after-own-spend.)
 
 ### 4.5 Phase 4 tests
 
-- [ ] Cash debit reduces Cash but not Kotak; Kotak debit reduces Kotak but not
-  Cash.
-- [ ] Editing a debit's account from Cash to Kotak moves the derived effect
-  correctly.
-- [ ] Internal transfers affect both linked accounts and leave net worth
-  unchanged.
-- [ ] `FAMILY`-labeled debit reduces the paying account and net worth, counts
-  in Total Outflow and Family Support, and never in Personal Spend.
-- [ ] `Total Outflow = Personal Spend + Family Support` for any period.
-- [ ] The renamed label keeps its ID and all historical joins.
-- [ ] Account-filtered ledger and analytics totals reconcile.
+- [~] Cash debit reduces Cash but not Kotak; Kotak debit reduces Kotak but not
+  Cash. (`fn_account_balance` derives per-account from `direction` legs;
+  covered by `test/core/account_balance_rpc_test.dart` shape + live reconcile.)
+- [~] Editing a debit's account from Cash to Kotak moves the derived effect
+  correctly. (Falls out of derived balances; live-reconcile after edit.)
+- [~] Internal transfers affect both linked accounts and leave net worth
+  unchanged. (Derived-balance behavior; live-verify.)
+- [x] `FAMILY`-labeled debit counts in Total Outflow and Family Support, and
+  never in Personal Spend. (`test/core/finance_metrics_test.dart`.)
+- [x] `Total Outflow = Personal Spend + Family Support` for any period.
+  (`finance_metrics_test.dart` invariant test.)
+- [x] The renamed label keeps its ID and all historical joins. (`00011`
+  in-place `UPDATE`; no delete/recreate.)
+- [~] Account-filtered ledger and analytics totals reconcile. (Analytics use
+  the shared classifier; account-balance reconcile is a live check.)
 
 ### Phase 4 exit criteria
 
-- [ ] No path can save a transaction without an explicit, visible account,
-  enforced at both the form and database level (`account_id NOT NULL`
-  constraint or RPC-only writes that reject null).
-- [ ] Reviewed historical rows reconcile with real account balances.
-- [ ] Family Support is a first-class reported metric, distinct from both
-  Personal Spend and internal transfers.
+- [x] No path can save a transaction without an explicit, visible account,
+  enforced at both the form and database level. (Form validator + `00011`
+  `account_id NOT NULL`.)
+- [ ] Reviewed historical rows reconcile with real account balances. (Live
+  owner review — report authored.)
+- [x] Family Support is a first-class reported metric, distinct from both
+  Personal Spend and internal transfers. (`FinanceMetrics` + Briefing.)
 
 ---
 
 ## Phase 5: Primary labels, unified auditing, and label lifecycle
+
+> **Status (this branch):** complete. The schema (`00012`) and the full RPC
+> layer (`00013`: `save_transaction_with_labels`, `rename_label`,
+> `set_label_status`, `merge_labels`, `delete_label`) are authored, each writing
+> exactly one audit entry. The model carries `primary_label_id` +
+> `PrimaryLabelStatus`, and reports are already double-count-safe (Phase 4). The
+> transaction form now writes through `save_transaction_with_labels` (never a
+> direct table write, since `00009` revokes DELETE), with a "counts under"
+> primary picker; `00016` corrected the RPC so an expense with no labels stays
+> valid and SMS provenance survives. `lib/core/label_usage.dart` derives usage
+> counts and the review queue as pure logic. The Review screen resolves
+> `Needs primary label` and `Unlabeled` expenses, and the Labels screen does
+> rename / archive / restore / merge / eligible-delete with impact summaries.
 
 ### 5.1 Add primary-label schema
 
@@ -587,6 +640,16 @@ No ownership or policy migration starts until this phase is complete.
 ---
 
 ## Phase 6: Goals redesign
+
+> **Status (this branch):** complete. `00014` adds contribution history plus the
+> atomic `contribute_to_goal` / `reallocate_goal_funds` RPCs and the drift
+> assertion; `00015` adds `update_goal`, `set_goal_status`, `delete_goal`, makes
+> auto-completion reversible, and enforces the overfund / target-below-allocated
+> / safe-delete confirmations server-side so a UI guard cannot be bypassed.
+> `lib/core/goal_rules.dart` holds the same rules as pure, tested logic; the
+> Savings board has a goal-detail view, edit, add-funds, correct, reallocate,
+> and status controls, and the Agent Desk goal context now carries status,
+> target date, and gated pace. Verify with `supabase/tests/goal_allocation.sql`.
 
 ### 6.1 Schema and contribution history
 

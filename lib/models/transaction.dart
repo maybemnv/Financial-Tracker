@@ -16,6 +16,7 @@ class Transaction {
   final String? merchant;
   final String? bank;
   final List<TransactionLabel> labels;
+  final String? primaryLabelId; // the one label that attributes this expense
   final String? rawSms;
   final String? rawSmsHash;
   final String source; // sms | manual
@@ -40,6 +41,7 @@ class Transaction {
     this.merchant,
     this.bank,
     this.labels = const [],
+    this.primaryLabelId,
     this.rawSms,
     this.rawSmsHash,
     this.source = 'manual',
@@ -76,6 +78,19 @@ class Transaction {
       direction != null ? direction == 'inflow' : type == 'credit';
   bool get isOutflow => !isInflow;
 
+  /// The label that attributes this expense (PRD §4). Resolves the explicit
+  /// [primaryLabelId] against [labels]; when unset, falls back to the sole
+  /// attached label so single-label legacy rows still attribute correctly.
+  TransactionLabel? get primaryLabel {
+    if (primaryLabelId != null) {
+      for (final label in labels) {
+        if (label.id == primaryLabelId) return label;
+      }
+    }
+    if (labels.length == 1) return labels.first;
+    return null;
+  }
+
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
       id: json['id'] as String?,
@@ -87,6 +102,7 @@ class Transaction {
       merchant: json['merchant'] as String?,
       bank: json['bank'] as String?,
       labels: _labelsFromJson(json['transaction_labels']),
+      primaryLabelId: json['primary_label_id'] as String?,
       rawSms: json['raw_sms'] as String?,
       rawSmsHash: json['raw_sms_hash'] as String?,
       source: json['source'] as String? ?? 'manual',
@@ -122,6 +138,7 @@ class Transaction {
       'amount': amount,
       'type': type,
       if (direction != null) 'direction': direction,
+      if (primaryLabelId != null) 'primary_label_id': primaryLabelId,
       'vpa': vpa,
       'merchant': merchant,
       'bank': bank,
@@ -147,6 +164,7 @@ class Transaction {
     String? merchant,
     String? bank,
     List<TransactionLabel>? labels,
+    String? primaryLabelId,
     String? rawSms,
     String? rawSmsHash,
     String? source,
@@ -171,6 +189,7 @@ class Transaction {
       merchant: merchant ?? this.merchant,
       bank: bank ?? this.bank,
       labels: labels ?? this.labels,
+      primaryLabelId: primaryLabelId ?? this.primaryLabelId,
       rawSms: rawSms ?? this.rawSms,
       rawSmsHash: rawSmsHash ?? this.rawSmsHash,
       source: source ?? this.source,

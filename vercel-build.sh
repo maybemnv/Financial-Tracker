@@ -14,12 +14,13 @@ fi
 flutter config --no-analytics
 flutter config --enable-web
 
+# Browser-safe values only. GEMINI_API_KEY is intentionally NOT built into the
+# bundle — it lives as a Supabase function secret (see docs/RUNBOOK.md §4).
 : "${SUPABASE_URL:?ERROR: SUPABASE_URL is not set}"
 : "${SUPABASE_ANON_KEY:?ERROR: SUPABASE_ANON_KEY is not set}"
-: "${GEMINI_API_KEY:?ERROR: GEMINI_API_KEY is not set}"
 
-printf "SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nGEMINI_API_KEY=%s\n" \
-  "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$GEMINI_API_KEY" > .env
+printf "SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\n" \
+  "$SUPABASE_URL" "$SUPABASE_ANON_KEY" > .env
 
 flutter pub get
 flutter build web

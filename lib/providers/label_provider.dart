@@ -9,6 +9,9 @@ class LabelNotifier extends StateNotifier<AsyncValue<List<TransactionLabel>>> {
 
   RealtimeChannel? _channel;
 
+  /// Loads every label regardless of status. Archived and merged labels stay
+  /// readable so historical attribution and the management screen keep working;
+  /// [assignableLabelProvider] is what pickers use.
   Future<void> load() async {
     state = const AsyncValue.loading();
     try {
@@ -58,6 +61,45 @@ class LabelNotifier extends StateNotifier<AsyncValue<List<TransactionLabel>>> {
     return label;
   }
 
+  /// Identity-preserving rename: the row keeps its id, so every existing
+  /// attachment and every historical attribution follows the new name.
+  /// Conflicts are detected case-insensitively among active labels; a
+  /// case-only rename of the same label is allowed.
+  Future<void> rename(String id, String name) async {
+    await SupabaseService()
+        .client
+        .rpc('rename_label', params: {'p_id': id, 'p_name': name.trim()});
+    await load();
+  }
+
+  /// Archive or restore. Archived labels stop being assignable but remain
+  /// attached to, and reportable on, every transaction that already uses them.
+  Future<void> setStatus(String id, String status) async {
+    await SupabaseService()
+        .client
+        .rpc('set_label_status', params: {'p_id': id, 'p_status': status});
+    await load();
+  }
+
+  /// Moves every contextual and primary reference from source to target in one
+  /// transaction, resolving duplicate joins, then marks the source `merged`.
+  /// Idempotent if the source was already merged.
+  Future<void> merge({required String sourceId, required String targetId}) async {
+    await SupabaseService().client.rpc(
+      'merge_labels',
+      params: {'p_source': sourceId, 'p_target': targetId},
+    );
+    await load();
+  }
+
+  /// SOFT delete, and only for a label nothing references — the RPC raises
+  /// otherwise so an attribution can never be orphaned. Never a physical
+  /// `DELETE`.
+  Future<void> delete(String id) async {
+    await SupabaseService().client.rpc('delete_label', params: {'p_id': id});
+    await load();
+  }
+
   void unsubscribe() => _channel?.unsubscribe();
 
   @override
@@ -77,3 +119,15 @@ final labelProvider =
     return notifier;
   },
 );
+
+/// Labels that may be attached to a transaction. `save_transaction_with_labels`
+/// rejects anything else, so pickers must not offer archived or merged labels.
+final assignableLabelProvider = Provider<List<TransactionLabel>>((ref) {
+  final labels = ref.watch(labelProvider).valueOrNull ?? const [];
+  return labels.where((l) => l.isAssignable).toList(growable: false);
+});
+
+// Per-label usage counts and the review queue moved to owner-scoped aggregate
+// RPCs in Phase 7 (`labelUsageStatsProvider`, `reviewBucketProvider` in
+// aggregate_provider.dart). Deriving them from provider state would now count
+// only the loaded page, silently understating both.

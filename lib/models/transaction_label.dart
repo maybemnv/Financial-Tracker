@@ -5,17 +5,43 @@ class TransactionLabel {
     this.id,
     required this.name,
     required this.color,
+    this.excludeFromPersonalSpend = false,
+    this.status = 'active',
+    this.mergedIntoId,
   });
 
   final String? id;
   final String name;
   final String color;
 
+  /// Lifecycle state (migration `00012`): `active` | `archived` | `merged` |
+  /// `deleted`. Only `active` labels may be attached to a transaction; the
+  /// others stay readable so historical attribution never breaks.
+  final String status;
+
+  /// Where a `merged` label's references were moved to.
+  final String? mergedIntoId;
+
+  bool get isActive => status == 'active';
+  bool get isArchived => status == 'archived';
+
+  /// Archived and merged labels remain reportable but cannot be assigned.
+  bool get isAssignable => isActive;
+
+  /// When true, debits whose primary label is this label are reported as
+  /// **Family Support**, not Personal Spend (PRD §4). Only the `FAMILY` label
+  /// carries this flag (enforced in migration `00011` + label management).
+  final bool excludeFromPersonalSpend;
+
   factory TransactionLabel.fromJson(Map<String, dynamic> json) {
     return TransactionLabel(
       id: json['id'] as String?,
       name: json['name'] as String,
       color: json['color'] as String,
+      excludeFromPersonalSpend:
+          json['exclude_from_personal_spend'] as bool? ?? false,
+      status: json['status'] as String? ?? 'active',
+      mergedIntoId: json['merged_into_id'] as String?,
     );
   }
 
@@ -23,7 +49,26 @@ class TransactionLabel {
         if (id != null) 'id': id,
         'name': name,
         'color': color,
+        'exclude_from_personal_spend': excludeFromPersonalSpend,
       };
+
+  TransactionLabel copyWith({
+    String? id,
+    String? name,
+    String? color,
+    bool? excludeFromPersonalSpend,
+    String? status,
+    String? mergedIntoId,
+  }) =>
+      TransactionLabel(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        color: color ?? this.color,
+        excludeFromPersonalSpend:
+            excludeFromPersonalSpend ?? this.excludeFromPersonalSpend,
+        status: status ?? this.status,
+        mergedIntoId: mergedIntoId ?? this.mergedIntoId,
+      );
 
   Color get colorValue {
     final normalized = color.replaceFirst('#', '');
