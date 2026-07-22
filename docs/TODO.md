@@ -80,7 +80,8 @@ unless a task explicitly says it can run in parallel.
   (Phase 4).
 - [ ] D3 — multi-label expenses split evenly in reports (Phase 5).
 - [ ] D4 — full-ledger loading and full reloads on Realtime events (Phase 7).
-- [ ] D5 — `anon_all` RLS and browser-side `GEMINI_API_KEY` (Phases 2–3). The
+- [~] D5 — `anon_all` RLS and browser-side `GEMINI_API_KEY` (Phases 2–3). RLS
+  replacement authored (`00006`–`00010`); Gemini Edge Function is Phase 3. The
   current Vercel build requirement for the Gemini key is an interim state, not
   the permanent fix.
 - [ ] D6 — goal allocation without history or corrections (Phase 6).
@@ -152,6 +153,11 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 2: Single-owner authentication and RLS
 
+> **Status (this branch):** migrations `00006`–`00010` and the Flutter auth gate
+> are authored and pass `analyze`/tests. Items needing the live Supabase project
+> (owner provisioning, applying migrations, deploy-time verification) are marked
+> `[ ]` and covered by `docs/RUNBOOK.md`. `[x]` = code artifact complete.
+
 ### 2.1 Provision the owner identity
 
 - [ ] Create the one production Supabase Auth owner account and retain its UUID
@@ -165,90 +171,106 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 2.2 Add the protected owner registry
 
-- [ ] Create the next additive migration for a private `app_owner` registry
-  referencing `auth.users(id)` and constrained to one active owner.
+- [x] Create the next additive migration for a private `app_owner` registry
+  referencing `auth.users(id)` and constrained to one active owner. (`00006`)
 - [ ] Insert the known owner UUID during the maintenance window; fail the
-  migration if the owner UUID is absent or ambiguous.
-- [ ] Add a private owner-check helper based on `auth.uid()` with a fixed
+  migration if the owner UUID is absent or ambiguous. (Live step — RUNBOOK §2;
+  `00007` backfill raises if the owner row is absent.)
+- [x] Add a private owner-check helper based on `auth.uid()` with a fixed
   `search_path`; revoke direct execution or table access not needed by client
-  roles.
-- [ ] Make all owner policies and privileged RPCs fail closed when no registry
-  row exists.
-- [ ] Add a database assertion that a second active owner cannot be inserted.
+  roles. (`app_is_owner()`, SECURITY DEFINER, granted to `authenticated` only.)
+- [x] Make all owner policies and privileged RPCs fail closed when no registry
+  row exists. (RLS-enabled `app_owner` with no policies; `app_is_owner()`
+  returns false ⇒ every owner policy denies.)
+- [x] Add a database assertion that a second active owner cannot be inserted.
+  (Partial unique index + `app_owner_single_guard` trigger.)
 
 ### 2.3 Add and backfill row ownership
 
-- [ ] Add nullable `user_id uuid` columns to every protected table before
-  changing policies.
-- [ ] Backfill every existing row with the registered owner UUID in one reviewed
-  transaction and compare table row counts before and after.
+- [x] Add nullable `user_id uuid` columns to every protected table before
+  changing policies. (`00007`)
+- [x] Backfill every existing row with the registered owner UUID in one reviewed
+  transaction and compare table row counts before and after. (`00007` DO block +
+  RUNBOOK §3 zero-null verification query.)
 - [ ] Detect orphaned join rows and cross-table references before adding stricter
-  keys; stop rather than silently deleting data.
-- [ ] Add indexes beginning with `user_id` for owner-filtered date, status,
-  account, label, and soft-delete query paths.
-- [ ] Change ownership columns to `NOT NULL` only after zero null rows are
-  verified.
-- [ ] Add composite owner-aware foreign keys where they prevent cross-owner
-  references, including transaction-label, primary-label, transfer, account,
-  invoice, recurring, rule, and merge relationships.
-- [ ] Update owner-specific uniqueness: snapshot `(user_id, year, month)`, label
-  `(user_id, lower(name))` where applicable, SMS hash, and any other natural
-  keys currently global.
-- [ ] Ensure triggers copy or validate ownership rather than trusting arbitrary
-  client-supplied `user_id` values.
+  keys; stop rather than silently deleting data. (Live check — RUNBOOK §3.)
+- [x] Add indexes beginning with `user_id` for owner-filtered date, status,
+  account, label, and soft-delete query paths. (`00007`)
+- [x] Change ownership columns to `NOT NULL` only after zero null rows are
+  verified. (`00008`, gated on the RUNBOOK verification query.)
+- [x] Add composite owner-aware foreign keys where they prevent cross-owner
+  references... (`00008` owner-scoped keys + `enforce_row_owner` trigger; full
+  composite FKs revisited as label/goal schema lands in Phases 5–6.)
+- [x] Update owner-specific uniqueness: snapshot `(user_id, year, month)`, label
+  `(user_id, lower(name))`, SMS hash owner-scoped. (`00008`)
+- [x] Ensure triggers copy or validate ownership rather than trusting arbitrary
+  client-supplied `user_id` values. (`enforce_row_owner` stamps/immutable-checks.)
 
 ### 2.4 Replace open policies
 
-- [ ] Remove every `anon_all` policy in the same release that introduces the
-  replacement policies.
-- [ ] Add owner-only `SELECT` policies requiring both `user_id = auth.uid()` and
-  membership in `app_owner`.
-- [ ] Add owner-only `INSERT` policies with equivalent `WITH CHECK` expressions.
-- [ ] Add owner-only `UPDATE` policies with both `USING` and `WITH CHECK` so an
-  update cannot transfer row ownership.
-- [ ] Keep physical `DELETE` revoked and expose only audited soft-delete updates
-  or RPCs.
-- [ ] Apply equivalent ownership controls to storage objects if attachments or
-  other user files already exist.
+- [x] Remove every `anon_all` policy in the same release that introduces the
+  replacement policies. (`00009`)
+- [x] Add owner-only `SELECT` policies requiring both `user_id = auth.uid()` and
+  membership in `app_owner`. (`00009`)
+- [x] Add owner-only `INSERT` policies with equivalent `WITH CHECK` expressions.
+  (`00009`)
+- [x] Add owner-only `UPDATE` policies with both `USING` and `WITH CHECK` so an
+  update cannot transfer row ownership. (`00009`)
+- [x] Keep physical `DELETE` revoked and expose only audited soft-delete updates
+  or RPCs. (`00009` creates no DELETE policy + `REVOKE DELETE`.)
+- [x] Apply equivalent ownership controls to storage objects if attachments or
+  other user files already exist. (No storage buckets exist — no-op, per
+  `docs/phase1-inventory.md`.)
 - [ ] Recheck Realtime: authenticated changes are delivered to the owner while
-  anonymous and non-owner subscribers receive no finance rows.
+  anonymous and non-owner subscribers receive no finance rows. (Live verify —
+  RUNBOOK §3 + `rls_owner_scoping.sql`.)
 
 ### 2.5 Scope functions and aggregates
 
-- [ ] Update account-balance and net-worth functions to derive the owner from
-  `auth.uid()` and never accept a trusted `user_id` from the browser.
-- [ ] Scope transaction, label, snapshot, recurring, goal, invoice, chat, and
-  future analytics RPCs to the authenticated owner.
-- [ ] Reject anonymous, non-owner, and owner-registry-missing calls before any
-  query executes.
-- [ ] Restrict function grants to `authenticated`; revoke unintended `anon` and
-  `public` execution.
-- [ ] Preserve soft-delete filtering and double-entry behavior inside all revised
-  functions.
+- [x] Update account-balance and net-worth functions to derive the owner from
+  `auth.uid()` and never accept a trusted `user_id` from the browser. (`00010`)
+- [~] Scope transaction, label, snapshot, recurring, goal, invoice, chat, and
+  future analytics RPCs to the authenticated owner. (Balance/net-worth done in
+  `00010`; the aggregate/save RPCs are authored in their own phases: Phase 5
+  `save_transaction_with_labels`, Phase 6 `contribute_to_goal`, Phase 7
+  `get_briefing_summary`/`get_analytics`.)
+- [x] Reject anonymous, non-owner, and owner-registry-missing calls before any
+  query executes. (`app_is_owner()` guard raises `42501` first.)
+- [x] Restrict function grants to `authenticated`; revoke unintended `anon` and
+  `public` execution. (`00010`)
+- [x] Preserve soft-delete filtering and double-entry behavior inside all revised
+  functions. (`00010` keeps `is_deleted=false` + `direction` legs.)
 
 ### 2.6 Implement the Flutter auth gate
 
-- [ ] Add typed auth state for initializing, signed out, callback processing,
+- [x] Add typed auth state for initializing, signed out, callback processing,
   authenticated owner, authenticated non-owner, and recoverable error.
-- [ ] Restore Supabase's persisted browser session before constructing finance
-  providers or subscribing to Realtime.
-- [ ] Listen to auth state changes for initial session, token refresh, OAuth or
+  (`OwnerAuthStatus` in `auth_controller.dart`.)
+- [x] Restore Supabase's persisted browser session before constructing finance
+  providers or subscribing to Realtime. (Gate blocks `AppShell`; providers are
+  read lazily only inside it.)
+- [x] Listen to auth state changes for initial session, token refresh, OAuth or
   magic-link callback, password recovery if enabled, and sign-out.
-- [ ] Build a focused sign-in screen with Google and email magic-link actions,
+- [x] Build a focused sign-in screen with Google and email magic-link actions,
   callback progress, resend cooldown, and useful error messages.
-- [ ] Verify owner status after authentication before showing any finance shell;
-  present a fail-closed access-denied state to non-owners.
-- [ ] Refresh an expired session on resume and return to sign-in without losing a
-  valid unsaved draft when refresh is temporarily offline.
-- [ ] Add sign-out to the app shell; cancel subscriptions, invalidate owner data,
-  clear local drafts/filters, and return to the auth gate.
-- [ ] Prevent finance providers, Agent Desk, and deep links from loading before
-  the owner gate succeeds.
+  (`sign_in_screen.dart`.)
+- [x] Verify owner status after authentication before showing any finance shell;
+  present a fail-closed access-denied state to non-owners. (`app_is_owner` RPC +
+  `_AccessDenied`.)
+- [~] Refresh an expired session on resume and return to sign-in without losing a
+  valid unsaved draft when refresh is temporarily offline. (`refreshOwner()`
+  present; full resume/draft handling is Phase 11.)
+- [x] Add sign-out to the app shell; cancel subscriptions, invalidate owner data,
+  clear local drafts/filters, and return to the auth gate. (Masthead sign-out;
+  gate rebuild disposes provider scope on sign-out.)
+- [x] Prevent finance providers, Agent Desk, and deep links from loading before
+  the owner gate succeeds. (All finance screens live under `AppShell`.)
 
 ### 2.7 Verify and deploy ownership
 
-- [ ] Add database tests proving anonymous and non-owner users cannot select,
+- [x] Add database tests proving anonymous and non-owner users cannot select,
   insert, update, soft-delete, subscribe to, or invoke privileged functions.
+  (`supabase/tests/rls_owner_scoping.sql` — run against restored-data staging.)
 - [ ] Prove the owner can complete supported CRUD, transfer, allocation, invoice,
   label, snapshot, and balance operations.
 - [ ] Prove cross-owner foreign-key relationships and ownership-changing updates

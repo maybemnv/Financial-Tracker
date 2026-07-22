@@ -2,10 +2,9 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'app.dart';
-import 'core/monthly_snapshot.dart';
 import 'core/supabase.dart';
 import 'core/theme.dart';
+import 'features/auth/auth_gate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +20,8 @@ void main() async {
   SupabaseService();
   try {
     await SupabaseService().init();
-    MonthlySnapshotJob.runIfNeeded();
+    // The monthly-snapshot backfill now runs after the owner is authenticated
+    // (AppShell.initState), since it requires an owner-scoped session post-RLS.
   } catch (e) {
     initError ??= 'Supabase: $e';
   }
@@ -33,7 +33,7 @@ void main() async {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.theme,
         home:
-            initError != null ? BootErrorScreen(initError) : const AppShell(),
+            initError != null ? BootErrorScreen(initError) : const AuthGate(),
       ),
     ),
   );
