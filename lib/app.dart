@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/lifecycle_bridge.dart';
 import 'core/monthly_snapshot.dart';
 import 'core/theme.dart';
 import 'features/agent/agent_chat_screen.dart';
@@ -12,6 +13,7 @@ import 'features/invoices/invoice_sidebar.dart';
 import 'features/transactions/quick_capture_sheet.dart';
 import 'features/labels/label_management_screen.dart';
 import 'features/transactions/transaction_list_screen.dart';
+import 'providers/ledger_provider.dart';
 import 'widgets/newsprint_shell.dart';
 
 class AppTabs extends StatefulWidget {
@@ -123,6 +125,7 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _bridge = LifecycleBridge.create();
 
   @override
   void initState() {
@@ -130,6 +133,31 @@ class _AppShellState extends ConsumerState<AppShell> {
     // Best-effort prior-month snapshot backfill, now that an owner session
     // exists (moved out of pre-auth boot so it runs under owner-scoped RLS).
     MonthlySnapshotJob.runIfNeeded();
+
+    // Tell the JS watchdog the app is alive once the owner shell has actually
+    // painted a frame — reaching here means auth already succeeded.
+    afterNextFrame(_bridge.signalReady);
+    _bridge.onResume(_onResume);
+  }
+
+  /// Revalidate on a healthy foreground/resume, in place, without a reload.
+  ///
+  /// Refreshes the session BEFORE any owner-scoped request, so an expired token
+  /// surfaces as re-auth rather than a wall of RLS errors; then recreates only
+  /// stale Realtime channels and refetches the paged ledger the visible tabs
+  /// read from. Everything else revalidates lazily when next watched.
+  Future<void> _onResume() async {
+    await ref.read(authControllerProvider.notifier).refreshOwner();
+    if (!mounted) return;
+    ref.read(ledgerProvider.notifier)
+      ..resubscribe()
+      ..refresh();
+  }
+
+  @override
+  void dispose() {
+    _bridge.dispose();
+    super.dispose();
   }
 
   @override

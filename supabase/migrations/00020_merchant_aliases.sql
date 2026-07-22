@@ -12,9 +12,11 @@ CREATE TABLE IF NOT EXISTS merchant_aliases (
   -- Case-insensitive substring matched against the raw merchant.
   match_pattern  TEXT NOT NULL,
   canonical_name TEXT NOT NULL,
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (user_id, lower(match_pattern))
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_merchant_aliases_owner_pattern
+  ON merchant_aliases (user_id, lower(match_pattern));
 
 CREATE INDEX IF NOT EXISTS idx_merchant_aliases_owner
   ON merchant_aliases (user_id);
