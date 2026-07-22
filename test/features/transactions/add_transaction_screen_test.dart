@@ -87,6 +87,11 @@ void main() {
 
   testWidgets('pre-fills an older transaction for editing and keeps its labels',
       (tester) async {
+    // The form body is a lazy ListView; a tall surface lets the whole form
+    // build so mid/bottom fields are present without scroll gymnastics.
+    await tester.binding.setSurfaceSize(const Size(600, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -115,6 +120,16 @@ void main() {
     expect(find.text('Edit Transaction'), findsOneWidget);
     expect(find.text('Save Changes'), findsOneWidget);
     expect(find.text('FOOD'), findsOneWidget);
-    expect(find.byDisplayValue('Corner Cafe'), findsOneWidget);
+    // Assert the merchant field's editing value through its EditableText —
+    // `find.byDisplayValue` is not part of Flutter's CommonFinders and was the
+    // D7 test-gate breakage.
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is EditableText && widget.controller.text == 'Corner Cafe',
+      ),
+      findsOneWidget,
+      reason: 'The merchant field should be pre-filled for editing.',
+    );
   });
 }

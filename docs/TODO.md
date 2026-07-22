@@ -84,7 +84,8 @@ unless a task explicitly says it can run in parallel.
   current Vercel build requirement for the Gemini key is an interim state, not
   the permanent fix.
 - [ ] D6 — goal allocation without history or corrections (Phase 6).
-- [ ] D7 — `find.byDisplayValue` breaks the test gate (Phase 1).
+- [x] D7 — `find.byDisplayValue` breaks the test gate (Phase 1). Fixed:
+  replaced with an `EditableText` predicate finder + tall test surface.
 - [ ] D8 — installed-PWA (mobile Brave shortcut) resume blank-screen on WebGL
   context loss (Brave now, Helium/Zen possible future browsers) (Phase 11).
 
@@ -96,30 +97,37 @@ No ownership or policy migration starts until this phase is complete.
 
 ### Repair the validation baseline
 
-- [ ] Replace the unsupported `find.byDisplayValue` use in
+- [x] Replace the unsupported `find.byDisplayValue` use in
   `test/features/transactions/add_transaction_screen_test.dart` with a
   supported finder or a widget-key assertion.
-- [ ] Run `flutter pub get`, `flutter analyze`, and `flutter test`; record any
-  pre-existing failures before feature work.
-- [ ] Run a release `flutter build web` with the current required environment to
-  prove the pre-migration client still builds.
-- [ ] Add one smoke test that boots the app with mocked initialization and one
+- [x] Run `flutter pub get`, `flutter analyze`, and `flutter test`; record any
+  pre-existing failures before feature work. Result: analyze clean, all tests
+  green (fixing D7 also surfaced/fixed a lazy-`ListView` off-screen finder).
+- [x] Run a release `flutter build web` with the current required environment to
+  prove the pre-migration client still builds. Result: `√ Built build\web`.
+- [x] Add one smoke test that boots the app with mocked initialization and one
   model/provider test that proves the test harness can exercise async state.
+  Added `test/smoke_test.dart` (boot-failure surface) and
+  `test/providers/async_state_test.dart` (loading→data→error transitions).
 
 ### Inventory protected data and interfaces
 
-- [ ] List every owner-controlled table from all migrations, including
+- [x] List every owner-controlled table from all migrations, including
   transactions, transaction-label joins, labels, accounts, goals, invoices,
   category rules, recurring items, monthly snapshots, and chat sessions.
-- [ ] List every view, function, trigger, Realtime publication, storage bucket,
+  (See `docs/phase1-inventory.md`.)
+- [x] List every view, function, trigger, Realtime publication, storage bucket,
   and client query that can expose or mutate owner data.
-- [ ] Record current unique constraints and foreign keys that need `user_id` in
+  (See `docs/phase1-inventory.md`; no views or storage buckets exist.)
+- [x] Record current unique constraints and foreign keys that need `user_id` in
   their key, especially snapshot month/year and case-insensitive label names.
-- [ ] Identify all RPCs using `SECURITY DEFINER`; verify each has a fixed
+  (See `docs/phase1-inventory.md` "Keys that must gain `user_id`".)
+- [x] Identify all RPCs using `SECURITY DEFINER`; verify each has a fixed
   `search_path`, explicit authorization, least-privilege grants, and no caller-
-  supplied owner UUID.
+  supplied owner UUID. (None exist yet — documented as a Phase 2+ requirement.)
 - [ ] Capture baseline query counts and payload sizes for first ledger load,
-  Briefing load, and Agent Desk context gathering.
+  Briefing load, and Agent Desk context gathering. (Requires live project
+  access — deferred to the ops runbook; load *shape* documented in inventory.)
 
 ### Backup and rollback preparation
 

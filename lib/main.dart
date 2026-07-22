@@ -32,14 +32,17 @@ void main() async {
         title: 'Finance Tracker',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.theme,
-        home: initError != null ? _ErrorScreen(initError) : const AppShell(),
+        home:
+            initError != null ? BootErrorScreen(initError) : const AppShell(),
       ),
     ),
   );
 }
 
-class _ErrorScreen extends StatelessWidget {
-  const _ErrorScreen(this.message);
+/// Fallback surface shown when initialization (dotenv/Supabase) fails during
+/// boot. Public so the boot-failure path can be exercised in a smoke test.
+class BootErrorScreen extends StatelessWidget {
+  const BootErrorScreen(this.message, {super.key});
 
   final String message;
 
