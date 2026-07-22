@@ -305,22 +305,26 @@ one page.
 
 ## 10. Roadmap (dependency-ordered)
 
-| Phase | Scope | Priority |
-|---|---|---|
-| 0 | Current deployed baseline + known defects (D1–D8) recorded | — |
-| 1 | Test gate repair, backup, migration safety | Must |
-| 2 | Owner authentication, ownership backfill, RLS, scoped RPCs | Must |
-| 3 | Secure Gemini Edge Function + key rotation | Must |
-| 4 | Cash/account correctness + Family-support semantics | Must |
-| 5 | Primary-label auditing + label lifecycle | Must |
-| 6 | Goals redesign | Must |
-| 7 | Pagination, aggregate RPCs, snapshots, performance | Must |
-| 8 | Briefing slim-down + four-chart Analytics tab | Must |
-| 9 | Upcoming obligations + deterministic cash-flow forecast | Should |
-| 10 | Quick capture + merchant normalization | Should |
-| 11 | Installed-PWA resume resilience (browser-agnostic) + production acceptance | Must |
-| — | Monthly digest, automated backup | Later |
-| — | Google Pay screenshot import | Future backlog |
+| Phase | Scope | Priority | Status (this branch) |
+|---|---|---|---|
+| 0 | Current deployed baseline + known defects (D1–D8) recorded | — | done |
+| 1 | Test gate repair, backup, migration safety | Must | done |
+| 2 | Owner authentication, ownership backfill, RLS, scoped RPCs | Must | done |
+| 3 | Secure Gemini Edge Function + key rotation | Must | done |
+| 4 | Cash/account correctness + Family-support semantics | Must | done |
+| 5 | Primary-label auditing + label lifecycle | Must | done |
+| 6 | Goals redesign | Must | done |
+| 7 | Pagination, aggregate RPCs, snapshots, performance | Must | done |
+| 8 | Briefing slim-down + four-chart Analytics tab | Must | done |
+| 9 | Upcoming obligations + deterministic cash-flow forecast | Should | done |
+| 10 | Quick capture + merchant normalization | Should | done |
+| 11 | Installed-PWA resume resilience (browser-agnostic) + production acceptance | Must | code complete; 11.6/11.9 acceptance are on-device owner steps |
+| — | Monthly digest, automated backup | Later | not started |
+| — | Google Pay screenshot import | Future backlog | not started |
+
+**Defects:** D1 (code done; historical reassignment is a live owner step),
+D2/D3/D5/D6/D7 done, D4 fixed in Phase 7, D8 addressed in Phase 11 (bounded
+WebGL-loss recovery) pending on-device confirmation.
 
 The detailed checklist is `docs/TODO.md`.
 

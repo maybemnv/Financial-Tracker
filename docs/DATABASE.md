@@ -449,3 +449,30 @@ Pay import), holdings/market-price tables, event-sourcing tables.
 | `MonthlySnapshot` | `lib/models/monthly_snapshot.dart` | `monthly_snapshots` |
 | `TransactionLabel` | `lib/models/transaction_label.dart` | `labels` (+ `transaction_labels` join) |
 | (attachments) | _future backlog_ | Deliberately absent. Would only serve the deferred Google Pay screenshot import; not added in the current phases. |
+
+---
+
+## Schema additions by migration (Phases 2–11)
+
+All migrations are additive and forward-only. Ownership and RLS are the primary
+access control; every privileged function re-checks `app_is_owner()`.
+
+| # | Adds | Key invariant |
+|---|---|---|
+| `00006` | `app_owner`, `app_is_owner()` | At most one active owner (partial unique index). Fails closed until seeded. |
+| `00007–00008` | `user_id` on every table + backfill + NOT NULL, owner-scoped composite keys | No unowned rows; label name and snapshot period unique **per owner**. |
+| `00009` | Owner-only RLS replacing `anon_all`; DELETE revoked from client roles | No physical delete path for `authenticated`. |
+| `00010` | `fn_account_balance` / `fn_net_worth` owner-scoped | Balances are derived, never stored. |
+| `00011` | `account_id NOT NULL`; `TRANSFER TO OTHER → FAMILY` rename; `exclude_from_personal_spend` | Exactly one label may be excluded (single-exclusion trigger). |
+| `00012` | `transactions.primary_label_id`; label lifecycle (`status`, `merged_into_id`, timestamps); `label_audit` | Active-name uniqueness only among assignable labels. |
+| `00013`/`00016` | Transaction + label RPCs | One audit entry per logical change; labelled expense needs a primary. |
+| `00014`/`00015` | `goals.status`/`target_date`; `goal_contributions`; goal RPCs | Stored allocation = sum of contributions (`assert_goal_allocation_drift`). Never touches account balances. |
+| `00017` | Paging + aggregate RPCs; effective-date and merchant indexes | A page is not the ledger — aggregates are whole-ledger. |
+| `00018` | `fn_net_worth_asof`; `monthly_snapshots.net_worth_basis`/`calculated_at`/`calc_version`; `app_effective_primary`/`app_effective_excluded`; `get_analytics` | Only `as_of_month_end` snapshots are chartable; legacy values are marked, not fabricated. |
+| `00019` | `account_id`/`is_paused`/`confirmed_*` on recurring tables; `confirm_obligation`; `get_forecast_inputs` | A confirmed obligation links its ledger row, so the forecast never double-counts. |
+| `00020` | `merchant_aliases`; `app_canonical_merchant`; `get_top_merchants` | Read-time only; raw merchant on each row is never rewritten. |
+
+The effective-primary rule (explicit `primary_label_id`, else the sole attached
+label) is defined once in `app_effective_primary` and mirrored by
+`Transaction.primaryLabel` in Dart, so attribution cannot drift between the
+briefing, analytics, label-usage, and forecast surfaces.
