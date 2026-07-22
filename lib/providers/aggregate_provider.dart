@@ -27,17 +27,8 @@ final briefingSummaryProvider =
   });
 });
 
-/// All account balances in one call rather than one RPC per account.
-final accountBalancesProvider =
-    FutureProvider<List<AccountBalance>>((ref) async {
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
-
-  return Perf.timeAsync('account_balances', () async {
-    final result =
-        await SupabaseService().client.rpc('get_account_balances');
-    return AccountBalance.listFromRpc(Map<String, dynamic>.from(result as Map));
-  });
-});
+// Account balances live in account_provider.accountBalancesProvider — one
+// provider per concept, so no screen has to know which of two to watch.
 
 /// Whole-ledger label usage, keyed by label id.
 final labelUsageStatsProvider =

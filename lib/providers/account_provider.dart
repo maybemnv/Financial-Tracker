@@ -1,9 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/aggregates.dart';
 import '../core/supabase.dart';
 import '../models/account.dart';
-import 'transaction_provider.dart';
+import 'ledger_provider.dart';
 
 class AccountNotifier extends StateNotifier<AsyncValue<List<Account>>> {
   AccountNotifier() : super(const AsyncValue.loading());
@@ -65,41 +66,30 @@ final accountProvider =
   return notifier;
 });
 
-/// Derived balance per account via the `fn_account_balance` RPC. Watches the
-/// transaction feed so balances refresh whenever money moves.
+/// Derived balance per account, in ONE call (`get_account_balances`).
+///
+/// Was one `fn_account_balance` round trip per account, driven off the
+/// full-ledger provider. Both are gone: the batch RPC replaces the N calls, and
+/// watching the paged ledger's row count replaces pulling every transaction
+/// into memory just to know when a balance might have changed.
 final accountBalancesProvider =
     FutureProvider<Map<String, double>>((ref) async {
-  ref.watch(transactionProvider);
-  final accountsAsync = ref.watch(accountProvider);
-  return accountsAsync.maybeWhen(
-    data: (accounts) async {
-      final client = SupabaseService().client;
-      final balances = <String, double>{};
-      for (final a in accounts) {
-        if (a.id == null) continue;
-        try {
-          final value = await client
-              .rpc('fn_account_balance', params: {'p_account_id': a.id});
-          balances[a.id!] = (value as num?)?.toDouble() ?? 0;
-        } catch (_) {
-          balances[a.id!] = 0;
-        }
-      }
-      return balances;
-    },
-    orElse: () => <String, double>{},
+  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  final result = await SupabaseService().client.rpc('get_account_balances');
+  final balances = AccountBalance.listFromRpc(
+    Map<String, dynamic>.from(result as Map),
   );
+  return {for (final b in balances) b.id: b.balance};
 });
 
-/// Net worth across all accounts via `fn_net_worth()`. Watches transactions so
-/// the figure refreshes after edits, transfers, and investment moves.
+/// Net worth across all accounts via `fn_net_worth()`.
+///
+/// Errors propagate. The previous version swallowed them and returned 0, which
+/// renders as a real, catastrophically wrong net worth rather than as a
+/// failure — the same "failure becomes an authoritative answer" bug the Agent
+/// tools had.
 final netWorthProvider = FutureProvider<double>((ref) async {
-  ref.watch(accountProvider);
-  ref.watch(transactionProvider);
-  try {
-    final value = await SupabaseService().client.rpc('fn_net_worth');
-    return (value as num?)?.toDouble() ?? 0;
-  } catch (_) {
-    return 0;
-  }
+  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  final value = await SupabaseService().client.rpc('fn_net_worth');
+  return (value as num?)?.toDouble() ?? 0;
 });
