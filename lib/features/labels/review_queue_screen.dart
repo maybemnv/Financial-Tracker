@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme.dart';
 import '../../models/transaction.dart';
 import '../../models/transaction_label.dart';
+import '../../core/ledger_query.dart';
+import '../../providers/aggregate_provider.dart';
 import '../../providers/label_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../widgets/newsprint_primitives.dart';
@@ -33,8 +35,18 @@ class _ReviewQueueScreenState extends ConsumerState<ReviewQueueScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final queue = ref.watch(reviewQueueProvider);
-    final rows = _showUnlabeled ? queue.unlabeled : queue.needsPrimary;
+    // Server-side buckets. Deriving these from loaded rows would only ever
+    // surface unresolved rows inside the current page, and the ones needing
+    // review are usually the oldest — precisely what a first page excludes.
+    final filter = _showUnlabeled
+        ? UnresolvedFilter.unlabeled
+        : UnresolvedFilter.needsPrimary;
+    final bucket = ref.watch(reviewBucketProvider(filter));
+    final summary = ref.watch(briefingSummaryProvider(null));
+    final needsPrimaryCount =
+        summary.maybeWhen(data: (s) => s.needsPrimaryCount, orElse: () => 0);
+    final unlabeledCount =
+        summary.maybeWhen(data: (s) => s.unlabeledCount, orElse: () => 0);
 
     return Scaffold(
       backgroundColor: AppTheme.scaffold,
@@ -46,11 +58,11 @@ class _ReviewQueueScreenState extends ConsumerState<ReviewQueueScreen> {
             segments: [
               ButtonSegment(
                 value: false,
-                label: Text('Needs primary (${queue.needsPrimary.length})'),
+                label: Text('Needs primary ($needsPrimaryCount)'),
               ),
               ButtonSegment(
                 value: true,
-                label: Text('Unlabeled (${queue.unlabeled.length})'),
+                label: Text('Unlabeled ($unlabeledCount)'),
               ),
             ],
             selected: {_showUnlabeled},
@@ -67,26 +79,50 @@ class _ReviewQueueScreenState extends ConsumerState<ReviewQueueScreen> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),
-          if (rows.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              child: Center(
+          ...bucket.when(
+            loading: () => const [
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+            error: (e, _) => [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
                 child: NewsprintNotice(
-                  icon: Icons.check_circle_outline_rounded,
-                  title: _showUnlabeled ? 'All labelled' : 'Nothing to review',
-                  message: _showUnlabeled
-                      ? 'Every expense carries at least one label.'
-                      : 'Every labelled expense has a primary label, so all '
-                          'spend is attributed exactly once.',
-                  color: AppTheme.primaryGreen,
+                  icon: Icons.error_outline_rounded,
+                  title: 'Review queue unavailable',
+                  message: e is PostgrestException ? e.message : '$e',
+                  color: AppTheme.redAccent,
                 ),
               ),
-            )
-          else
-            ...rows.map((tx) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _ReviewRow(transaction: tx),
-                )),
+            ],
+            data: (rows) => rows.isEmpty
+                ? [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: NewsprintNotice(
+                          icon: Icons.check_circle_outline_rounded,
+                          title: _showUnlabeled
+                              ? 'All labelled'
+                              : 'Nothing to review',
+                          message: _showUnlabeled
+                              ? 'Every expense carries at least one label.'
+                              : 'Every labelled expense has a primary label, '
+                                  'so all spend is attributed exactly once.',
+                          color: AppTheme.primaryGreen,
+                        ),
+                      ),
+                    ),
+                  ]
+                : rows
+                    .map((tx) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _ReviewRow(transaction: tx),
+                        ))
+                    .toList(),
+          ),
         ],
       ),
     );

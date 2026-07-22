@@ -30,11 +30,11 @@ class LabelUsage {
   int get contextualCount => attachedCount - primaryCount;
 }
 
-/// Usage counts per label id, derived from the loaded ledger.
+/// Usage counts per label id for a given set of transactions.
 ///
-/// Deliberately computed from transactions already in memory rather than a new
-/// aggregate RPC: Phase 7 replaces the full-ledger provider, and adding a
-/// server round-trip here would be thrown away with it.
+/// Phase 7 moved the app's real counts server-side (`get_label_usage`), because
+/// a page is not the ledger. This stays as the reference implementation the SQL
+/// is checked against, and documents the attribution rule in one readable place.
 Map<String, LabelUsage> computeLabelUsage(Iterable<Transaction> transactions) {
   final attached = <String, int>{};
   final primary = <String, int>{};

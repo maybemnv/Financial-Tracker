@@ -1,10 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../core/label_usage.dart';
 import '../core/supabase.dart';
 import '../models/transaction_label.dart';
-import 'transaction_provider.dart';
 
 class LabelNotifier extends StateNotifier<AsyncValue<List<TransactionLabel>>> {
   LabelNotifier() : super(const AsyncValue.loading());
@@ -129,14 +127,7 @@ final assignableLabelProvider = Provider<List<TransactionLabel>>((ref) {
   return labels.where((l) => l.isAssignable).toList(growable: false);
 });
 
-/// Per-label usage counts derived from the loaded ledger.
-final labelUsageProvider = Provider<Map<String, LabelUsage>>((ref) {
-  final transactions = ref.watch(transactionProvider).valueOrNull ?? const [];
-  return computeLabelUsage(transactions);
-});
-
-/// Expenses still awaiting classification.
-final reviewQueueProvider = Provider<LabelReviewQueue>((ref) {
-  final transactions = ref.watch(transactionProvider).valueOrNull ?? const [];
-  return LabelReviewQueue.from(transactions);
-});
+// Per-label usage counts and the review queue moved to owner-scoped aggregate
+// RPCs in Phase 7 (`labelUsageStatsProvider`, `reviewBucketProvider` in
+// aggregate_provider.dart). Deriving them from provider state would now count
+// only the loaded page, silently understating both.

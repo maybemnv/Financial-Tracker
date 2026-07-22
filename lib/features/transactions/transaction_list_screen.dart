@@ -7,7 +7,10 @@ import '../../models/account.dart';
 import '../../models/transaction.dart';
 import '../../models/transaction_label.dart';
 import '../../providers/account_provider.dart';
+import '../../core/ledger_query.dart';
+import '../../providers/aggregate_provider.dart';
 import '../../providers/label_provider.dart';
+import '../../providers/ledger_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/newsprint_primitives.dart';
@@ -28,12 +31,42 @@ class TransactionListScreen extends ConsumerStatefulWidget {
 }
 
 class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
-  String _accountFilter = _allAccounts;
-  String? _labelFilter;
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  /// Requests the next page while the user is still a screen away from the
+  /// end, so paging is invisible. The notifier suppresses concurrent calls,
+  /// so firing on every scroll frame is safe.
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 600) {
+      ref.read(ledgerProvider.notifier).loadMore();
+    }
+  }
+
+  void _updateQuery(LedgerQuery Function(LedgerQuery) change) {
+    final notifier = ref.read(ledgerProvider.notifier);
+    notifier.setQuery(change(ref.read(ledgerProvider).query));
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final transactionsAsync = ref.watch(transactionProvider);
+    final ledger = ref.watch(ledgerProvider);
     final accountsAsync = ref.watch(accountProvider);
     final labelsAsync = ref.watch(labelProvider);
 
@@ -46,8 +79,10 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
           accountsAsync.maybeWhen(
             data: (accounts) => _AccountBar(
               accounts: accounts,
-              selected: _accountFilter,
-              onSelected: (value) => setState(() => _accountFilter = value),
+              selected: ledger.query.accountId ?? _allAccounts,
+              onSelected: (value) => _updateQuery((q) => value == _allAccounts
+                  ? q.copyWith(clearAccount: true)
+                  : q.copyWith(accountId: value)),
             ),
             orElse: () => const SizedBox.shrink(),
           ),
@@ -59,37 +94,21 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
               labels: labels
                   .where((l) => l.isActive || l.isArchived)
                   .toList(growable: false),
-              selectedId: _labelFilter,
-              onSelected: (id) => setState(() => _labelFilter = id),
+              selectedId: ledger.query.labelId,
+              onSelected: (id) => _updateQuery((q) => id == null
+                  ? q.copyWith(clearLabel: true)
+                  : q.copyWith(labelId: id)),
               onCreate: _createLabel,
             ),
             orElse: () => const SizedBox.shrink(),
           ),
           const _ReviewBanner(),
-          Expanded(
-            child: transactionsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(
-                child: NewsprintNotice(
-                  icon: Icons.error_outline_rounded,
-                  title: 'Ledger feed interrupted',
-                  message: '$error',
-                  color: AppTheme.redAccent,
-                ),
-              ),
-              data: (transactions) => _LedgerList(
-                transactions: transactions.where((transaction) {
-                  final accountMatches = _accountFilter == _allAccounts ||
-                      transaction.accountId == _accountFilter;
-                  final labelMatches = _labelFilter == null ||
-                      transaction.labels.any((label) => label.id == _labelFilter);
-                  return accountMatches && labelMatches;
-                }).toList(),
-                onRefresh: () => ref.read(transactionProvider.notifier).load(),
-                onLabelTap: (label) => setState(() => _labelFilter = label.id),
-              ),
-            ),
-          ),
+          Expanded(child: _LedgerBody(
+            ledger: ledger,
+            scrollController: _scrollController,
+            onLabelTap: (label) =>
+                _updateQuery((q) => q.copyWith(labelId: label.id)),
+          )),
         ],
       ),
     );
@@ -123,7 +142,9 @@ class _ReviewBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pending = ref.watch(reviewQueueProvider).needsPrimary.length;
+    // Whole-ledger count from the aggregate: the rows needing review are
+    // usually old ones, which the first page does not contain.
+    final pending = ref.watch(needsPrimaryCountProvider);
     if (pending == 0) return const SizedBox.shrink();
 
     return Padding(
@@ -156,6 +177,91 @@ class _ReviewBanner extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// Paged ledger body: first-page load, error, empty, rows, and the
+/// next-page footer. A next-page failure keeps the rows already on screen and
+/// offers a localized retry instead of blanking the list (TODO 7.2).
+class _LedgerBody extends ConsumerWidget {
+  const _LedgerBody({
+    required this.ledger,
+    required this.scrollController,
+    required this.onLabelTap,
+  });
+
+  final LedgerState ledger;
+  final ScrollController scrollController;
+  final ValueChanged<TransactionLabel> onLabelTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ledger.isLoadingFirstPage) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (ledger.error != null) {
+      return Center(
+        child: NewsprintNotice(
+          icon: Icons.error_outline_rounded,
+          title: 'Ledger feed interrupted',
+          message: '${ledger.error}',
+          color: AppTheme.redAccent,
+        ),
+      );
+    }
+
+    return _LedgerList(
+      transactions: ledger.rows,
+      scrollController: scrollController,
+      onRefresh: () => ref.read(ledgerProvider.notifier).refresh(),
+      onLabelTap: onLabelTap,
+      footer: _PageFooter(ledger: ledger),
+    );
+  }
+}
+
+class _PageFooter extends ConsumerWidget {
+  const _PageFooter({required this.ledger});
+
+  final LedgerState ledger;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ledger.pageError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          children: [
+            Text('Could not load more.',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 6),
+            OutlinedButton(
+              onPressed: () => ref.read(ledgerProvider.notifier).loadMore(),
+              child: const Text('RETRY'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (ledger.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: SizedBox(
+              width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      );
+    }
+    if (!ledger.hasMore && ledger.rows.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: Text('End of ledger',
+              style: Theme.of(context).textTheme.labelSmall),
+        ),
+      );
+    }
+    return const SizedBox(height: 8);
   }
 }
 
@@ -280,11 +386,17 @@ class _LedgerList extends StatelessWidget {
     required this.transactions,
     required this.onRefresh,
     required this.onLabelTap,
+    this.scrollController,
+    this.footer,
   });
 
   final List<Transaction> transactions;
   final Future<void> Function() onRefresh;
   final ValueChanged<TransactionLabel> onLabelTap;
+  final ScrollController? scrollController;
+
+  /// Next-page spinner, retry, or end-of-list marker.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -295,29 +407,32 @@ class _LedgerList extends StatelessWidget {
         subtitle: 'Clear a filter or add a movement to the ledger.',
       );
     }
-    final sorted = [...transactions]
-      ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+    // The server already returns rows in (effective date DESC, id DESC)
+    // order; re-sorting here would fight the cursor and could reorder rows
+    // across a page boundary.
     final grouped = <DateTime, List<Transaction>>{};
-    for (final transaction in sorted) {
+    for (final transaction in transactions) {
       final date = transaction.effectiveDate;
       final key = DateTime(date.year, date.month, date.day);
       grouped.putIfAbsent(key, () => []).add(transaction);
     }
     final items = <Object>[];
-    final dates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-    for (final date in dates) {
-      items.add(date);
-      items.addAll(grouped[date]!);
+    for (final entry in grouped.entries) {
+      items.add(entry.key);
+      items.addAll(entry.value);
     }
+    if (footer != null) items.add(footer!);
 
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView.builder(
+        controller: scrollController,
         padding: EdgeInsets.zero,
         itemCount: items.length,
         itemBuilder: (context, index) {
           final item = items[index];
           if (item is DateTime) return _DateHeader(date: item);
+          if (item is Widget) return item;
           return _TransactionCard(
             tx: item as Transaction,
             onLabelTap: onLabelTap,

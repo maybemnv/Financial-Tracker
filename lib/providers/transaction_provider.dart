@@ -7,6 +7,7 @@ import '../core/dedup.dart';
 import '../core/supabase.dart';
 import '../models/transaction.dart';
 import '../models/transaction_label.dart';
+import 'ledger_provider.dart';
 
 /// Loads, mutates, and live-syncs transactions.
 ///
@@ -14,7 +15,14 @@ import '../models/transaction_label.dart';
 /// SOFT delete (`is_deleted = true`, never `DELETE`); [update] appends an
 /// `{old, new, edited_at}` entry to the immutable `edit_history` JSONB.
 class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
-  TransactionNotifier() : super(const AsyncValue.loading());
+  TransactionNotifier(this._ref) : super(const AsyncValue.loading());
+
+  final Ref _ref;
+
+  /// Pulls the paged ledger back to a fresh first page after a write. The
+  /// Realtime event would eventually do this, but the owner's own edit must be
+  /// visible immediately, not on a round trip through the server.
+  void _refreshLedger() => _ref.read(ledgerProvider.notifier).refresh();
 
   static final Random _random = Random.secure();
 
@@ -84,6 +92,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     );
     await _saveThroughRpc(payload);
     await load();
+    _refreshLedger();
     return true;
   }
 
@@ -95,6 +104,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
     if (tx.id == null) return;
     await _saveThroughRpc(tx);
     await load();
+    _refreshLedger();
   }
 
   /// The single audited write path for a transaction and its labels
@@ -138,6 +148,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
       'deleted_at': DateTime.now().toIso8601String(),
     }).eq('id', id);
     await load();
+    _refreshLedger();
   }
 
   /// Records a double-entry transfer with explicit outflow and inflow legs.
@@ -227,6 +238,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
       }
     }
     await load();
+    _refreshLedger();
   }
 
   /// Attaches labels to a row that was just inserted and therefore has none.
@@ -285,10 +297,16 @@ class TransactionNotifier extends StateNotifier<AsyncValue<List<Transaction>>> {
   }
 }
 
+/// Full-ledger read + the write path.
+///
+/// The read half is legacy: Phase 7 moved the ledger onto [ledgerProvider], and
+/// Briefing is the last consumer of the full list — Phase 8 retires it. Because
+/// it is only watched by the Briefing tab, and tabs are built lazily, opening
+/// the app no longer triggers a whole-table read.
 final transactionProvider =
     StateNotifierProvider<TransactionNotifier, AsyncValue<List<Transaction>>>(
         (ref) {
-  final notifier = TransactionNotifier();
+  final notifier = TransactionNotifier(ref);
   notifier.load();
   notifier.subscribe();
   ref.onDispose(() => notifier.unsubscribe());

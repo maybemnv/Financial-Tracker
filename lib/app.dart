@@ -25,6 +25,11 @@ class AppTabs extends StatefulWidget {
 class _AppTabsState extends State<AppTabs> {
   int _currentIndex = 0;
 
+  /// Tabs the owner has actually opened. An unvisited tab is never built, so
+  /// its providers are never constructed and it issues no queries (TODO 7.6) —
+  /// this is what keeps Briefing's full-ledger read off the startup path.
+  final Set<int> _visited = {0};
+
   static const _labels = [
     'Ledger',
     'Briefing',
@@ -32,19 +37,22 @@ class _AppTabsState extends State<AppTabs> {
     'Agent Desk',
   ];
 
-  final _screens = const [
-    TransactionListScreen(),
-    DashboardScreen(),
-    GoalsScreen(),
-    AgentChatScreen(),
-  ];
+  Widget _screenFor(int index) => switch (index) {
+        0 => const TransactionListScreen(),
+        1 => const DashboardScreen(),
+        2 => const GoalsScreen(),
+        _ => const AgentChatScreen(),
+      };
 
   @override
   Widget build(BuildContext context) {
     return NewsprintShell(
       currentIndex: _currentIndex,
       currentLabel: _labels[_currentIndex],
-      onTabSelected: (index) => setState(() => _currentIndex = index),
+      onTabSelected: (index) => setState(() {
+        _currentIndex = index;
+        _visited.add(index);
+      }),
       onInvoiceTap: widget.onInvoiceTap,
       onSignOut: widget.onSignOut,
       onManageLabels: () => Navigator.push(
@@ -60,9 +68,17 @@ class _AppTabsState extends State<AppTabs> {
               child: const Icon(Icons.add_rounded),
             )
           : null,
+      // IndexedStack keeps a visited tab's scroll position and state; the
+      // placeholder means an unvisited one costs nothing until first opened.
       child: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: [
+          for (var i = 0; i < _labels.length; i++)
+            if (_visited.contains(i))
+              _screenFor(i)
+            else
+              const SizedBox.shrink(),
+        ],
       ),
     );
   }

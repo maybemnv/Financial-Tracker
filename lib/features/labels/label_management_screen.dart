@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/aggregates.dart';
 import '../../core/label_usage.dart';
 import '../../core/theme.dart';
 import '../../models/transaction_label.dart';
+import '../../providers/aggregate_provider.dart';
 import '../../providers/label_provider.dart';
 import '../../widgets/newsprint_primitives.dart';
 
@@ -30,7 +32,9 @@ class _LabelManagementScreenState
   @override
   Widget build(BuildContext context) {
     final labelsAsync = ref.watch(labelProvider);
-    final usage = ref.watch(labelUsageProvider);
+    // Whole-ledger counts. Deriving these from loaded rows would understate
+    // what a rename or merge affects now that the ledger is paged.
+    final usageAsync = ref.watch(labelUsageStatsProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.scaffold,
@@ -89,7 +93,10 @@ class _LabelManagementScreenState
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _LabelRow(
                         label: label,
-                        usage: usage[label.id] ?? const LabelUsage(),
+                        // null = not counted yet. Never defaulted to zero:
+                        // that would read as "unreferenced" and offer DELETE
+                        // on a label the whole ledger depends on.
+                        usage: usageAsync.valueOrNull?[label.id],
                         allLabels: labels,
                       ),
                     )),
@@ -109,7 +116,9 @@ class _LabelRow extends ConsumerStatefulWidget {
   });
 
   final TransactionLabel label;
-  final LabelUsage usage;
+
+  /// Whole-ledger usage, or null while it is still being counted.
+  final LabelUsageStat? usage;
   final List<TransactionLabel> allLabels;
 
   @override
@@ -173,7 +182,9 @@ class _LabelRowState extends ConsumerState<_LabelRow> {
                   onPressed: _busy ? null : () => _setStatus('active'),
                   child: const Text('RESTORE'),
                 ),
-              if (usage.isUnreferenced)
+              // Only once usage is known: delete_label raises for a
+              // referenced label, and offering it blind invites the error.
+              if (usage != null && usage.isUnreferenced)
                 TextButton(
                   onPressed: _busy ? null : _delete,
                   child: const Text('DELETE'),
@@ -185,7 +196,8 @@ class _LabelRowState extends ConsumerState<_LabelRow> {
     );
   }
 
-  String _usageSummary(LabelUsage usage) {
+  String _usageSummary(LabelUsageStat? usage) {
+    if (usage == null) return 'Counting usage…';
     if (usage.isUnreferenced) {
       return 'Not used by any transaction — safe to delete.';
     }
@@ -220,8 +232,8 @@ class _LabelRowState extends ConsumerState<_LabelRow> {
             const SizedBox(height: 10),
             Text(
               'The label keeps its identity, so all '
-              '${widget.usage.attachedCount} existing transactions follow the '
-              'new name. Nothing is re-categorised.',
+              '${widget.usage?.attachedCount ?? 0} existing transactions follow '
+              'the new name. Nothing is re-categorised.',
               style: Theme.of(ctx).textTheme.bodySmall,
             ),
           ],
@@ -261,9 +273,9 @@ class _LabelRowState extends ConsumerState<_LabelRow> {
     final ok = await _confirm(
       title: 'Merge into ${target.name}?',
       message:
-          'All ${widget.usage.attachedCount} transactions on "${widget.label.name}" '
-          'move to "${target.name}", including the ${widget.usage.primaryCount} '
-          'that count under it (${_currency.format(widget.usage.attributedAmount)}). '
+          'All ${widget.usage?.attachedCount ?? 0} transactions on "${widget.label.name}" '
+          'move to "${target.name}", including the ${widget.usage?.primaryCount ?? 0} '
+          'that count under it (${_currency.format(widget.usage?.attributedAmount ?? 0)}). '
           '"${widget.label.name}" is then marked merged. This cannot be undone.',
       confirmLabel: 'MERGE',
     );
@@ -280,7 +292,7 @@ class _LabelRowState extends ConsumerState<_LabelRow> {
         title: 'Archive ${widget.label.name}?',
         message:
             'It stops appearing when labelling new transactions. The '
-            '${widget.usage.attachedCount} that already use it keep it, and '
+            '${widget.usage?.attachedCount ?? 0} that already use it keep it, and '
             'reports are unchanged. You can restore it later.',
         confirmLabel: 'ARCHIVE',
       );
