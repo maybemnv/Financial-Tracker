@@ -9,6 +9,7 @@ import 'features/dashboard/dashboard_screen.dart';
 import 'features/analytics/analytics_screen.dart';
 import 'features/goals/goals_screen.dart';
 import 'features/invoices/invoice_sidebar.dart';
+import 'features/transactions/quick_capture_sheet.dart';
 import 'features/labels/label_management_screen.dart';
 import 'features/transactions/transaction_list_screen.dart';
 import 'widgets/newsprint_shell.dart';
@@ -70,12 +71,31 @@ class _AppTabsState extends State<AppTabs> {
         MaterialPageRoute(builder: (_) => const LabelManagementScreen()),
       ),
       floatingActionButton: _currentIndex == 0
-          ? FloatingActionButton(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AddTransactionScreen()),
-              ),
-              child: const Icon(Icons.add_rounded),
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Quick capture: one field for routine cash. The full form is
+                // still one tap away for transfers, investments, and edits.
+                FloatingActionButton.small(
+                  heroTag: 'quick',
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (_) => const QuickCaptureSheet(),
+                  ),
+                  child: const Icon(Icons.bolt_rounded),
+                ),
+                const SizedBox(height: 12),
+                FloatingActionButton(
+                  heroTag: 'full',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const AddTransactionScreen()),
+                  ),
+                  child: const Icon(Icons.add_rounded),
+                ),
+              ],
             )
           : null,
       // IndexedStack keeps a visited tab's scroll position and state; the

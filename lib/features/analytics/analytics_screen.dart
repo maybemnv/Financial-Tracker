@@ -10,6 +10,7 @@ import '../../providers/ledger_provider.dart';
 import '../../widgets/newsprint_primitives.dart';
 import '../labels/review_queue_screen.dart';
 import 'analytics_charts.dart';
+import 'merchant_alias_sheet.dart';
 import 'obligations_view.dart';
 
 final _currency =
@@ -225,23 +226,38 @@ class _SectionBar extends StatelessWidget {
 
 /// Non-chart companions (8.7): top merchants today; recurring obligations
 /// arrive with Phase 9.
-class _Lists extends StatelessWidget {
+class _Lists extends ConsumerWidget {
   const _Lists({required this.bundle});
 
   final AnalyticsBundle bundle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Alias-normalized, so the same shop under several spellings rolls up.
+    final merchants = ref.watch(topMerchantsProvider).valueOrNull ??
+        bundle.topMerchants;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const NewsprintSectionTitle(label: 'Top merchants'),
+        Row(
+          children: [
+            const Expanded(child: NewsprintSectionTitle(label: 'Top merchants')),
+            TextButton(
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => const MerchantAliasSheet(),
+              ),
+              child: const Text('ALIASES'),
+            ),
+          ],
+        ),
         const SizedBox(height: 6),
-        if (bundle.topMerchants.isEmpty)
+        if (merchants.isEmpty)
           Text('No spending in this period.',
               style: Theme.of(context).textTheme.bodySmall)
         else
-          ...bundle.topMerchants.map(
+          ...merchants.map(
             (m) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(

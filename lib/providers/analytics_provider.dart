@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/analytics_types.dart';
 import '../core/perf.dart';
 import '../core/supabase.dart';
+import 'merchant_alias_provider.dart';
 import 'ledger_provider.dart';
 
 /// The active analytics selection. Held separately from the data so changing
@@ -32,4 +33,20 @@ final analyticsProvider = FutureProvider<AnalyticsBundle>((ref) async {
       now: now,
     );
   });
+});
+
+/// Alias-normalized top merchants (Phase 10.2). Separate from the analytics
+/// bundle's raw list so the same shop under several spellings totals as one
+/// once aliases exist. Watches the alias set so a new rule reflows immediately.
+final topMerchantsProvider = FutureProvider<List<MerchantTotal>>((ref) async {
+  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  ref.watch(merchantAliasProvider);
+  final query = ref.watch(analyticsQueryProvider);
+  final result = await SupabaseService().client.rpc('get_top_merchants', params: {
+    'p_months': query.period.monthsAsOf(DateTime.now()),
+  });
+  final map = Map<String, dynamic>.from(result as Map);
+  return (map['merchants'] as List? ?? const [])
+      .map((m) => MerchantTotal.fromJson(Map<String, dynamic>.from(m as Map)))
+      .toList();
 });
