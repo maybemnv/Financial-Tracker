@@ -501,7 +501,7 @@ BEGIN
   UPDATE transactions t
   SET primary_label_id = tl.label_id
   FROM (
-    SELECT transaction_id, MIN(label_id) AS label_id, COUNT(*) AS n
+    SELECT transaction_id, (MIN(label_id::text)::uuid) AS label_id, COUNT(*) AS n
     FROM transaction_labels
     GROUP BY transaction_id
     HAVING COUNT(*) = 1

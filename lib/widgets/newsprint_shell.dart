@@ -15,6 +15,7 @@ class NewsprintShell extends StatelessWidget {
     required this.child,
     this.floatingActionButton,
     this.onSignOut,
+    this.onManageLabels,
   });
 
   final int currentIndex;
@@ -24,6 +25,7 @@ class NewsprintShell extends StatelessWidget {
   final Widget child;
   final Widget? floatingActionButton;
   final VoidCallback? onSignOut;
+  final VoidCallback? onManageLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +76,16 @@ class NewsprintShell extends StatelessWidget {
                                 letterSpacing: 1.2,
                               ),
                         ),
+                        if (onManageLabels != null)
+                          IconButton(
+                            onPressed: onManageLabels,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.only(left: 8),
+                            constraints: const BoxConstraints(),
+                            tooltip: 'Manage labels',
+                            icon: const Icon(Icons.sell_outlined,
+                                size: 18, color: AppTheme.paperMuted),
+                          ),
                         if (onSignOut != null)
                           IconButton(
                             onPressed: onSignOut,

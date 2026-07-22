@@ -12,6 +12,7 @@ import '../../providers/transaction_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/newsprint_primitives.dart';
 import '../../widgets/transaction_label_widgets.dart';
+import '../labels/review_queue_screen.dart';
 
 final _currency =
     NumberFormat.currency(symbol: '\u20B9', decimalDigits: 2, locale: 'en_IN');
@@ -51,14 +52,20 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
             orElse: () => const SizedBox.shrink(),
           ),
           labelsAsync.maybeWhen(
+            // Merged and deleted labels stay readable for historical
+            // attribution but are noise as filters; archived ones remain
+            // useful for finding older transactions.
             data: (labels) => _LabelBar(
-              labels: labels,
+              labels: labels
+                  .where((l) => l.isActive || l.isArchived)
+                  .toList(growable: false),
               selectedId: _labelFilter,
               onSelected: (id) => setState(() => _labelFilter = id),
               onCreate: _createLabel,
             ),
             orElse: () => const SizedBox.shrink(),
           ),
+          const _ReviewBanner(),
           Expanded(
             child: transactionsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -105,6 +112,50 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
         SnackBar(content: Text('Could not create label: $error')),
       );
     }
+  }
+}
+
+/// Surfaces unattributed spend where it is noticed. Only appears when there is
+/// something to fix — expenses carrying several labels with no primary, whose
+/// amount currently counts toward no category at all.
+class _ReviewBanner extends ConsumerWidget {
+  const _ReviewBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(reviewQueueProvider).needsPrimary.length;
+    if (pending == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Material(
+        color: AppTheme.paperAlt,
+        child: InkWell(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ReviewQueueScreen()),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                const Icon(Icons.rule_rounded, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '$pending expense${pending == 1 ? '' : 's'} '
+                    "need${pending == 1 ? 's' : ''} a primary label — "
+                    'until then the amount counts under no category.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, size: 18),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -689,8 +740,11 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
               labelsAsync.when(
                 loading: () => const LinearProgressIndicator(),
                 error: (_, __) => const Text('Labels are unavailable right now.'),
+                // Only assignable labels: save_transaction_with_labels rejects
+                // archived or merged ones, so offering them would be a trap.
                 data: (labels) => _LabelSelector(
-                  labels: labels,
+                  labels:
+                      labels.where((l) => l.isAssignable).toList(growable: false),
                   selected: _selectedLabels,
                   primaryLabelId: _primaryLabelId,
                   showPrimaryPicker: _isExpense,

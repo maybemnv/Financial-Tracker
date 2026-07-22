@@ -11,7 +11,7 @@
 DO $$
 DECLARE
   -- ▼▼▼ EDIT THIS ▼▼▼
-  v_email   text := 'you@example.com';
+  v_email   text := 'maybemnv@gmail.com';
   -- ▲▲▲ EDIT THIS ▲▲▲
   v_uid     uuid;
   v_matches int;

@@ -8,6 +8,7 @@ import 'features/auth/auth_controller.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/goals/goals_screen.dart';
 import 'features/invoices/invoice_sidebar.dart';
+import 'features/labels/label_management_screen.dart';
 import 'features/transactions/transaction_list_screen.dart';
 import 'widgets/newsprint_shell.dart';
 
@@ -46,6 +47,10 @@ class _AppTabsState extends State<AppTabs> {
       onTabSelected: (index) => setState(() => _currentIndex = index),
       onInvoiceTap: widget.onInvoiceTap,
       onSignOut: widget.onSignOut,
+      onManageLabels: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const LabelManagementScreen()),
+      ),
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
               onPressed: () => Navigator.push(

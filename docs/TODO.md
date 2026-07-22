@@ -461,13 +461,18 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 5: Primary labels, unified auditing, and label lifecycle
 
-> **Status (this branch):** the schema (`00012`) and the full owner-scoped RPC
+> **Status (this branch):** complete. The schema (`00012`) and the full RPC
 > layer (`00013`: `save_transaction_with_labels`, `rename_label`,
 > `set_label_status`, `merge_labels`, `delete_label`) are authored, each writing
 > exactly one audit entry. The model carries `primary_label_id` +
 > `PrimaryLabelStatus`, and reports are already double-count-safe (Phase 4). The
-> transaction-form primary picker, review queue, and label-management screen
-> (5.5, 5.11) plus wiring writes through the RPC remain UI work.
+> transaction form now writes through `save_transaction_with_labels` (never a
+> direct table write, since `00009` revokes DELETE), with a "counts under"
+> primary picker; `00016` corrected the RPC so an expense with no labels stays
+> valid and SMS provenance survives. `lib/core/label_usage.dart` derives usage
+> counts and the review queue as pure logic. The Review screen resolves
+> `Needs primary label` and `Unlabeled` expenses, and the Labels screen does
+> rename / archive / restore / merge / eligible-delete with impact summaries.
 
 ### 5.1 Add primary-label schema
 
