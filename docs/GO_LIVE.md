@@ -26,25 +26,22 @@ The `INSERT` is deliberately not part of the script: it needs your `auth.users`
 UUID, which only exists once you have signed in — which you now have. So this is
 the expected state at this point, not a misconfiguration.
 
-**Fix.** In the Supabase SQL Editor:
+**Fix.** Run `supabase/apply/01b_register_owner.sql` in the SQL Editor. Edit the
+single `v_email` line to your sign-in email and Run — it resolves your UUID
+itself, so there is nothing to hand-copy:
 
 ```sql
--- 1. Find your UUID (the account you just signed in with).
-SELECT id, email, created_at
-FROM auth.users
-ORDER BY created_at DESC;
+v_email text := 'you@example.com';   -- the email you got the magic link on
 ```
 
-Copy the `id` of the row whose `email` is the one you used, then:
+It refuses to guess: unknown email, duplicate accounts, or a different owner
+already registered each stop with a specific message instead of registering the
+wrong identity.
 
-```sql
--- 2. Register it as the owner.
-INSERT INTO app_owner (user_id, note)
-VALUES ('<paste-uuid-here>', 'production owner');
-
--- 3. Confirm exactly one active owner.
-SELECT user_id, note, is_active FROM app_owner WHERE is_active;
-```
+There is no dashboard UI for this — `app_owner` is a custom table, so
+Authentication → Users cannot set it. If you would rather not run a script, the
+**Table Editor → `app_owner` → Insert row** works too: paste the `id` from
+Authentication → Users into `user_id` and leave `is_active` as `true`.
 
 Then in the running app: **Sign out and sign in again**, or press **Retry**.
 The owner check is cached in the controller's state, so it will not re-run on

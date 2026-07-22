@@ -10,7 +10,8 @@ Run in this order:
 | # | File | What it does |
 |---|---|---|
 | 0 | `00_preflight.sql` | Read-only. Shows the one data condition that will stop part 2. |
-| 1 | `01_owner_registry.sql` | Migration `00006`, then you insert your owner UUID by hand. |
+| 1 | `01_owner_registry.sql` | Migration `00006` — creates `app_owner` and `app_is_owner()`. |
+| 1b | `01b_register_owner.sql` | Registers you as the owner. Edit one email line and run. |
 | 2 | `02_phase2_to_phase6.sql` | Migrations `00007`–`00016`. |
 | 3 | `03_verify.sql` | Read-only. Every row must read `OK`. |
 
