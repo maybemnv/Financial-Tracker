@@ -1,8 +1,8 @@
 # Changes — `Feat/prd-v2-security-correctness`
 
 Working log for the PRD v2 security + correctness roadmap (`docs/TODO.md`).
-13 commits ahead of `master`; 58 files changed, ~8,500 insertions.
-Gate status: `flutter analyze` clean, `flutter test` 52 passing.
+15 commits ahead of `master`.
+Gate status: `flutter analyze` clean, `flutter test` 59 passing.
 
 ---
 
@@ -87,7 +87,8 @@ app is still the pre-roadmap build.
 | Phase 3 — Agent Edge Function | done | **not deployed** |
 | Phase 4 — metrics, D1/D2/D3 | done | **not applied** |
 | Phase 5 — schema + RPCs | done | **not applied** |
-| Phase 5 — UI | **not started** | — |
+| Phase 5 — write path + primary picker | done | **not applied** |
+| Phase 5 — review queue, label management | **not started** | — |
 | Phase 6 — goals | done | **not applied** |
 | Phases 7–11 | not started | — |
 
@@ -113,18 +114,16 @@ the procedure; the short version:
 7. `03_verify.sql`, then the two behavioural suites via `psql`:
    `supabase/tests/rls_owner_scoping.sql`, `supabase/tests/goal_allocation.sql`.
 
-### 4.2 Phase 5 UI — the largest code gap
+### 4.2 Phase 5 UI — partly closed
 
-The Phase 5 RPCs have **zero call sites in `lib/`**. The transaction form still
-writes directly to the table, so `save_transaction_with_labels` and its
-"exactly one primary label per expense" rule are bypassed entirely. Consequence
-today: `Transaction.primaryLabel` falls back to the sole attached label, so
-single-label expenses attribute correctly, but every multi-label expense lands
-in `Needs primary label` and there is no way to resolve it.
+The write path and the primary picker landed while fixing the Codex review
+(§6). `add`/`update` now go through `save_transaction_with_labels`, and a
+labelled expense cannot be saved without naming the label it counts under.
 
-Outstanding: 5.5 (primary picker + review queue), 5.11 (label management
-screen), and routing form writes through the RPC. Phase 5 exit criteria cannot
-be met without these.
+Outstanding: the **review queue** for legacy expenses already sitting in
+`Needs primary label` (5.5), and the **label management screen** — rename,
+archive, restore, merge, delete — whose RPCs exist in `00013` with no UI
+(5.11). Phase 5 exit criteria still need both.
 
 ### 4.3 Phases 7–11 (not started)
 
@@ -146,7 +145,7 @@ be met without these.
 |---|---|---|
 | D1 | Cash expenses on bank accounts | Code done; **historical reassignment is a live owner step** |
 | D2 | `TRANSFER TO OTHER` conflation | Done |
-| D3 | Even-split multi-label reports | Attribution fixed; **needs 4.2 to be resolvable in the UI** |
+| D3 | Even-split multi-label reports | Done for new/edited rows; **legacy rows need the review queue (4.2)** |
 | D4 | Full-ledger loads, full Realtime reloads | Open — Phase 7 |
 | D5 | `anon_all` RLS + browser Gemini key | Code done; **not applied/deployed** |
 | D6 | Goal allocation without history | Done |
@@ -155,11 +154,55 @@ be met without these.
 
 ---
 
-## 5. Suggested order from here
+## 6. Codex review fixes
+
+Five findings on `0d331cc`, all reproduced and fixed.
+
+- **P1 — label writes used a revoked DELETE.** `_replaceLabels()` physically
+  deleted the joins on every update, but `00009` revokes DELETE from
+  `authenticated`; an edit would have persisted the money fields and then failed
+  with the old labels attached. `add`/`update` now go through
+  `save_transaction_with_labels`. Transfers keep their two-leg single insert —
+  routing a pair through a one-row RPC would have traded away that atomicity —
+  and attach labels INSERT-only, which fresh rows do not need DELETE for.
+- **P1 — Family Support always reported zero.** The ledger's nested select
+  requested `id, name, color`, so `exclude_from_personal_spend` always took its
+  `false` fallback and every `FAMILY` expense counted as Personal Spend. The
+  canonical metrics were wrong on real data while every unit test passed, since
+  the tests construct labels directly. Now selected.
+- **P1 — agent attributed to an arbitrary label.** `getLabelBreakdown` used
+  `labels[0]` without selecting `primary_label_id`, and relation order is not
+  guaranteed. Attribution now resolves by id, with `Unlabeled` /
+  `Needs primary label` buckets mirroring `PrimaryLabelStatus`.
+- **P1 — agent cashflow could not answer family-support questions.** It
+  returned only aggregate Total Outflow, contradicting its own system prompt.
+  Now reports Personal Spend and Family Support separately with the invariant
+  stated.
+- **P2 — discarded query errors.** Supabase returns `{data: null, error}`
+  rather than throwing, so an RLS or transient failure became the authoritative
+  answer "No accounts found." Eight tool queries now propagate. The per-account
+  balance loop deliberately still degrades to `unavailable` instead of throwing
+  — that is explicit, never a false zero, and one transient failure should not
+  discard the accounts that did resolve.
+
+Fixing the first finding surfaced two defects in `save_transaction_with_labels`
+itself, corrected in `00016`:
+
+- It rejected **every** expense with no primary label, including expenses with
+  no labels at all — but `Unlabeled` is a modelled state (TODO 5.6) and Phase 10
+  quick capture depends on saving before classifying. The rule is now "a
+  labelled expense must name one of its labels primary".
+- Its INSERT omitted `raw_sms` / `raw_sms_hash`, so SMS-sourced rows created
+  through the RPC lost their dedup hash and could be silently re-imported.
+
+---
+
+## 7. Suggested order from here
 
 1. **Run the live-DB sequence (4.1).** Nine commits of security and correctness
    work are inert until it happens, and the risk of a stale branch grows.
-2. **Close the Phase 5 UI gap (4.2).** It is the one place where authored
-   backend guarantees are not reachable from the app.
+2. **Finish Phase 5 UI (4.2)** — the review queue and label management. The
+   write path is done; these are the last surfaces where authored backend
+   guarantees have no way to be reached.
 3. **Then Phase 7**, which is the last item blocking the Analytics work in
    Phase 8.

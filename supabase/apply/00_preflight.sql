@@ -24,21 +24,48 @@ ORDER BY created_at DESC
 LIMIT 50;
 
 -- 2. What part 2 will touch ---------------------------------------------------
-SELECT 'accounts' AS table_name, count(*) AS rows FROM accounts
-UNION ALL SELECT 'transactions',       count(*) FROM transactions
-UNION ALL SELECT 'transaction_labels', count(*) FROM transaction_labels
-UNION ALL SELECT 'labels',             count(*) FROM labels
-UNION ALL SELECT 'invoices',           count(*) FROM invoices
-UNION ALL SELECT 'goals',              count(*) FROM goals
-UNION ALL SELECT 'recurring_expenses', count(*) FROM recurring_expenses
-UNION ALL SELECT 'recurring_income',   count(*) FROM recurring_income
-UNION ALL SELECT 'category_rules',     count(*) FROM category_rules
-UNION ALL SELECT 'monthly_snapshots',  count(*) FROM monthly_snapshots
-UNION ALL SELECT 'chat_sessions',      count(*) FROM chat_sessions
+-- Uses to_regclass to skip tables not yet created (e.g. chat_sessions from 00003
+-- if that migration is pending). Part 2 (00007) will CREATE IF NOT EXISTS any
+-- missing columns, so an empty result here is fine.
+SELECT table_name, rows FROM (
+  SELECT 'accounts' AS table_name, (SELECT count(*) FROM accounts) AS rows
+  WHERE to_regclass('accounts') IS NOT NULL
+  UNION ALL
+  SELECT 'transactions', (SELECT count(*) FROM transactions)
+  WHERE to_regclass('transactions') IS NOT NULL
+  UNION ALL
+  SELECT 'transaction_labels', (SELECT count(*) FROM transaction_labels)
+  WHERE to_regclass('transaction_labels') IS NOT NULL
+  UNION ALL
+  SELECT 'labels', (SELECT count(*) FROM labels)
+  WHERE to_regclass('labels') IS NOT NULL
+  UNION ALL
+  SELECT 'invoices', (SELECT count(*) FROM invoices)
+  WHERE to_regclass('invoices') IS NOT NULL
+  UNION ALL
+  SELECT 'goals', (SELECT count(*) FROM goals)
+  WHERE to_regclass('goals') IS NOT NULL
+  UNION ALL
+  SELECT 'recurring_expenses', (SELECT count(*) FROM recurring_expenses)
+  WHERE to_regclass('recurring_expenses') IS NOT NULL
+  UNION ALL
+  SELECT 'recurring_income', (SELECT count(*) FROM recurring_income)
+  WHERE to_regclass('recurring_income') IS NOT NULL
+  UNION ALL
+  SELECT 'category_rules', (SELECT count(*) FROM category_rules)
+  WHERE to_regclass('category_rules') IS NOT NULL
+  UNION ALL
+  SELECT 'monthly_snapshots', (SELECT count(*) FROM monthly_snapshots)
+  WHERE to_regclass('monthly_snapshots') IS NOT NULL
+  UNION ALL
+  SELECT 'chat_sessions', (SELECT count(*) FROM chat_sessions)
+  WHERE to_regclass('chat_sessions') IS NOT NULL
+) s
 ORDER BY table_name;
 
 -- 3. The label 00011 renames --------------------------------------------------
 -- Expect to see TRANSFER TO OTHER (pre-migration) or FAMILY (post-migration),
 -- never both — the rename preserves the row's identity and its joins.
 SELECT id, name FROM labels
-WHERE lower(name) IN ('transfer to other', 'family');
+WHERE lower(name) IN ('transfer to other', 'family')
+  AND to_regclass('labels') IS NOT NULL;

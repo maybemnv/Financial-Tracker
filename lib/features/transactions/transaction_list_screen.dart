@@ -499,11 +499,21 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   late String _type;
   String? _accountId;
   String? _destAccountId;
+  String? _primaryLabelId;
   DateTime? _transactedAt;
   bool _isSaving = false;
 
   bool get _needsDestination => _type == 'transfer' || _type == 'investment';
   bool get _isEditing => widget.transaction != null;
+
+  /// Only expenses attribute to a primary label (PRD §4).
+  bool get _isExpense => _type == 'debit';
+
+  /// An expense that carries labels must name exactly one of them primary,
+  /// otherwise its spend cannot be attributed. No labels at all is fine — the
+  /// row reports as Unlabeled.
+  bool get _needsPrimaryLabel =>
+      _isExpense && _selectedLabels.isNotEmpty && _primaryLabelId == null;
 
   @override
   void initState() {
@@ -519,6 +529,24 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     _accountId = transaction?.accountId;
     _transactedAt = transaction?.transactedAt;
     _selectedLabels.addAll(transaction?.labels ?? const []);
+    _primaryLabelId = transaction?.primaryLabelId;
+    _syncPrimaryLabel();
+  }
+
+  /// Keeps the primary label consistent with the current selection: drop it if
+  /// its label was deselected, and choose it automatically when there is only
+  /// one candidate so the common single-label case needs no extra tap.
+  void _syncPrimaryLabel() {
+    final ids = _selectedLabels
+        .map((label) => label.id)
+        .whereType<String>()
+        .toList(growable: false);
+    if (_primaryLabelId != null && !ids.contains(_primaryLabelId)) {
+      _primaryLabelId = null;
+    }
+    if (_primaryLabelId == null && ids.length == 1) {
+      _primaryLabelId = ids.first;
+    }
   }
 
   @override
@@ -664,11 +692,16 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 data: (labels) => _LabelSelector(
                   labels: labels,
                   selected: _selectedLabels,
+                  primaryLabelId: _primaryLabelId,
+                  showPrimaryPicker: _isExpense,
                   onChanged: (selected) => setState(() {
                     _selectedLabels
                       ..clear()
                       ..addAll(selected);
+                    _syncPrimaryLabel();
                   }),
+                  onPrimaryChanged: (id) =>
+                      setState(() => _primaryLabelId = id),
                   onCreate: _createLabel,
                 ),
               ),
@@ -715,6 +748,14 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       );
       return;
     }
+    if (_needsPrimaryLabel) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose which label this expense counts under'),
+        ),
+      );
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       final amount = double.parse(_amountCtrl.text);
@@ -733,6 +774,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
             vpa: _vpaCtrl.text.trim().isEmpty ? null : _vpaCtrl.text.trim(),
             bank: _bankCtrl.text.trim().isEmpty ? null : _bankCtrl.text.trim(),
             labels: List.unmodifiable(_selectedLabels),
+            primaryLabelId: _primaryLabelId,
             rawSms: original.rawSms,
             rawSmsHash: original.rawSmsHash,
             source: original.source,
@@ -768,6 +810,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
           vpa: _vpaCtrl.text.trim().isEmpty ? null : _vpaCtrl.text.trim(),
           bank: _bankCtrl.text.trim().isEmpty ? null : _bankCtrl.text.trim(),
           labels: List.unmodifiable(_selectedLabels),
+          primaryLabelId: _primaryLabelId,
           source: 'manual',
           transactedAt: _transactedAt,
         ));
@@ -791,12 +834,20 @@ class _LabelSelector extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     required this.onCreate,
+    required this.primaryLabelId,
+    required this.showPrimaryPicker,
+    required this.onPrimaryChanged,
   });
 
   final List<TransactionLabel> labels;
   final List<TransactionLabel> selected;
   final ValueChanged<List<TransactionLabel>> onChanged;
   final Future<TransactionLabel?> Function() onCreate;
+
+  /// The label this expense's full amount attributes to (PRD §4, D3).
+  final String? primaryLabelId;
+  final bool showPrimaryPicker;
+  final ValueChanged<String?> onPrimaryChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -837,6 +888,45 @@ class _LabelSelector extends StatelessWidget {
               );
             }).toList(),
           ),
+        if (showPrimaryPicker && selected.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text('Counts under',
+              style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 2),
+          Text(
+            selected.length == 1
+                ? 'The full amount attributes to this label.'
+                : 'Pick the one label this expense counts under. The others '
+                    'stay attached for search and filtering, but the amount is '
+                    'never split across them.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final label in selected)
+                if (label.id != null)
+                  ChoiceChip(
+                    label: Text(label.name),
+                    selected: label.id == primaryLabelId,
+                    onSelected: (_) => onPrimaryChanged(label.id),
+                  ),
+            ],
+          ),
+          if (primaryLabelId == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Choose one to save.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppTheme.redAccent),
+              ),
+            ),
+        ],
       ],
     );
   }

@@ -312,7 +312,8 @@ async function executeTool(
     case "get_accounts":
       return getAccounts(db);
     case "get_net_worth": {
-      const { data } = await db.rpc("fn_net_worth");
+      const { data, error } = await db.rpc("fn_net_worth");
+      if (error) throw error;
       return `Net worth: ${data ?? 0}`;
     }
     case "get_transactions":
@@ -337,11 +338,15 @@ async function executeTool(
 }
 
 async function getAccounts(db: SupabaseClient): Promise<string> {
-  const { data } = await db.from("accounts").select("id, name, type").eq("is_deleted", false);
+  const { data, error } = await db.from("accounts").select("id, name, type").eq("is_deleted", false);
+  if (error) throw error;
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   if (rows.length === 0) return "No accounts found.";
   const lines: string[] = [];
   for (const a of rows) {
+    // Deliberately not thrown: a per-account failure degrades to an explicit
+    // "unavailable" rather than a false balance, and one transient error does
+    // not discard the accounts that did resolve. Never renders as 0.
     const { data: bal } = await db.rpc("fn_account_balance", { p_account_id: a.id });
     lines.push(`${a.name} (${a.type}): ${bal ?? "unavailable"}`);
   }
@@ -362,6 +367,47 @@ function labelNames(row: Record<string, unknown>): string[] {
     .filter((n): n is string => typeof n === "string");
 }
 
+/** The attached labels as {id, name, exclude_from_personal_spend}. */
+function labelRows(
+  row: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const rel = row.transaction_labels;
+  if (!Array.isArray(rel)) return [];
+  return rel
+    .map((r) => (r as Record<string, unknown>)?.label)
+    .filter((l): l is Record<string, unknown> => !!l && typeof l === "object");
+}
+
+/**
+ * The one label an expense attributes to (PRD §4, D3). Resolved by
+ * primary_label_id — relation order is not guaranteed, so the first join row
+ * is not the primary. Falls back to the sole attached label so single-label
+ * legacy rows still attribute correctly; mirrors Transaction.primaryLabel.
+ */
+function primaryLabel(
+  row: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const rows = labelRows(row);
+  if (rows.length === 0) return null;
+  const id = row.primary_label_id;
+  if (id != null) {
+    return rows.find((l) => l.id === id) ?? null;
+  }
+  return rows.length === 1 ? rows[0] : null;
+}
+
+/** Reporting bucket for an expense: its primary label, or why it has none. */
+function primaryBucket(row: Record<string, unknown>): string {
+  const primary = primaryLabel(row);
+  if (primary) return String(primary.name);
+  return labelRows(row).length === 0 ? "Unlabeled" : "Needs primary label";
+}
+
+/** A debit whose primary label is flagged excluded — Family Support, not spend. */
+function isFamilySupport(row: Record<string, unknown>): boolean {
+  return primaryLabel(row)?.exclude_from_personal_spend === true;
+}
+
 async function getTransactions(db: SupabaseClient, args: Record<string, unknown>): Promise<string> {
   const limit = boundedInt(args.limit, 50, 1, 200);
   const days = args.days != null ? boundedInt(args.days, 30, 1, 3650) : null;
@@ -377,7 +423,8 @@ async function getTransactions(db: SupabaseClient, args: Record<string, unknown>
   if (typeof args.type === "string") q = q.eq("type", args.type);
   if (typeof args.account_id === "string") q = q.eq("account_id", args.account_id);
   if (label) q = q.eq("transaction_labels.labels.name", label);
-  const { data } = await q.order("created_at", { ascending: false }).limit(days ? 200 : limit);
+  const { data, error } = await q.order("created_at", { ascending: false }).limit(days ? 200 : limit);
+  if (error) throw error;
   const rows = ((data ?? []) as Array<Record<string, unknown>>)
     .filter((r) => !since || (effectiveDate(r)?.getTime() ?? 0) >= since.getTime());
   if (rows.length === 0) return "No transactions match those filters.";
@@ -393,20 +440,25 @@ async function getTransactions(db: SupabaseClient, args: Record<string, unknown>
 async function getLabelBreakdown(db: SupabaseClient, args: Record<string, unknown>): Promise<string> {
   const days = boundedInt(args.days, 30, 1, 3650);
   const since = new Date(Date.now() - days * 864e5);
-  const { data } = await db
+  const { data, error } = await db
     .from("transactions")
-    .select("amount, created_at, transacted_at, transaction_labels(label:labels(name))")
+    .select(
+      "amount, created_at, transacted_at, primary_label_id, " +
+        "transaction_labels(label:labels(id, name))",
+    )
     .eq("type", "debit").eq("is_deleted", false)
     .order("created_at", { ascending: false }).limit(200);
+  if (error) throw error;
   const buckets = new Map<string, number>();
   let total = 0;
   for (const r of ((data ?? []) as Array<Record<string, unknown>>)) {
     const d = effectiveDate(r);
     if (!d || d < since) continue;
     const amt = Number(r.amount);
-    const labels = labelNames(r);
-    // Primary-label attribution replaces even-split once Phase 5 lands.
-    const key = labels.length === 0 ? "Unlabeled" : labels[0];
+    // Each expense attributes in full to its primary label, exactly once
+    // (PRD §4, D3). Relation order is not guaranteed, so the primary is
+    // resolved by id, never by whichever join row came back first.
+    const key = primaryBucket(r);
     buckets.set(key, (buckets.get(key) ?? 0) + amt);
     total += amt;
   }
@@ -433,11 +485,15 @@ async function getCashflow(db: SupabaseClient, args: Record<string, unknown>): P
     end = new Date(Date.now() + 864e5);
     label = `last ${days} days`;
   }
-  const { data } = await db
+  const { data, error } = await db
     .from("transactions")
-    .select("amount, type, direction, created_at, transacted_at")
+    .select(
+      "amount, type, direction, created_at, transacted_at, primary_label_id, " +
+        "transaction_labels(label:labels(id, name, exclude_from_personal_spend))",
+    )
     .eq("is_deleted", false).order("created_at", { ascending: false }).limit(500);
-  let income = 0, spending = 0, investments = 0;
+  if (error) throw error;
+  let income = 0, spending = 0, investments = 0, familySupport = 0;
   for (const r of ((data ?? []) as Array<Record<string, unknown>>)) {
     const d = effectiveDate(r);
     if (!d || d < start || d >= end) continue;
@@ -446,25 +502,39 @@ async function getCashflow(db: SupabaseClient, args: Record<string, unknown>): P
     const inflow = (r.direction ?? (type === "credit" ? "inflow" : "outflow")) === "inflow";
     if (type === "transfer") continue;
     if (type === "investment") { if (!inflow) investments += amt; continue; }
-    if (inflow) income += amt; else spending += amt;
+    if (inflow) {
+      income += amt;
+    } else {
+      spending += amt;
+      // Counted in Total Outflow, never in Personal Spend (PRD §4).
+      if (isFamilySupport(r)) familySupport += amt;
+    }
   }
+  // Guaranteed by construction: totalOutflow == personalSpend + familySupport.
+  const personalSpend = spending - familySupport;
   const savings = income - spending;
   const rate = income > 0 ? (savings / income) * 100 : 0;
   return `${label}\nIncome: ${income.toFixed(2)}\nTotal Outflow: ${spending.toFixed(2)}\n` +
+    `Personal Spend: ${personalSpend.toFixed(2)}\n` +
+    `Family Support: ${familySupport.toFixed(2)}\n` +
     `Investments: ${investments.toFixed(2)}\nNet Cash Surplus: ${savings.toFixed(2)}\n` +
-    `Savings rate: ${rate.toFixed(1)}%`;
+    `Savings rate: ${rate.toFixed(1)}%\n` +
+    `(Total Outflow = Personal Spend + Family Support. Family Support has left ` +
+    `the accounts too — never describe it as money kept.)`;
 }
 
 async function getGoals(db: SupabaseClient): Promise<string> {
-  const { data } = await db.from("goals")
+  const { data, error } = await db.from("goals")
     .select("id, name, type, target_amount, allocated_amount, status, target_date")
     .eq("is_deleted", false);
+  if (error) throw error;
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   if (rows.length === 0) return "No goals set up yet.";
 
   // Contribution pace, so the agent can speak to progress instead of guessing.
-  const { data: history } = await db.from("goal_contributions")
+  const { data: history, error: historyError } = await db.from("goal_contributions")
     .select("goal_id, amount, created_at");
+  if (historyError) throw historyError;
   const byGoal = new Map<string, Array<{ amount: number; at: Date }>>();
   for (const c of (history ?? []) as Array<Record<string, unknown>>) {
     const key = String(c.goal_id);
@@ -509,8 +579,9 @@ async function getGoals(db: SupabaseClient): Promise<string> {
 }
 
 async function getInvoices(db: SupabaseClient): Promise<string> {
-  const { data } = await db.from("invoices")
+  const { data, error } = await db.from("invoices")
     .select("client, invoiced_usd, received_paypal, received_bank").eq("is_deleted", false);
+  if (error) throw error;
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   if (rows.length === 0) return "No invoices yet.";
   let inv = 0, pp = 0, bank = 0;
@@ -531,7 +602,8 @@ function monthlyEquivalent(amount: number, freq: string): number {
 
 async function getRecurring(db: SupabaseClient, table: string): Promise<string> {
   const cols = table === "recurring_expenses" ? "name, amount, frequency, category" : "name, amount, frequency, source";
-  const { data } = await db.from(table).select(cols).eq("is_deleted", false);
+  const { data, error } = await db.from(table).select(cols).eq("is_deleted", false);
+  if (error) throw error;
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   if (rows.length === 0) return `No ${table.replace("_", " ")} set up.`;
   let total = 0;
@@ -547,9 +619,10 @@ async function getRecurring(db: SupabaseClient, table: string): Promise<string> 
 
 async function getSnapshots(db: SupabaseClient, args: Record<string, unknown>): Promise<string> {
   const months = boundedInt(args.months, 12, 1, 120);
-  const { data } = await db.from("monthly_snapshots")
+  const { data, error } = await db.from("monthly_snapshots")
     .select("month, year, income, expenses, investments, savings, savings_rate")
     .order("year", { ascending: false }).order("month", { ascending: false }).limit(months);
+  if (error) throw error;
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   if (rows.length === 0) return "No monthly snapshot data yet.";
   return rows.map((s) =>
