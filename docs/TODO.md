@@ -461,6 +461,14 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 5: Primary labels, unified auditing, and label lifecycle
 
+> **Status (this branch):** the schema (`00012`) and the full owner-scoped RPC
+> layer (`00013`: `save_transaction_with_labels`, `rename_label`,
+> `set_label_status`, `merge_labels`, `delete_label`) are authored, each writing
+> exactly one audit entry. The model carries `primary_label_id` +
+> `PrimaryLabelStatus`, and reports are already double-count-safe (Phase 4). The
+> transaction-form primary picker, review queue, and label-management screen
+> (5.5, 5.11) plus wiring writes through the RPC remain UI work.
+
 ### 5.1 Add primary-label schema
 
 - [ ] Add nullable `transactions.primary_label_id` through an additive migration.
