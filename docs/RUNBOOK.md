@@ -97,6 +97,25 @@ prove anon/non-owner access fails closed.
 leave an anon client pointed at owner-only RLS, and never leave owner-only RLS
 un-deployed behind an anon client.
 
+### Later migrations (Phases 4–6)
+
+| File | Effect | Guard |
+|---|---|---|
+| `00011_family_and_account_integrity.sql` | `account_id NOT NULL`, `FAMILY` rename, exclusion flag | raises if any row lacks an account |
+| `00012_primary_labels_and_lifecycle.sql` | primary-label column + label lifecycle | — |
+| `00013_label_and_transaction_rpcs.sql` | atomic transaction save + label lifecycle RPCs | `authenticated` grant only |
+| `00014_goal_contributions.sql` | goal status/target date, contribution history, atomic allocation | seeds one opening contribution per goal |
+| `00015_goal_editing_and_states.sql` | goal edit/status/delete RPCs, overfund + safe-delete guards | replaces the 00014 RPC signatures |
+
+**After 00015** — run `supabase/tests/goal_allocation.sql` (Phase 6.5). It runs
+inside a rolled-back transaction and proves allocation stays reconciled, never
+goes negative, conserves totals across a reallocation, leaves net worth
+untouched, and refuses to delete a goal that has history.
+
+Note that `00015` drops and recreates `contribute_to_goal` and
+`reallocate_goal_funds` with an added `p_allow_overfunding` argument, so deploy
+the matching client — the old 3-arg/4-arg signatures no longer exist.
+
 ---
 
 ## 4. Gemini key rotation (Phase 3.3)

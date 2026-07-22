@@ -282,7 +282,12 @@ const TOOLS = [
     year: { type: "number" },
     days: { type: "number" },
   }),
-  fn("get_goals", "List goals with target, allocated, percent funded.", {}),
+  fn(
+    "get_goals",
+    "List goals with target, earmarked amount, percent funded, status, " +
+      "target date, and contribution pace.",
+    {},
+  ),
   fn("get_invoices", "Freelance invoice summary.", {}),
   fn("get_recurring_expenses", "Recurring expenses and monthly total.", {}),
   fn("get_recurring_income", "Expected recurring income.", {}),
@@ -452,16 +457,55 @@ async function getCashflow(db: SupabaseClient, args: Record<string, unknown>): P
 
 async function getGoals(db: SupabaseClient): Promise<string> {
   const { data } = await db.from("goals")
-    .select("name, type, target_amount, allocated_amount").eq("is_deleted", false);
+    .select("id, name, type, target_amount, allocated_amount, status, target_date")
+    .eq("is_deleted", false);
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   if (rows.length === 0) return "No goals set up yet.";
-  return rows.map((g) => {
+
+  // Contribution pace, so the agent can speak to progress instead of guessing.
+  const { data: history } = await db.from("goal_contributions")
+    .select("goal_id, amount, created_at");
+  const byGoal = new Map<string, Array<{ amount: number; at: Date }>>();
+  for (const c of (history ?? []) as Array<Record<string, unknown>>) {
+    const key = String(c.goal_id);
+    const list = byGoal.get(key) ?? [];
+    list.push({ amount: Number(c.amount), at: new Date(String(c.created_at)) });
+    byGoal.set(key, list);
+  }
+
+  const lines = rows.map((g) => {
     const target = Number(g.target_amount);
     const alloc = Number(g.allocated_amount ?? 0);
     const pct = target === 0 ? 0 : (alloc / target) * 100;
     const tag = g.type === "emergency_fund" ? " [emergency fund]" : "";
-    return `${g.name}${tag}: ${alloc} / ${target} (${pct.toFixed(0)}%)`;
-  }).join("\n");
+    const due = g.target_date ? `, by ${g.target_date}` : "";
+    const parts = [
+      `${g.name}${tag}: ${alloc} / ${target} (${pct.toFixed(0)}%), ` +
+      `status ${g.status ?? "active"}${due}`,
+    ];
+
+    // Mirrors GoalRules.estimateCompletion: >= 3 contributions across >= 2
+    // distinct months, or the pace is not reported at all.
+    const entries = byGoal.get(String(g.id)) ?? [];
+    const months = entries.map((e) =>
+      e.at.getUTCFullYear() * 12 + e.at.getUTCMonth()
+    );
+    const distinct = new Set(months);
+    if (entries.length >= 3 && distinct.size >= 2) {
+      const span = Math.max(...months) - Math.min(...months) + 1;
+      const pace = entries.reduce((s, e) => s + e.amount, 0) / span;
+      parts.push(`  pace: ${pace.toFixed(0)}/month over ${span} months`);
+    } else {
+      parts.push("  pace: not enough history");
+    }
+    return parts.join("\n");
+  });
+
+  return lines.join("\n") +
+    "\n\nRule: goal allocation is EARMARKING of money that already sits in an " +
+    "account. It never changes an account balance or net worth. You can explain " +
+    "progress, pace, and affordability, but you have no tool to change any " +
+    "allocation — the owner does that on the Savings board.";
 }
 
 async function getInvoices(db: SupabaseClient): Promise<string> {

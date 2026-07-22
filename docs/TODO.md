@@ -636,6 +636,16 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 6: Goals redesign
 
+> **Status (this branch):** complete. `00014` adds contribution history plus the
+> atomic `contribute_to_goal` / `reallocate_goal_funds` RPCs and the drift
+> assertion; `00015` adds `update_goal`, `set_goal_status`, `delete_goal`, makes
+> auto-completion reversible, and enforces the overfund / target-below-allocated
+> / safe-delete confirmations server-side so a UI guard cannot be bypassed.
+> `lib/core/goal_rules.dart` holds the same rules as pure, tested logic; the
+> Savings board has a goal-detail view, edit, add-funds, correct, reallocate,
+> and status controls, and the Agent Desk goal context now carries status,
+> target date, and gated pace. Verify with `supabase/tests/goal_allocation.sql`.
+
 ### 6.1 Schema and contribution history
 
 - [ ] Migration: add `goals.status` (`active` / `paused` / `completed` /
