@@ -6,6 +6,7 @@ import 'core/theme.dart';
 import 'features/agent/agent_chat_screen.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/dashboard/dashboard_screen.dart';
+import 'features/analytics/analytics_screen.dart';
 import 'features/goals/goals_screen.dart';
 import 'features/invoices/invoice_sidebar.dart';
 import 'features/labels/label_management_screen.dart';
@@ -33,6 +34,7 @@ class _AppTabsState extends State<AppTabs> {
   static const _labels = [
     'Ledger',
     'Briefing',
+    'Analytics',
     'Targets',
     'Agent Desk',
   ];
@@ -40,7 +42,15 @@ class _AppTabsState extends State<AppTabs> {
   Widget _screenFor(int index) => switch (index) {
         0 => const TransactionListScreen(),
         1 => const DashboardScreen(),
-        2 => const GoalsScreen(),
+        // A chart drill-down applies a ledger filter, then sends the owner to
+        // the Ledger tab to see the rows behind the number they tapped.
+        2 => AnalyticsScreen(
+            onDrillDown: () => setState(() {
+              _currentIndex = 0;
+              _visited.add(0);
+            }),
+          ),
+        3 => const GoalsScreen(),
         _ => const AgentChatScreen(),
       };
 
