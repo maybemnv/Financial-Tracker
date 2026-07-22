@@ -9,6 +9,7 @@ import '../../providers/account_provider.dart';
 import '../../providers/aggregate_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../widgets/newsprint_primitives.dart';
+import '../analytics/obligations_view.dart';
 import '../labels/review_queue_screen.dart';
 
 final currencyFormat =
@@ -94,11 +95,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               const SizedBox(height: 16),
               const NewsprintSectionTitle(label: 'Upcoming'),
               const SizedBox(height: 8),
-              Text(
-                'Recurring obligations and the cash-flow forecast arrive with '
-                'Phase 9. Nothing is estimated here until the data exists.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              const ObligationsList(limit: 4),
+              const SizedBox(height: 12),
+              const ForecastCard(compact: true),
               const SizedBox(height: 24),
             ],
           ),

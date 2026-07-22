@@ -10,6 +10,7 @@ import '../../providers/ledger_provider.dart';
 import '../../widgets/newsprint_primitives.dart';
 import '../labels/review_queue_screen.dart';
 import 'analytics_charts.dart';
+import 'obligations_view.dart';
 
 final _currency =
     NumberFormat.currency(symbol: '₹', decimalDigits: 0, locale: 'en_IN');
@@ -260,11 +261,17 @@ class _Lists extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 16),
-        const NewsprintSectionTitle(label: 'Recurring obligations'),
+        const NewsprintSectionTitle(label: 'Upcoming obligations'),
         const SizedBox(height: 6),
+        const ObligationsList(),
+        const SizedBox(height: 16),
+        const NewsprintSectionTitle(label: '30-day forecast'),
+        const SizedBox(height: 6),
+        const ForecastCard(),
+        const SizedBox(height: 8),
         Text(
-          'Arrives with Phase 9. Merchant names are raw until Phase 10 '
-          'normalizes them, so the same shop may appear more than once above.',
+          'Merchant names are raw until Phase 10 normalizes them, so the same '
+          'shop may appear more than once above.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
