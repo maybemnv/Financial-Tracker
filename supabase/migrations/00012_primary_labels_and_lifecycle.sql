@@ -27,6 +27,7 @@ DROP INDEX IF EXISTS uq_labels_owner_name_lower;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_labels_owner_active_name_lower
   ON labels (user_id, lower(name)) WHERE status = 'active';
 
+DROP TRIGGER IF EXISTS set_labels_updated_at ON labels;
 CREATE TRIGGER set_labels_updated_at
   BEFORE UPDATE ON labels
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -46,6 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_label_audit_owner_label
   ON label_audit (user_id, label_id, created_at DESC);
 
 ALTER TABLE label_audit ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_select ON label_audit;
 CREATE POLICY owner_select ON label_audit FOR SELECT TO authenticated
   USING (user_id = auth.uid() AND app_is_owner());
 -- No client INSERT/UPDATE/DELETE: audit rows are written only by SECURITY

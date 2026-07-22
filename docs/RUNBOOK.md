@@ -64,6 +64,11 @@ the client, or write a new corrective forward migration.
 
 ## 3. Migration apply order (Phase 2.3–2.5)
 
+> **Applying from the Supabase dashboard instead of `psql`?** `supabase/apply/`
+> holds the same migrations concatenated into paste-ready scripts, with a
+> preflight and a verification pass. See `supabase/apply/README.md`. The
+> ordering, guards, and warnings below still apply.
+
 Apply in numeric order **after** step 2 has inserted the owner row:
 
 | File | Effect | Guard |

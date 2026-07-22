@@ -20,6 +20,11 @@ BEGIN
     -- Drop the permissive policy.
     EXECUTE format('DROP POLICY IF EXISTS "anon_all" ON %I', t);
 
+    -- Drop our own policies first so this migration is safely re-runnable.
+    EXECUTE format('DROP POLICY IF EXISTS owner_select ON %I', t);
+    EXECUTE format('DROP POLICY IF EXISTS owner_insert ON %I', t);
+    EXECUTE format('DROP POLICY IF EXISTS owner_update ON %I', t);
+
     -- Owner-only SELECT.
     EXECUTE format($p$
       CREATE POLICY owner_select ON %I FOR SELECT TO authenticated

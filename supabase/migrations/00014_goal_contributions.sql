@@ -11,6 +11,7 @@ ALTER TABLE goals
   ADD COLUMN IF NOT EXISTS target_date DATE,
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
+DROP TRIGGER IF EXISTS set_goals_updated_at ON goals;
 CREATE TRIGGER set_goals_updated_at
   BEFORE UPDATE ON goals
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -28,6 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_goal_contributions_owner_goal
   ON goal_contributions (user_id, goal_id, created_at DESC);
 
 ALTER TABLE goal_contributions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_select ON goal_contributions;
 CREATE POLICY owner_select ON goal_contributions FOR SELECT TO authenticated
   USING (user_id = auth.uid() AND app_is_owner());
 -- Writes only via the transactional RPCs below.
