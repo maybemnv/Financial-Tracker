@@ -20,7 +20,7 @@ mobile.
 - **Labels** — GitHub-style colored labels replace categories/tags (many-to-many); the priority-ordered rules engine is retained but currently dormant
 - **Goals** — Set savings goals with live progress tracking; Emergency Fund goal detected by `type` field, pinned to top
 - **Invoice Sidebar** — Track freelance invoices with PayPal USD, INR bank receipts, FX rate, and fee chips
-- **Finance Agent** — Gemini-powered Q&A with tool-use (10 read-only tools that query your actual data)
+- **Finance Agent** — Gemini-powered Q&A behind an authenticated Supabase Edge Function (read-only tools; the key never reaches the browser)
 - **Monthly Snapshots** — Pre-computed monthly aggregates written on first open of each new month
 
 ## Tech Stack
@@ -48,17 +48,28 @@ Create `.env` in the project root:
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
-GEMINI_API_KEY=your-gemini-api-key
 ```
 
-Do not include `SUPABASE_SERVICE_KEY` — it is not used by the client and would be exposed in the browser bundle.
+`GEMINI_API_KEY` is **not** a browser value. It lives only as a Supabase Edge
+Function secret (`supabase secrets set GEMINI_API_KEY=…`); the browser never
+sees it. Never include `SUPABASE_SERVICE_KEY` either — the client does not use
+it and it would be exposed in the bundle.
 
 ### 2. Supabase
 
-1. Create a project at [supabase.com](https://supabase.com)
-2. Run `supabase/migrations/00001_init.sql` in the SQL editor (creates all 8 tables, RPCs, RLS, Realtime, seed accounts)
-3. Run remaining migrations in `supabase/migrations/` in order
-4. Copy your project URL and anon key into `.env`
+1. Create a project at [supabase.com](https://supabase.com).
+2. Run the migrations in `supabase/migrations/` in numeric order, or use the
+   paste-ready bundles in `supabase/apply/` (see `supabase/apply/README.md`).
+3. Provision the owner: enable an auth provider, sign in once, then register
+   your `auth.users` id in `app_owner` — `supabase/apply/01b_register_owner.sql`
+   does this from your email. Until then the app fails closed ("Access denied").
+4. Deploy the Agent Edge Function: `supabase functions deploy agent` and set the
+   `GEMINI_API_KEY` secret.
+5. Copy your project URL and anon key into `.env`.
+
+**Going to production?** `docs/GO_LIVE.md` is the ordered runbook (backup, auth
+config, the RLS cutover, deploy, verify, lockdown), and `scripts/release_gate.sh`
+runs the automated pre-deploy gates.
 
 ### 3. Run
 

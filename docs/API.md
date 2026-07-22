@@ -322,3 +322,75 @@ Each Dart model maps its fields to snake_case JSON for Supabase.
 | `transactedAt` | `transacted_at` | `2026-06-27T14:30:00Z` or null |
 | `isDeleted` | `is_deleted` | `false` |
 | `editHistory` | `edit_history` | `[{"old":{...},"new":{...}}]` |
+
+---
+
+## Owner-scoped RPC reference (Phases 5–10)
+
+Every function below derives the owner from `auth.uid()`, checks `app_is_owner()`,
+runs with a fixed `search_path`, and is granted to `authenticated` only. None
+accepts a caller-supplied owner id. Envelope-returning functions carry a
+`version` field; a client that does not recognise the version must fail rather
+than read the payload.
+
+### Transactions & labels (`00013`, `00016`)
+
+| Function | Args | Returns | Notes |
+|---|---|---|---|
+| `save_transaction_with_labels` | `p_id uuid?`, `p_fields jsonb`, `p_label_ids uuid[]`, `p_primary_label uuid?` | `uuid` | Create/edit + label-set replacement + one `edit_history` entry, atomically. A **labelled** expense must name one attached primary; an unlabelled expense is valid (`Unlabeled`). Preserves `raw_sms`/`raw_sms_hash`. |
+| `rename_label` | `p_id`, `p_name` | `void` | Identity-preserving; case-insensitive conflict; case-only rename allowed. |
+| `set_label_status` | `p_id`, `p_status` | `void` | `active`/`archived` (restore/archive). |
+| `merge_labels` | `p_source`, `p_target` | `void` | Moves all references, resolves duplicate joins, marks source `merged`. Idempotent. |
+| `delete_label` | `p_id` | `void` | Soft-delete only when unreferenced; else raises (archive/merge instead). |
+
+### Ledger & aggregates (`00017`)
+
+| Function | Args | Returns | Notes |
+|---|---|---|---|
+| `get_transaction_page` | limit, cursor (`at`,`id`), account, label, type, search, from, to, unresolved | `{version, rows[], has_more, next_cursor}` | Keyset pagination on `(COALESCE(transacted_at,created_at) DESC, id DESC)`. Page size clamped ≤ 100. `unresolved` ∈ `needs_primary`/`unlabeled`. |
+| `get_briefing_summary` | `p_month?`, `p_year?` | `{version, income, total_outflow, family_support, personal_spend, net_cash_surplus, investments, savings_rate, needs_primary_count, unlabeled_count}` | `personal_spend = total_outflow − family_support` by construction. |
+| `get_account_balances` | — | `{version, accounts[]}` | Batched; replaces one `fn_account_balance` per account. |
+| `get_label_usage` | — | `{version, labels[{label_id, attached_count, primary_count, attributed_amount}]}` | Whole-ledger, not per-page. |
+
+### Analytics & net worth (`00018`)
+
+| Function | Args | Returns | Notes |
+|---|---|---|---|
+| `get_analytics` | `p_months`, `p_include_family` | `{version, cash_flow[], by_label[], daily_spend[], net_worth[], net_worth_current, top_merchants[]}` | The four charts + top merchants in one call. Net-worth points on the legacy basis are `available:false`. |
+| `fn_net_worth_asof` / `fn_account_balance_asof` | `p_as_of` | `numeric` | Bounded to a cut-off; fixes the snapshot leak. |
+
+### Goals (`00014`, `00015`)
+
+`contribute_to_goal(p_goal_id, p_amount, p_note?, p_allow_overfunding?)`,
+`reallocate_goal_funds(p_from, p_to, p_amount, p_note?, p_allow_overfunding?)`,
+`update_goal(...)`, `set_goal_status`, `delete_goal`, `assert_goal_allocation_drift()`.
+Allocation is earmarking — none of these touch an account balance or net worth.
+
+### Obligations & merchants (`00019`, `00020`)
+
+| Function | Args | Returns | Notes |
+|---|---|---|---|
+| `confirm_obligation` | `p_kind`, `p_id`, `p_transaction_id` | `date` | Links the settling ledger row and advances the due date atomically. |
+| `get_forecast_inputs` | `p_lookback_days` | `{version, liquid_balance, investment_balance, earmarked_total, personal_spend_per_day, ...}` | Measured inputs only; the projection is computed client-side and reproducible by hand. |
+| `get_top_merchants` | `p_months`, `p_limit` | `{version, merchants[]}` | Rolls up by `app_canonical_merchant`; raw merchant on the row is untouched. |
+
+### Edge Function
+
+`POST /functions/v1/agent` — requires an owner JWT; the function calls
+`app_is_owner()` itself and returns `not_owner` (403) otherwise. All Gemini
+traffic is server-side; the browser never sees `GEMINI_API_KEY`. Read-only
+tools; no tool can create, modify, or move money.
+
+## Lifecycle events (Phase 11.3)
+
+Versioned `CustomEvent`s between `web/flutter_bootstrap.js` and Dart
+(`protocol: 1`):
+
+| Event | Direction | When |
+|---|---|---|
+| `md-dart-ready` | Dart → JS | After the first frame paints. Hides the boot surface. |
+| `md-resume-request` | JS → Dart | On `visibilitychange`/`pageshow`/`webglcontextlost`. Carries `attemptId`. |
+| `md-resume-ack` | Dart → JS | After the next frame renders for that `attemptId`. |
+
+No ack within 3s → one cache-busting reload → a second failure shows the manual
+recovery surface. Timings are logged by event name only.

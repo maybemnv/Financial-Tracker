@@ -1,8 +1,16 @@
 # Changes — `Feat/prd-v2-security-correctness`
 
 Working log for the PRD v2 security + correctness roadmap (`docs/TODO.md`).
-15 commits ahead of `master`.
-Gate status: `flutter analyze` clean, `flutter test` 59 passing.
+26 commits ahead of `master`.
+Gate status: `flutter analyze` clean, `flutter test` 155 passing, release web
+build succeeds.
+
+**All eleven phases are code-complete.** Everything below the fold is the
+running history; the live status table is §3. Migrations `00006`–`00020` and the
+Agent Edge Function must be applied/deployed for any of it to take effect — see
+`docs/GO_LIVE.md`. The only outstanding roadmap items are on-device acceptance
+(11.6) and the manual security/finance verification matrix (11.9), both of which
+need a real device and live requests and cannot be automated here.
 
 ---
 

@@ -217,6 +217,14 @@ class LedgerNotifier extends StateNotifier<LedgerState> {
     _channel = null;
   }
 
+  /// Tears down the existing channel and opens a fresh one. Called on resume,
+  /// where a channel may be silently closed or stale; disposing first is what
+  /// stops a second listener being stacked on top of the first (Phase 11.4).
+  void resubscribe() {
+    unsubscribe();
+    subscribe();
+  }
+
   @override
   void dispose() {
     unsubscribe();

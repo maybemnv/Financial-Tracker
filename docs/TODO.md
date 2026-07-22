@@ -718,6 +718,15 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 7: Data and rendering performance
 
+> **Status (this branch):** complete. `00017` adds keyset `get_transaction_page`
+> plus the whole-ledger aggregates (`get_briefing_summary`, `get_account_balances`,
+> `get_label_usage`). `ledgerProvider` pages on scroll, patches single Realtime
+> rows, and resets atomically on filter change; the Briefing, review queue, and
+> label screens read the aggregates, and tabs build lazily. Fixes D4. Snapshot
+> as-of correctness landed with `00018` (Phase 8.6). Live measurement (7.7) is a
+> device step.
+
+
 ### 7.1 Define server-side ledger queries
 
 - [ ] Add a typed `LedgerQuery` containing date range, direction/type, account,
@@ -827,6 +836,14 @@ No ownership or policy migration starts until this phase is complete.
 ---
 
 ## Phase 8: Briefing slim-down and four-chart Analytics tab
+
+> **Status (this branch):** complete. Briefing is numbers-only from
+> `get_briefing_summary` (1537 → ~280 lines, removing the last full-ledger read).
+> Analytics is a first-class tab with the four charts on a CVD-validated
+> three-slot palette, each with a table alternative, accessible summary, and
+> reconciling drill-down. `00018` fixes the net-worth snapshot leak with
+> `fn_net_worth_asof` and marks un-chartable legacy months rather than faking them.
+
 
 ### 8.1 Slim the Briefing tab
 
@@ -946,6 +963,14 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 9: Upcoming obligations and cash-flow forecast
 
+> **Status (this branch):** complete. `00019` adds obligation columns +
+> `confirm_obligation` + `get_forecast_inputs`. `lib/core/obligations.dart` and
+> `cash_forecast.dart` are pure and hand-checkable; the forecast excludes
+> investments, shows earmarked money as context without subtracting it, and never
+> double-counts a confirmed obligation. Surfaced in Analytics and compact on
+> Briefing.
+
+
 ### 9.1 Upcoming obligations
 
 - [ ] Derive the obligations list from existing `recurring_expenses` and
@@ -988,6 +1013,12 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 10: Quick capture and merchant normalization
 
+> **Status (this branch):** complete. Deterministic-first quick-capture parser
+> (`lib/core/quick_capture.dart`) fills a reviewable draft, never a silent save;
+> the confirm goes through `save_transaction_with_labels`. `00020` adds read-time
+> merchant aliases (`get_top_merchants`) leaving the raw merchant intact.
+
+
 ### 10.1 Quick capture
 
 - [ ] Add a one-field capture input parsing utterances like `250 biryani cash`
@@ -1023,6 +1054,15 @@ No ownership or policy migration starts until this phase is complete.
 ---
 
 ## Phase 11: Installed-PWA resume resilience, release, and production acceptance
+
+> **Status (this branch):** code complete (11.1–11.5, 11.7, 11.8). Startup
+> surface, browser-agnostic JS/Dart resume handshake with bounded WebGL-loss
+> recovery, versioned owner-scoped 24h drafts, pinned manifest, docs sweep, and
+> `scripts/release_gate.sh` (which fails if a Gemini/service-role secret is in
+> the build). The on-device installed-PWA acceptance (11.6) and the manual
+> security/finance verification matrix (11.9) are owner steps — they need a real
+> device and live requests, and cannot be automated here.
+
 
 > Browser-agnostic. The owner uses **Brave** on desktop and accesses the app
 > via **Brave → Add to Home Screen** (installed PWA) on mobile. Helium

@@ -1,47 +1,106 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="A single-owner personal finance desk.">
 
-  <!-- iOS meta tags & icons -->
+  <!-- Installed-PWA / iOS metadata -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="finance_tracker">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Money Desk">
+  <meta name="theme-color" content="#1F1A17">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
-  <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>finance_tracker</title>
+  <title>Money Desk</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    Startup surface (Phase 11.1). The Corbado/passkey CDN <script> that used to
+    sit here was a render-blocking third-party download on every load and is
+    unused — removed. Nothing external loads before the app now.
+
+    These states are plain HTML/CSS so something is always on screen while
+    Flutter loads or if it never does — never a blank page.
+  -->
+  <style>
+    :root { color-scheme: light dark; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: #F0E7D8;
+      color: #1F1A17;
+      font-family: Georgia, 'Times New Roman', serif;
+    }
+    #boot {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; padding: 24px; text-align: center;
+      transition: opacity .25s ease;
+    }
+    #boot.hidden { opacity: 0; pointer-events: none; }
+    .boot-kicker {
+      text-transform: uppercase; letter-spacing: .18em;
+      font-size: 12px; color: #5B5147;
+    }
+    .boot-title { font-size: 22px; max-width: 22ch; }
+    .boot-msg { font-size: 14px; color: #5B5147; max-width: 34ch; }
+    .boot-spinner {
+      width: 26px; height: 26px; border: 3px solid #C4B59F;
+      border-top-color: #1F1A17; border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .boot-btn {
+      font: inherit; font-size: 14px; cursor: pointer;
+      background: #1F1A17; color: #F7F0E4;
+      border: none; padding: 10px 20px;
+    }
+    .boot-code {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 12px; color: #5B5147;
+    }
+    [data-boot-state] { display: none; flex-direction: column; align-items: center; gap: 16px; }
+    #boot[data-state="loading"]  [data-boot-state="loading"],
+    #boot[data-state="recover"]  [data-boot-state="recover"],
+    #boot[data-state="failed"]   [data-boot-state="failed"] { display: flex; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a19; color: #f2efe6; }
+      .boot-kicker, .boot-msg, .boot-code { color: #b8b0a2; }
+      .boot-btn { background: #f2efe6; color: #1a1a19; }
+    }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+  <div id="boot" data-state="loading" role="status" aria-live="polite">
+    <div data-boot-state="loading">
+      <div class="boot-spinner"></div>
+      <div class="boot-kicker">Money Desk</div>
+      <div class="boot-msg">Opening your ledger…</div>
+    </div>
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
-  <script src="https://github.com/corbado/flutter-passkeys/releases/download/2.4.0/bundle.js"></script>
+    <div data-boot-state="recover">
+      <div class="boot-spinner"></div>
+      <div class="boot-kicker">Recovering</div>
+      <div class="boot-title">Reloading the desk</div>
+      <div class="boot-msg">The app stalled coming back to the foreground. Reloading once.</div>
+    </div>
+
+    <div data-boot-state="failed">
+      <div class="boot-kicker">Money Desk</div>
+      <div class="boot-title">The desk could not start</div>
+      <div class="boot-msg">This is usually a stale cached version. Reload to fetch the current release.</div>
+      <button class="boot-btn" onclick="window.__reloadFresh && window.__reloadFresh()">Reload</button>
+      <div class="boot-code" id="boot-code"></div>
+    </div>
+  </div>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
