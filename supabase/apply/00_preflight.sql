@@ -17,10 +17,10 @@ SELECT
 FROM transactions;
 
 -- The offending rows, if any:
-SELECT id, transacted_at, amount, description
+SELECT id, created_at, amount, note
 FROM transactions
 WHERE account_id IS NULL
-ORDER BY transacted_at DESC
+ORDER BY created_at DESC
 LIMIT 50;
 
 -- 2. What part 2 will touch ---------------------------------------------------
