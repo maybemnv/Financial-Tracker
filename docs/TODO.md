@@ -289,56 +289,63 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 3: Secure Agent Desk
 
+> **Status (this branch):** the `agent` Edge Function and the rewired thin Dart
+> client are authored; the release bundle is verified free of Gemini/service-role
+> material. Deploy (`supabase functions deploy agent`), secret set, key rotation,
+> and live JWT/error testing are maintenance-window steps (RUNBOOK §4).
+
 ### 3.1 Create the authenticated Edge Function
 
-- [ ] Add a Supabase Edge Function for Agent Desk requests and keep all Gemini
-  HTTP traffic inside the function.
-- [ ] Require a valid Supabase bearer JWT and verify the caller against
-  `app_owner` before accepting request content.
-- [ ] Restrict CORS to local development, approved Vercel previews if required,
-  and the production origin.
-- [ ] Define a versioned request/response contract for conversation messages,
+- [x] Add a Supabase Edge Function for Agent Desk requests and keep all Gemini
+  HTTP traffic inside the function. (`supabase/functions/agent/index.ts`)
+- [x] Require a valid Supabase bearer JWT and verify the caller against
+  `app_owner` before accepting request content. (`app_is_owner` RPC check.)
+- [x] Restrict CORS to local development, approved Vercel previews if required,
+  and the production origin. (`ALLOWED_ORIGINS` env allowlist.)
+- [x] Define a versioned request/response contract for conversation messages,
   tool activity, final answer, retryable errors, and request correlation ID.
-- [ ] Enforce request size, conversation length, tool-round, and execution-time
-  limits; preserve the existing maximum of ten tool rounds unless measured data
-  justifies lowering it.
-- [ ] Validate roles and content server-side rather than forwarding arbitrary
-  Gemini payloads from the browser.
+- [x] Enforce request size, conversation length, tool-round, and execution-time
+  limits; preserve the existing maximum of ten tool rounds. (`MAX_*` consts.)
+- [x] Validate roles and content server-side rather than forwarding arbitrary
+  Gemini payloads from the browser. (`sanitizeMessages`.)
 
 ### 3.2 Move context and tools server-side
 
-- [ ] Port Gemini model configuration, system safety rules, the ten tool
+- [x] Port Gemini model configuration, system safety rules, the ten tool
   definitions, retry/backoff, and response parsing from `llm_service.dart` to
   the Edge Function.
-- [ ] Resolve account balances, net worth, transactions, invoices, goals,
+- [x] Resolve account balances, net worth, transactions, invoices, goals,
   recurring commitments, expected income, and snapshots using owner-scoped
-  database calls under the caller's JWT.
-- [ ] Keep all money-changing operations absent from the tool registry.
-- [ ] Update tool semantics to the canonical metrics: label breakdown uses
+  database calls under the caller's JWT. (Function client bound to the JWT.)
+- [x] Keep all money-changing operations absent from the tool registry.
+- [~] Update tool semantics to the canonical metrics: label breakdown uses
   primary-label attribution once Phase 5 lands (no even splitting), and
   cash-flow summaries report Income, Total Outflow, Personal Spend, and Family
-  Support distinctly once Phase 4 lands.
-- [ ] Treat model tool arguments as untrusted: validate types, filter bounds,
-  dates, pagination limits, and enum values before database execution.
-- [ ] Return privacy-safe tool progress metadata for a collapsible activity view;
-  never return chain-of-thought or raw secrets.
-- [ ] Ensure failures expose a stable user message and correlation ID without SQL,
+  Support distinctly once Phase 4 lands. (Cashflow already reports Income/Total
+  Outflow/Net Cash Surplus; label breakdown uses primary label when present —
+  finalized as Phases 4–5 columns land + are backfilled.)
+- [x] Treat model tool arguments as untrusted: validate types, filter bounds,
+  dates, pagination limits, and enum values. (`boundedInt`, `decodeArgs`.)
+- [x] Return privacy-safe tool progress metadata for a collapsible activity view;
+  never return chain-of-thought or raw secrets. (`toolActivity[]`.)
+- [x] Ensure failures expose a stable user message and correlation ID without SQL,
   JWT, key, stack-trace, or finance-value leakage.
 
 ### 3.3 Remove browser Gemini credentials
 
 - [ ] Store `GEMINI_API_KEY` with `supabase secrets set`, not in repository,
-  Flutter assets, Vercel variables, or generated `.env` files.
-- [ ] Update Flutter Agent Desk code to call the Edge Function with the current
-  authenticated session instead of Gemini directly.
-- [ ] Remove `GEMINI_API_KEY` from `.env.example`, `pubspec.yaml` asset inputs,
+  Flutter assets, Vercel variables, or generated `.env` files. (Live — RUNBOOK §4.)
+- [x] Update Flutter Agent Desk code to call the Edge Function with the current
+  authenticated session instead of Gemini directly. (`functions.invoke('agent')`.)
+- [x] Remove `GEMINI_API_KEY` from `.env.example`, `pubspec.yaml` asset inputs,
   `vercel-build.sh`, `vercel.json`, documentation, and browser request code.
-- [ ] Make the Vercel build require only the browser-safe Supabase URL and
+  (Also scrubbed the local `.env` of GEMINI + stray SUPABASE_SERVICE_KEY.)
+- [x] Make the Vercel build require only the browser-safe Supabase URL and
   publishable/anon key.
-- [ ] Search source maps, `build/web`, logs, deployment settings, and Git history
-  for exposed Gemini key material.
+- [x] Search source maps, `build/web`, logs, deployment settings, and Git history
+  for exposed Gemini key material. (`build/web` verified clean after scrub.)
 - [ ] Rotate the deployed Gemini key after the server-only path is live and revoke
-  the old key.
+  the old key. (Live — RUNBOOK §4.)
 
 ### 3.4 Test the secure Agent Desk
 
