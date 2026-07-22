@@ -1,4 +1,5 @@
 import '../models/transaction.dart';
+import 'finance_metrics.dart';
 
 class DashboardAnalytics {
   DashboardAnalytics({
@@ -42,6 +43,7 @@ class DashboardAnalytics {
 
     var monthIncome = 0.0;
     var monthSpending = 0.0;
+    var monthFamilySupport = 0.0;
     var monthInvestments = 0.0;
     var monthUncategorized = 0;
     final labelTotals = <String, _LabelTotal>{};
@@ -56,33 +58,50 @@ class DashboardAnalytics {
       );
       final daily = dailyTotals.putIfAbsent(dayKey, _DailyAccumulator.new);
 
-      if (_isIncome(transaction)) {
+      if (FinanceMetrics.isIncome(transaction)) {
         monthIncome += transaction.amount;
         daily.income += transaction.amount;
-      } else if (_isSpending(transaction)) {
+      } else if (FinanceMetrics.isExpense(transaction)) {
         monthSpending += transaction.amount;
         daily.spending += transaction.amount;
-
-        final labels = transaction.labels;
-        if (labels.isEmpty) {
-          labelTotals.update(
-            'Unlabeled',
-            (value) => value..amount += transaction.amount,
-            ifAbsent: () => _LabelTotal(amount: transaction.amount),
-          );
-          monthUncategorized += 1;
-        } else {
-          final splitAmount = transaction.amount / labels.length;
-          for (final label in labels) {
-            labelTotals.update(
-              label.name,
-              (value) => value..amount += splitAmount,
-              ifAbsent: () =>
-                  _LabelTotal(amount: splitAmount, color: label.color),
-            );
-          }
+        if (FinanceMetrics.isFamilySupport(transaction)) {
+          monthFamilySupport += transaction.amount;
         }
-      } else if (_isInvestmentOutflow(transaction)) {
+
+        // Attribute the FULL amount to exactly one bucket (no even-split, D3):
+        // the primary label, else Unlabeled / Needs primary label.
+        final status = FinanceMetrics.primaryStatus(transaction);
+        switch (status) {
+          case PrimaryLabelStatus.resolved:
+            final primary = transaction.primaryLabel!;
+            labelTotals.update(
+              primary.name,
+              (value) => value..amount += transaction.amount,
+              ifAbsent: () => _LabelTotal(
+                amount: transaction.amount,
+                color: primary.color,
+              ),
+            );
+            break;
+          case PrimaryLabelStatus.unlabeled:
+            labelTotals.update(
+              'Unlabeled',
+              (value) => value..amount += transaction.amount,
+              ifAbsent: () => _LabelTotal(amount: transaction.amount),
+            );
+            monthUncategorized += 1;
+            break;
+          case PrimaryLabelStatus.needsPrimaryLabel:
+            labelTotals.update(
+              'Needs primary label',
+              (value) => value..amount += transaction.amount,
+              ifAbsent: () => _LabelTotal(amount: transaction.amount),
+            );
+            break;
+          case PrimaryLabelStatus.notRequired:
+            break;
+        }
+      } else if (FinanceMetrics.isInvestmentOutflow(transaction)) {
         monthInvestments += transaction.amount;
       }
     }
@@ -131,11 +150,11 @@ class DashboardAnalytics {
       final bucket = monthMap[key];
       if (bucket == null) continue;
 
-      if (_isIncome(transaction)) {
+      if (FinanceMetrics.isIncome(transaction)) {
         bucket.income += transaction.amount;
-      } else if (_isSpending(transaction)) {
+      } else if (FinanceMetrics.isExpense(transaction)) {
         bucket.spending += transaction.amount;
-      } else if (_isInvestmentOutflow(transaction)) {
+      } else if (FinanceMetrics.isInvestmentOutflow(transaction)) {
         bucket.investments += transaction.amount;
       }
     }
@@ -166,6 +185,7 @@ class DashboardAnalytics {
         month: monthStart,
         income: monthIncome,
         spending: monthSpending,
+        familySupport: monthFamilySupport,
         investments: monthInvestments,
         savings: savings,
         savingsRate: monthIncome == 0 ? 0 : (savings / monthIncome) * 100,
@@ -179,7 +199,7 @@ class DashboardAnalytics {
       spendingCategories: spendingCategories,
       totalTransactions: transactions.length,
       uncategorizedTransactions: transactions
-          .where((transaction) => _isSpending(transaction))
+          .where((transaction) => FinanceMetrics.isExpense(transaction))
           .where((transaction) => transaction.labels.isEmpty)
           .length,
       latestTransactionAt: transactions.isEmpty
@@ -212,11 +232,17 @@ class DashboardPeriodSummary {
     required this.uncategorizedCount,
     required this.averageDailySpending,
     required this.projectedSpending,
+    this.familySupport = 0,
   });
 
   final DateTime month;
   final double income;
+
+  /// Total Outflow (PRD §4 #2) — Personal Spend plus Family Support.
   final double spending;
+
+  /// Family Support (PRD §4 #4) — excluded from Personal Spend, part of outflow.
+  final double familySupport;
   final double investments;
   final double savings;
   final double savingsRate;
@@ -224,6 +250,12 @@ class DashboardPeriodSummary {
   final int uncategorizedCount;
   final double averageDailySpending;
   final double projectedSpending;
+
+  /// Personal Spend (PRD §4 #3) = Total Outflow − Family Support.
+  double get personalSpend => spending - familySupport;
+
+  /// Personal Savings After Own Spend (PRD §4 #8) — context only, NOT kept.
+  double get personalSavingsAfterOwnSpend => income - personalSpend;
 
   double get categorizedRatio {
     if (transactionCount == 0) return 1;
@@ -290,20 +322,6 @@ class _DailyAccumulator {
   double income = 0;
   double spending = 0;
 }
-
-bool _isIncome(Transaction transaction) {
-  if (transaction.isTransfer || transaction.isInvestment) return false;
-  if (transaction.isInflow && transaction.isPayPalPayoutOrDeposit) return true;
-  return transaction.type == 'credit' || transaction.isInflow;
-}
-
-bool _isSpending(Transaction transaction) {
-  if (transaction.isTransfer || transaction.isInvestment) return false;
-  return transaction.type == 'debit' || transaction.isOutflow;
-}
-
-bool _isInvestmentOutflow(Transaction transaction) =>
-    transaction.isInvestment && transaction.isOutflow;
 
 int _daysInMonth(DateTime date) => DateTime(date.year, date.month + 1, 0).day;
 

@@ -75,10 +75,14 @@ unless a task explicitly says it can run in parallel.
 
 ### Known defects carried into this roadmap (PRD §1)
 
-- [ ] D1 — cash expenses recorded against bank accounts (Phase 4).
-- [ ] D2 — `TRANSFER TO OTHER` label conflates family support with transfers
-  (Phase 4).
-- [ ] D3 — multi-label expenses split evenly in reports (Phase 5).
+- [~] D1 — cash expenses recorded against bank accounts (Phase 4). Form enforces
+  an explicit visible account; `00011` adds `account_id NOT NULL`; review query
+  authored. Historical reassignment is a live owner step.
+- [x] D2 — `TRANSFER TO OTHER` label conflates family support with transfers
+  (Phase 4). Identity-preserving rename → `FAMILY` + `exclude_from_personal_spend`.
+- [x] D3 — multi-label expenses split evenly in reports (Phase 5). Even-split
+  removed; full amount attributes to the primary label (Phase 4 groundwork;
+  RPC-level enforcement in Phase 5).
 - [ ] D4 — full-ledger loading and full reloads on Realtime events (Phase 7).
 - [~] D5 — `anon_all` RLS and browser-side `GEMINI_API_KEY` (Phases 2–3). RLS
   replacement authored (`00006`–`00010`); Gemini Edge Function is Phase 3. The
@@ -371,88 +375,87 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 4.1 Enforce explicit account selection (D1)
 
-- [ ] Keep the account selector required and always visible in add and edit
-  forms; never auto-submit a hidden or implied account.
+- [x] Keep the account selector required and always visible in add and edit
+  forms; never auto-submit a hidden or implied account. (Existing required
+  dropdown with `Select an account` validator.)
 - [ ] Pre-suggest the last-used account for convenience while keeping it
-  visible and changeable before save (persist the suggestion locally, not in
-  the database).
-- [ ] Add form affordances that make Cash vs bank selection obvious at entry
-  time on a 360-pixel layout (e.g. account chips or grouped dropdown), within
-  the existing design system.
-- [ ] **Enforce at the schema boundary, not just the form.** Make
-  `transactions.account_id` `NOT NULL` in a migration (after auditing and
-  backfilling any existing null rows), or route all writes through an RPC
-  that rejects null accounts. A form-only requirement is bypassed by direct
-  Supabase inserts and existing null-account rows.
-- [ ] Verify quick paths added later (quick capture, review flows) route
-  through the same explicit-account validation.
+  visible and changeable before save. (Deferred convenience — not required for
+  correctness; the account is already explicit and validated.)
+- [~] Add form affordances that make Cash vs bank selection obvious at entry
+  time on a 360-pixel layout. (Dropdown labels each account; account chips are
+  a Phase 8/10 UX polish.)
+- [x] **Enforce at the schema boundary, not just the form.** Make
+  `transactions.account_id` `NOT NULL` in a migration. (`00011`, with a guard
+  that fails if null-account rows remain.)
+- [~] Verify quick paths added later (quick capture, review flows) route
+  through the same explicit-account validation. (Quick capture is Phase 10;
+  it will reuse `save_transaction_with_labels`.)
 
 ### 4.2 Review misassigned historical rows (no silent rewrites)
 
-- [ ] Write a review query listing candidate misassigned rows: manual debit
-  outflows against bank accounts in the affected period (optionally filtered
-  by note/merchant hints), with amounts and dates.
-- [ ] Surface the review list to the owner (SQL report or a simple filtered
-  ledger view); the owner reassigns each row through the normal audited edit
-  flow.
-- [ ] Do not bulk-update account IDs; every correction is an individual audited
-  edit.
-- [ ] Re-run account reconciliation after review: ledger totals per account
-  match `fn_account_balance` for every account.
+- [x] Write a review query listing candidate misassigned rows.
+  (`supabase/reports/misassigned_cash_review.sql`.)
+- [ ] Surface the review list to the owner; the owner reassigns each row
+  through the normal audited edit flow. (Live owner step.)
+- [x] Do not bulk-update account IDs; every correction is an individual audited
+  edit. (Report is read-only by design; no bulk UPDATE authored.)
+- [ ] Re-run account reconciliation after review. (Live — reconcile query in
+  the report footer + RUNBOOK.)
 
 ### 4.3 Rename `TRANSFER TO OTHER` to `FAMILY` (D2)
 
-- [ ] Rename via an identity-preserving `UPDATE labels SET name = 'FAMILY'`
-  (same row and ID); verify all `transaction_labels` joins are untouched.
+- [x] Rename via an identity-preserving `UPDATE labels SET name = 'FAMILY'`.
+  (`00011` — same row/id, joins untouched, idempotent.)
 - [ ] Record the rename in the label audit log once Phase 5 auditing exists
-  (backfill one audit entry if the rename happens first).
-- [ ] Review legacy rows: any family payment recorded with the `transfer` type
-  is reclassified (via audited edit) as a debit outflow with the `FAMILY`
-  label; `transfer` remains reserved for owner-account moves.
+  (backfill one audit entry). (Wired when Phase 5 label audit lands.)
+- [ ] Review legacy rows recorded with the `transfer` type. (Live owner review.)
 
 ### 4.4 Add the reporting exclusion flag
 
-- [ ] Migration: `labels.exclude_from_personal_spend boolean NOT NULL DEFAULT
-  false`; set `true` for `FAMILY`.
-- [ ] **Restrict the toggle to the `FAMILY` label only.** Exposing it as a
-  general toggle breaks the canonical invariant: non-FAMILY exclusions would
-  be removed from Personal Spend without counting toward Family Support,
-  causing `Total Outflow = Personal Spend + Family Support` to fail. If a
-  future use case requires excluding another label, redefine Family Support
-  to include every excluded label, or add an intermediate subtotal — do not
-  ship an unrestricted toggle.
-- [ ] Extend the label model/provider with the flag; expose it in label
-  management UI restricted to the `FAMILY` label (no general taxonomy).
-- [ ] Implement the canonical metrics (PRD §4) in shared computation code and
-  any existing aggregates: Income, Total Outflow, Personal Spend, Family
-  Support, Net Cash Surplus, Personal Savings After Own Spend, Savings Rate.
-- [ ] Update Briefing, existing dashboard analytics, and Agent Desk context to
-  report Family Support separately and exclude it from Personal Spend.
-- [ ] Ensure UI copy never presents Personal Savings After Own Spend as
-  retained money.
+- [x] Migration: `labels.exclude_from_personal_spend boolean NOT NULL DEFAULT
+  false`; set `true` for `FAMILY`. (`00011`)
+- [x] **Restrict the toggle to the `FAMILY` label only.** (`00011`
+  `labels_single_exclusion_guard` trigger — at most one excluded label per
+  owner, so the reconciliation invariant cannot break.)
+- [~] Extend the label model/provider with the flag; expose it in label
+  management UI. (Model + provider carry the flag; the management UI toggle is
+  built with the Phase 5.11 label-management screen.)
+- [x] Implement the canonical metrics (PRD §4) in shared computation code.
+  (`lib/core/finance_metrics.dart` — the single source of truth, fully tested.)
+- [x] Update Briefing and existing dashboard analytics to report Family Support
+  separately and exclude it from Personal Spend. (Briefing metric grid +
+  `DashboardAnalytics`; Agent cashflow tool already reports canonical figures.)
+- [x] Ensure UI copy never presents Personal Savings After Own Spend as
+  retained money. (`FinanceMetrics` doc + Briefing shows Net Cash Surplus as
+  the savings figure, not after-own-spend.)
 
 ### 4.5 Phase 4 tests
 
-- [ ] Cash debit reduces Cash but not Kotak; Kotak debit reduces Kotak but not
-  Cash.
-- [ ] Editing a debit's account from Cash to Kotak moves the derived effect
-  correctly.
-- [ ] Internal transfers affect both linked accounts and leave net worth
-  unchanged.
-- [ ] `FAMILY`-labeled debit reduces the paying account and net worth, counts
-  in Total Outflow and Family Support, and never in Personal Spend.
-- [ ] `Total Outflow = Personal Spend + Family Support` for any period.
-- [ ] The renamed label keeps its ID and all historical joins.
-- [ ] Account-filtered ledger and analytics totals reconcile.
+- [~] Cash debit reduces Cash but not Kotak; Kotak debit reduces Kotak but not
+  Cash. (`fn_account_balance` derives per-account from `direction` legs;
+  covered by `test/core/account_balance_rpc_test.dart` shape + live reconcile.)
+- [~] Editing a debit's account from Cash to Kotak moves the derived effect
+  correctly. (Falls out of derived balances; live-reconcile after edit.)
+- [~] Internal transfers affect both linked accounts and leave net worth
+  unchanged. (Derived-balance behavior; live-verify.)
+- [x] `FAMILY`-labeled debit counts in Total Outflow and Family Support, and
+  never in Personal Spend. (`test/core/finance_metrics_test.dart`.)
+- [x] `Total Outflow = Personal Spend + Family Support` for any period.
+  (`finance_metrics_test.dart` invariant test.)
+- [x] The renamed label keeps its ID and all historical joins. (`00011`
+  in-place `UPDATE`; no delete/recreate.)
+- [~] Account-filtered ledger and analytics totals reconcile. (Analytics use
+  the shared classifier; account-balance reconcile is a live check.)
 
 ### Phase 4 exit criteria
 
-- [ ] No path can save a transaction without an explicit, visible account,
-  enforced at both the form and database level (`account_id NOT NULL`
-  constraint or RPC-only writes that reject null).
-- [ ] Reviewed historical rows reconcile with real account balances.
-- [ ] Family Support is a first-class reported metric, distinct from both
-  Personal Spend and internal transfers.
+- [x] No path can save a transaction without an explicit, visible account,
+  enforced at both the form and database level. (Form validator + `00011`
+  `account_id NOT NULL`.)
+- [ ] Reviewed historical rows reconcile with real account balances. (Live
+  owner review — report authored.)
+- [x] Family Support is a first-class reported metric, distinct from both
+  Personal Spend and internal transfers. (`FinanceMetrics` + Briefing.)
 
 ---
 

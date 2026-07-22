@@ -449,7 +449,7 @@ class _MetricGrid extends StatelessWidget {
             SizedBox(
               width: cardWidth,
               child: _MetricCard(
-                label: 'Spent',
+                label: 'Total Outflow',
                 amount: currencyFormat.format(summary.spending),
                 icon: Icons.arrow_upward_rounded,
                 color: AppTheme.redAccent,
@@ -458,7 +458,25 @@ class _MetricGrid extends StatelessWidget {
             SizedBox(
               width: cardWidth,
               child: _MetricCard(
-                label: 'Saved',
+                label: 'Personal Spend',
+                amount: currencyFormat.format(summary.personalSpend),
+                icon: Icons.person_outline_rounded,
+                color: AppTheme.redAccent,
+              ),
+            ),
+            SizedBox(
+              width: cardWidth,
+              child: _MetricCard(
+                label: 'Family Support',
+                amount: currencyFormat.format(summary.familySupport),
+                icon: Icons.volunteer_activism_outlined,
+                color: AppTheme.accentGold,
+              ),
+            ),
+            SizedBox(
+              width: cardWidth,
+              child: _MetricCard(
+                label: 'Net Cash Surplus',
                 amount: currencyFormat.format(summary.savings),
                 icon: Icons.savings_outlined,
                 color: summary.savings >= 0
