@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -145,9 +146,17 @@ class AuthController extends StateNotifier<OwnerAuthState> {
   /// Post-auth redirect target. On web this is the app's own origin so the
   /// callback lands back in the SPA. Null lets supabase_flutter pick the
   /// platform default on non-web builds.
+  ///
+  /// `Uri.origin` throws unless the scheme is http/https and a host is present,
+  /// so the non-web `file:` base is screened out before it is read rather than
+  /// after — a thrown StateError here would escape `sendMagicLink`, which has
+  /// no catch of its own.
   String? _redirectUrl() {
-    final origin = Uri.base.origin;
-    return origin.isEmpty ? null : origin;
+    if (!kIsWeb) return null;
+    final base = Uri.base;
+    if (base.host.isEmpty) return null;
+    if (base.scheme != 'http' && base.scheme != 'https') return null;
+    return base.origin;
   }
 
   @override
