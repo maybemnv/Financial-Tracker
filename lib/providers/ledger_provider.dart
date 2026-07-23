@@ -183,7 +183,9 @@ class LedgerNotifier extends StateNotifier<LedgerState> {
   /// keeping the joined label data the event cannot provide.
   Transaction _merge(Transaction existing, Map<String, dynamic> record) {
     final merged = Map<String, dynamic>.from(record);
-    merged['transaction_labels'] = null; // never present on a base-row event
+    // Neither label shape is ever present on a base-row event.
+    merged['transaction_labels'] = null;
+    merged['labels'] = null;
     final parsed = Transaction.fromJson(merged);
     return parsed.copyWith(labels: existing.labels);
   }

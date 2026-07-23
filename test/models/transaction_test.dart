@@ -113,4 +113,72 @@ void main() {
       expect(roundTrip.transactedAt, original.transactedAt);
     });
   });
+
+  group('Transaction.fromJson label shapes', () {
+    // `get_transaction_page` (migration 00017) emits a flat `labels` array.
+    // A direct PostgREST select embeds `transaction_labels(label:labels(*))`.
+    // Reading only the embedded shape silently emptied every row's labels.
+    test('parses the flat labels array the paged ledger RPC returns', () {
+      final tx = Transaction.fromJson({
+        'amount': 420,
+        'type': 'debit',
+        'labels': [
+          {
+            'id': 'label-1',
+            'name': 'GROCERIES',
+            'color': '#0E8A16',
+            'status': 'active',
+            'exclude_from_personal_spend': false,
+          },
+          {
+            'id': 'label-2',
+            'name': 'FAMILY',
+            'color': '#1D76DB',
+            'status': 'active',
+            'exclude_from_personal_spend': true,
+          },
+        ],
+      });
+
+      expect(tx.labels.map((l) => l.name), ['GROCERIES', 'FAMILY']);
+      expect(tx.labels.last.excludeFromPersonalSpend, isTrue);
+    });
+
+    test('still parses the embedded PostgREST join shape', () {
+      final tx = Transaction.fromJson({
+        'amount': 420,
+        'type': 'debit',
+        'transaction_labels': [
+          {
+            'label': {'id': 'label-1', 'name': 'SIP', 'color': '#1D76DB'},
+          },
+        ],
+      });
+
+      expect(tx.labels.map((l) => l.name), ['SIP']);
+    });
+
+    test('yields no labels when the row carries none', () {
+      final tx = Transaction.fromJson({
+        'amount': 420,
+        'type': 'debit',
+        'labels': <dynamic>[],
+      });
+
+      expect(tx.labels, isEmpty);
+    });
+
+    test('skips malformed entries instead of throwing', () {
+      final tx = Transaction.fromJson({
+        'amount': 420,
+        'type': 'debit',
+        'labels': [
+          {'id': 'orphan'}, // no name/color — an incomplete row
+          {'id': 'label-1', 'name': 'RENT', 'color': '#B60205'},
+        ],
+      });
+
+      expect(tx.labels.map((l) => l.name), ['RENT']);
+    });
+  });
 }

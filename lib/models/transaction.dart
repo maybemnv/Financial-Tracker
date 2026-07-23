@@ -101,7 +101,9 @@ class Transaction {
       vpa: json['vpa'] as String?,
       merchant: json['merchant'] as String?,
       bank: json['bank'] as String?,
-      labels: _labelsFromJson(json['transaction_labels']),
+      // `get_transaction_page` emits a flat `labels` array; a direct PostgREST
+      // select embeds `transaction_labels(label:labels(*))`. Both are read.
+      labels: _labelsFromJson(json['labels'] ?? json['transaction_labels']),
       primaryLabelId: json['primary_label_id'] as String?,
       rawSms: json['raw_sms'] as String?,
       rawSmsHash: json['raw_sms_hash'] as String?,
@@ -211,12 +213,20 @@ class Transaction {
   static String encodeEditHistory(List<Map<String, dynamic>> history) =>
       jsonEncode(history);
 
+  /// Accepts both label shapes the app receives:
+  ///   RPC       `[{id, name, color, ...}]`              — flat
+  ///   PostgREST `[{label: {id, name, color, ...}}]`     — embedded join row
+  /// An entry carrying a nested `label` map is unwrapped; anything else is
+  /// taken as the label itself.
   static List<TransactionLabel> _labelsFromJson(dynamic value) {
     if (value is! List) return const [];
     return value
-        .map((entry) => Map<String, dynamic>.from(entry as Map))
-        .map((entry) => entry['label'])
         .whereType<Map>()
+        .map((entry) {
+          final nested = entry['label'];
+          return nested is Map ? nested : entry;
+        })
+        .where((label) => label['name'] != null && label['color'] != null)
         .map((label) => TransactionLabel.fromJson(
               Map<String, dynamic>.from(label),
             ))
