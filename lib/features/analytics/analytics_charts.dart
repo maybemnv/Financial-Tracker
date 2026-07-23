@@ -11,6 +11,7 @@ final _currency =
 final _compact = NumberFormat.compactCurrency(
     symbol: '₹', decimalDigits: 1, locale: 'en_IN');
 final _monthShort = DateFormat('MMM');
+const _chartDuration = Duration.zero;
 
 /// Shared chrome for every chart: a title, an always-available table
 /// alternative, and an accessible text summary.
@@ -77,9 +78,8 @@ class _ChartFrameState extends State<ChartFrame> {
           ),
         Semantics(
           label: widget.summary,
-          child: _showTable
-              ? widget.table
-              : ExcludeSemantics(child: widget.chart),
+          child:
+              _showTable ? widget.table : ExcludeSemantics(child: widget.chart),
         ),
       ],
     );
@@ -147,14 +147,14 @@ class ChartTable extends StatelessWidget {
         dataRowMinHeight: 32,
         dataRowMaxHeight: 40,
         columns: [
-          for (final h in headers) DataColumn(label: Text(h, style: labelStyle)),
+          for (final h in headers)
+            DataColumn(label: Text(h, style: labelStyle)),
         ],
         rows: [
           for (final r in rows)
             DataRow(cells: [
               for (final c in r)
-                DataCell(Text(c,
-                    style: Theme.of(context).textTheme.bodySmall)),
+                DataCell(Text(c, style: Theme.of(context).textTheme.bodySmall)),
             ]),
         ],
       ),
@@ -171,6 +171,12 @@ Widget _empty(BuildContext context, String message) => SizedBox(
 
 String _monthLabel(int year, int month) =>
     _monthShort.format(DateTime(year, month));
+
+Color _signedColor(double value) =>
+    value < 0 ? ChartTheme.series2 : ChartTheme.series1;
+
+String _share(double value, double total) =>
+    total == 0 ? '—' : '${(value / total * 100).toStringAsFixed(1)}%';
 
 // --- Chart 1: Monthly Cash Flow ---------------------------------------------
 
@@ -304,11 +310,13 @@ class CashFlowChart extends StatelessWidget {
               barsSpace: 2,
               barRods: [
                 _rod(points[i].income, ChartTheme.series1, points[i].isPartial),
-                _rod(points[i].outflow, ChartTheme.series2, points[i].isPartial),
+                _rod(
+                    points[i].outflow, ChartTheme.series2, points[i].isPartial),
               ],
             ),
         ],
       ),
+      duration: _chartDuration,
     );
   }
 
@@ -318,18 +326,218 @@ class CashFlowChart extends StatelessWidget {
         width: ChartTheme.barWidth,
         // Square shoulders, 4px rounded data end.
         borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-        color: partial ? color.withValues(alpha: ChartTheme.partialOpacity) : color,
+        color: partial
+            ? color.withValues(alpha: ChartTheme.partialOpacity)
+            : color,
       );
+}
+
+class MonthlyNetChart extends StatelessWidget {
+  const MonthlyNetChart({super.key, required this.points});
+
+  final List<CashFlowPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChartFrame(
+      title: 'Monthly net movement',
+      note:
+          'Positive bars are surplus. Orange bars are months where outflow won.',
+      summary: _summary(),
+      legend: const ChartLegend(entries: [
+        (label: 'Surplus', color: ChartTheme.series1),
+        (label: 'Deficit', color: ChartTheme.series2),
+      ]),
+      table: ChartTable(
+        headers: const ['Month', 'Net'],
+        rows: [
+          for (final p in points)
+            [
+              '${_monthLabel(p.year, p.month)} ${p.year}',
+              _currency.format(p.net)
+            ],
+        ],
+      ),
+      chart: points.isEmpty
+          ? _empty(context, 'No cash flow in this period.')
+          : SizedBox(height: 200, child: _bars(context)),
+    );
+  }
+
+  String _summary() {
+    if (points.isEmpty) return 'Monthly net movement: no data in this period.';
+    final best = points.reduce((a, b) => a.net >= b.net ? a : b);
+    final worst = points.reduce((a, b) => a.net <= b.net ? a : b);
+    return 'Monthly net movement. Best month ${_monthLabel(best.year, best.month)} '
+        '${_currency.format(best.net)}; weakest month '
+        '${_monthLabel(worst.year, worst.month)} ${_currency.format(worst.net)}.';
+  }
+
+  Widget _bars(BuildContext context) {
+    final maxAbs = points.fold<double>(
+      0,
+      (m, p) => p.net.abs() > m ? p.net.abs() : m,
+    );
+    return BarChart(
+      BarChartData(
+        maxY: maxAbs == 0 ? 1 : maxAbs * 1.2,
+        minY: maxAbs == 0 ? -1 : -maxAbs * 1.2,
+        alignment: BarChartAlignment.spaceAround,
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, _, rod, __) {
+              final p = points[group.x];
+              return BarTooltipItem(
+                '${_monthLabel(p.year, p.month)} ${p.year}\nNet: '
+                '${_currency.format(p.net)}',
+                const TextStyle(color: AppTheme.paper, fontSize: 11),
+              );
+            },
+          ),
+        ),
+        gridData: FlGridData(
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) =>
+              const FlLine(color: ChartTheme.grid, strokeWidth: 1),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(),
+          rightTitles: const AxisTitles(),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 46,
+              getTitlesWidget: (value, meta) => Text(
+                _compact.format(value),
+                style: ChartTheme.axisLabel(context),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                final i = value.toInt();
+                if (i < 0 || i >= points.length) return const SizedBox.shrink();
+                final step = (points.length / 6).ceil();
+                if (points.length > 6 && i % step != 0) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(_monthLabel(points[i].year, points[i].month),
+                      style: ChartTheme.axisLabel(context)),
+                );
+              },
+            ),
+          ),
+        ),
+        barGroups: [
+          for (var i = 0; i < points.length; i++)
+            BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: points[i].net,
+                  width: ChartTheme.barWidth,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(4)),
+                  color: _signedColor(points[i].net),
+                ),
+              ],
+            ),
+        ],
+      ),
+      duration: _chartDuration,
+    );
+  }
+}
+
+class OutflowMixPieChart extends StatelessWidget {
+  const OutflowMixPieChart({super.key, required this.mix});
+
+  final OutflowMix mix;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = [
+      (
+        label: 'Personal Spend',
+        value: mix.personalSpend,
+        color: ChartTheme.series1
+      ),
+      (
+        label: 'Family Support',
+        value: mix.familySupport,
+        color: ChartTheme.series2
+      ),
+    ].where((r) => r.value > 0).toList();
+
+    return ChartFrame(
+      title: 'Outflow mix',
+      note: 'Splits total outflow into spend kept personal vs family support.',
+      summary: mix.total == 0
+          ? 'Outflow mix: no outflow in this period.'
+          : 'Outflow mix: ${_share(mix.personalSpend, mix.total)} Personal Spend '
+              'and ${_share(mix.familySupport, mix.total)} Family Support.',
+      legend: rows.isEmpty
+          ? null
+          : ChartLegend(entries: [
+              for (final r in rows) (label: r.label, color: r.color),
+            ]),
+      table: ChartTable(
+        headers: const ['Bucket', 'Amount', 'Share'],
+        rows: [
+          [
+            'Personal Spend',
+            _currency.format(mix.personalSpend),
+            _share(mix.personalSpend, mix.total)
+          ],
+          [
+            'Family Support',
+            _currency.format(mix.familySupport),
+            _share(mix.familySupport, mix.total)
+          ],
+        ],
+      ),
+      chart: rows.isEmpty
+          ? _empty(context, 'No outflow in this period.')
+          : SizedBox(height: 210, child: _pie(context, rows)),
+    );
+  }
+
+  Widget _pie(
+    BuildContext context,
+    List<({String label, double value, Color color})> rows,
+  ) {
+    return PieChart(
+      PieChartData(
+        sectionsSpace: 2,
+        centerSpaceRadius: 44,
+        sections: [
+          for (final r in rows)
+            PieChartSectionData(
+              color: r.color,
+              value: r.value,
+              radius: 74,
+              title: _share(r.value, mix.total),
+              titleStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppTheme.paper,
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+        ],
+      ),
+      duration: _chartDuration,
+    );
+  }
 }
 
 // --- Chart 2: Spending by Primary Label -------------------------------------
 
-/// Sorted horizontal bars. One series, so every bar takes slot 1 — colouring
-/// bars darker-where-bigger would re-encode length as hue and spend the
-/// identity channel on information the bar already shows.
-///
-/// The two review buckets are the exception: they are not categories, so they
-/// take a different slot AND say so in words.
+/// Spending as a pie: top two labels plus Other, so the chart stays inside the
+/// validated three-colour palette while the table keeps the exact ledger total.
 class LabelSpendChart extends StatelessWidget {
   const LabelSpendChart({
     super.key,
@@ -346,16 +554,24 @@ class LabelSpendChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shown = LabelSpend.topWithOther(slices);
+    final shown = LabelSpend.topWithOther(slices, keep: 2);
     final total = shown.fold<double>(0, (s, e) => s + e.amount);
-    final maxAmount = shown.fold<double>(0, (m, e) => e.amount > m ? e.amount : m);
+    final hasReview = shown.any((s) =>
+        s.bucket == SpendBucket.unlabeled ||
+        s.bucket == SpendBucket.needsPrimary);
 
     return ChartFrame(
       title: 'Spending by label',
-      note: includeFamily
-          ? 'Personal Spend and Family Support.'
-          : 'Personal Spend only. Family Support is excluded.',
+      note:
+          '${includeFamily ? 'Pie is top two labels plus Other. Personal Spend and Family Support.' : 'Pie is top two labels plus Other. Family Support is excluded.'}'
+          '${hasReview ? ' Not a category: review slices need cleanup.' : ''}',
       summary: _summary(shown, total),
+      legend: shown.isEmpty
+          ? null
+          : ChartLegend(entries: [
+              for (var i = 0; i < shown.length; i++)
+                (label: shown[i].name, color: ChartTheme.seriesColor(i)),
+            ]),
       table: ChartTable(
         headers: const ['Label', 'Amount', 'Share'],
         rows: [
@@ -363,27 +579,62 @@ class LabelSpendChart extends StatelessWidget {
             [
               s.name,
               _currency.format(s.amount),
-              total == 0 ? '—' : '${(s.amount / total * 100).toStringAsFixed(1)}%',
+              _share(s.amount, total),
             ],
         ],
       ),
       chart: shown.isEmpty
           ? _empty(context, 'No spending in this period.')
           : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final slice in shown)
-                  _Row(
-                    slice: slice,
-                    fraction: maxAmount == 0 ? 0 : slice.amount / maxAmount,
-                    onTap: slice.bucket == SpendBucket.label
-                        ? () => onLabelTap?.call(slice)
-                        : (slice.bucket == SpendBucket.other
-                            ? null
-                            : onReviewTap),
+                SizedBox(height: 230, child: _pie(context, shown, total)),
+                const SizedBox(height: 8),
+                for (var i = 0; i < shown.length; i++)
+                  _PieValueRow(
+                    label: shown[i].name,
+                    amount: shown[i].amount,
+                    color: ChartTheme.seriesColor(i),
                   ),
               ],
             ),
+    );
+  }
+
+  Widget _pie(BuildContext context, List<LabelSpend> shown, double total) {
+    return PieChart(
+      PieChartData(
+        sectionsSpace: 2,
+        centerSpaceRadius: 42,
+        pieTouchData: PieTouchData(
+          touchCallback: (event, response) {
+            if (!event.isInterestedForInteractions) return;
+            final i = response?.touchedSection?.touchedSectionIndex;
+            if (i == null || i < 0 || i >= shown.length) return;
+            final slice = shown[i];
+            if (slice.bucket == SpendBucket.label) {
+              onLabelTap?.call(slice);
+            } else if (slice.bucket != SpendBucket.other) {
+              onReviewTap?.call();
+            }
+          },
+        ),
+        sections: [
+          for (var i = 0; i < shown.length; i++)
+            PieChartSectionData(
+              color: ChartTheme.seriesColor(i),
+              value: shown[i].amount,
+              radius: 76,
+              title: shown[i].amount / total >= 0.09
+                  ? _share(shown[i].amount, total)
+                  : '',
+              titleStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppTheme.paper,
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+        ],
+      ),
+      duration: _chartDuration,
     );
   }
 
@@ -396,69 +647,35 @@ class LabelSpendChart extends StatelessWidget {
   }
 }
 
-class _Row extends StatelessWidget {
-  const _Row({required this.slice, required this.fraction, this.onTap});
+class _PieValueRow extends StatelessWidget {
+  const _PieValueRow({
+    required this.label,
+    required this.amount,
+    required this.color,
+  });
 
-  final LabelSpend slice;
-  final double fraction;
-  final VoidCallback? onTap;
+  final String label;
+  final double amount;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final isReview = slice.bucket == SpendBucket.unlabeled ||
-        slice.bucket == SpendBucket.needsPrimary;
-    final color = isReview ? ChartTheme.series3 : ChartTheme.series1;
-
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    slice.name,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                // Direct value label: the readability channel the palette
-                // requires, and it saves a tap to learn the number.
-                Text(_currency.format(slice.amount),
-                    style: Theme.of(context).textTheme.bodySmall),
-              ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(width: 10, height: 10, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 3),
-            Row(
-              children: [
-                Expanded(
-                  flex: (fraction * 1000).round().clamp(1, 1000),
-                  child: Container(height: 10, color: color),
-                ),
-                Expanded(
-                  flex: (1000 - (fraction * 1000).round()).clamp(0, 999),
-                  child: const SizedBox(height: 10),
-                ),
-              ],
-            ),
-            if (isReview)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  slice.bucket == SpendBucket.unlabeled
-                      ? 'Not a category — these expenses carry no label. Tap to review.'
-                      : 'Not a category — no primary label chosen. Tap to review.',
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: ChartTheme.mutedInk),
-                ),
-              ),
-          ],
-        ),
+          ),
+          Text(_currency.format(amount),
+              style: Theme.of(context).textTheme.bodySmall),
+        ],
       ),
     );
   }
@@ -514,8 +731,8 @@ class DailyCumulativeChart extends StatelessWidget {
       return 'Daily cumulative personal spend: nothing spent yet this month.';
     }
     final today = current.last;
-    final samePoint = points.firstWhere((p) => p.day == today.day,
-        orElse: () => today);
+    final samePoint =
+        points.firstWhere((p) => p.day == today.day, orElse: () => today);
     return 'Cumulative personal spend by day ${today.day}: '
         '${_currency.format(today.current ?? 0)} this month against '
         '${_currency.format(samePoint.previous)} at the same point last month.';
@@ -579,6 +796,7 @@ class DailyCumulativeChart extends StatelessWidget {
           ),
         ],
       ),
+      duration: _chartDuration,
     );
   }
 
@@ -591,6 +809,153 @@ class DailyCumulativeChart extends StatelessWidget {
         // line; show the dot instead.
         dotData: FlDotData(show: spots.length == 1),
       );
+}
+
+class DailySpendDeltaChart extends StatelessWidget {
+  const DailySpendDeltaChart({super.key, required this.points});
+
+  final List<DailyCumulativePoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final deltas = _deltas();
+    return ChartFrame(
+      title: 'Daily spend pulses',
+      note:
+          'Daily amounts are derived from the cumulative line, not fetched again.',
+      summary: _summary(deltas),
+      legend: const ChartLegend(entries: [
+        (label: 'This month', color: ChartTheme.series1),
+        (label: 'Last month', color: ChartTheme.series2),
+      ]),
+      table: ChartTable(
+        headers: const ['Day', 'This month', 'Last month'],
+        rows: [
+          for (final d in deltas)
+            [
+              '${d.day}',
+              d.current == null ? '—' : _currency.format(d.current!),
+              _currency.format(d.previous),
+            ],
+        ],
+      ),
+      chart: deltas.isEmpty
+          ? _empty(context, 'No daily spend in this period.')
+          : SizedBox(height: 200, child: _bars(context, deltas)),
+    );
+  }
+
+  List<({int day, double? current, double previous})> _deltas() {
+    double? previousCurrent;
+    var previousComparison = 0.0;
+    final deltas = <({int day, double? current, double previous})>[];
+    for (final p in points) {
+      final currentDelta =
+          p.current == null ? null : p.current! - (previousCurrent ?? 0);
+      deltas.add((
+        day: p.day,
+        current: currentDelta,
+        previous: p.previous - previousComparison,
+      ));
+      if (p.current != null) previousCurrent = p.current;
+      previousComparison = p.previous;
+    }
+    return deltas;
+  }
+
+  String _summary(List<({int day, double? current, double previous})> deltas) {
+    final current = deltas.where((d) => d.current != null).toList();
+    if (current.isEmpty) {
+      return 'Daily spend pulses: no spending yet this month.';
+    }
+    final biggest = current.reduce((a, b) => a.current! >= b.current! ? a : b);
+    return 'Daily spend pulses. Biggest day this month is day ${biggest.day} '
+        'at ${_currency.format(biggest.current)}.';
+  }
+
+  Widget _bars(
+    BuildContext context,
+    List<({int day, double? current, double previous})> deltas,
+  ) {
+    final maxY = deltas.fold<double>(
+      0,
+      (m, d) => [m, d.current ?? 0, d.previous].reduce((a, b) => a > b ? a : b),
+    );
+    return BarChart(
+      BarChartData(
+        maxY: maxY == 0 ? 1 : maxY * 1.15,
+        alignment: BarChartAlignment.spaceAround,
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, _, rod, rodIndex) {
+              final d = deltas[group.x];
+              final value = rodIndex == 0 ? d.current ?? 0 : d.previous;
+              return BarTooltipItem(
+                'Day ${d.day}\n${rodIndex == 0 ? 'This month' : 'Last month'}: '
+                '${_currency.format(value)}',
+                const TextStyle(color: AppTheme.paper, fontSize: 11),
+              );
+            },
+          ),
+        ),
+        gridData: FlGridData(
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) =>
+              const FlLine(color: ChartTheme.grid, strokeWidth: 1),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(),
+          rightTitles: const AxisTitles(),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 46,
+              getTitlesWidget: (value, meta) => Text(_compact.format(value),
+                  style: ChartTheme.axisLabel(context)),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 5,
+              getTitlesWidget: (value, meta) => Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('${value.toInt() + 1}',
+                    style: ChartTheme.axisLabel(context)),
+              ),
+            ),
+          ),
+        ),
+        barGroups: [
+          for (var i = 0; i < deltas.length; i++)
+            BarChartGroupData(
+              x: i,
+              barsSpace: 1,
+              barRods: [
+                BarChartRodData(
+                  toY: deltas[i].current ?? 0,
+                  width: 5,
+                  color: deltas[i].current == null
+                      ? ChartTheme.series1.withValues(alpha: 0.2)
+                      : ChartTheme.series1,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(2)),
+                ),
+                BarChartRodData(
+                  toY: deltas[i].previous,
+                  width: 5,
+                  color: ChartTheme.series2,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(2)),
+                ),
+              ],
+            ),
+        ],
+      ),
+      duration: _chartDuration,
+    );
+  }
 }
 
 // --- Chart 4: Net Worth History ---------------------------------------------
@@ -692,8 +1057,7 @@ class NetWorthChart extends StatelessWidget {
                 if (i == usable.length) {
                   return Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child:
-                        Text('now', style: ChartTheme.axisLabel(context)),
+                    child: Text('now', style: ChartTheme.axisLabel(context)),
                   );
                 }
                 final step = (usable.length / 5).ceil();
@@ -731,6 +1095,119 @@ class NetWorthChart extends StatelessWidget {
           ),
         ],
       ),
+      duration: _chartDuration,
+    );
+  }
+}
+
+class NetWorthChangeChart extends StatelessWidget {
+  const NetWorthChangeChart({super.key, required this.changes});
+
+  final List<MonthlyNetChange> changes;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChartFrame(
+      title: 'Net worth monthly change',
+      note:
+          'Only trusted month-end snapshots are used. Gaps are not estimated.',
+      summary: _summary(),
+      legend: const ChartLegend(entries: [
+        (label: 'Gain', color: ChartTheme.series1),
+        (label: 'Drop', color: ChartTheme.series2),
+      ]),
+      table: ChartTable(
+        headers: const ['Month', 'Change'],
+        rows: [
+          for (final c in changes)
+            [
+              '${_monthLabel(c.year, c.month)} ${c.year}',
+              _currency.format(c.change)
+            ],
+        ],
+      ),
+      chart: changes.isEmpty
+          ? _empty(
+              context, 'Need at least two trusted snapshots to show change.')
+          : SizedBox(height: 190, child: _bars(context)),
+    );
+  }
+
+  String _summary() {
+    if (changes.isEmpty) {
+      return 'Net worth monthly change: not enough trusted snapshots.';
+    }
+    final latest = changes.last;
+    return 'Latest trusted net worth change is '
+        '${_currency.format(latest.change)} in '
+        '${_monthLabel(latest.year, latest.month)}.';
+  }
+
+  Widget _bars(BuildContext context) {
+    final maxAbs = changes.fold<double>(
+      0,
+      (m, c) => c.change.abs() > m ? c.change.abs() : m,
+    );
+    return BarChart(
+      BarChartData(
+        maxY: maxAbs == 0 ? 1 : maxAbs * 1.2,
+        minY: maxAbs == 0 ? -1 : -maxAbs * 1.2,
+        alignment: BarChartAlignment.spaceAround,
+        gridData: FlGridData(
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) =>
+              const FlLine(color: ChartTheme.grid, strokeWidth: 1),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(),
+          rightTitles: const AxisTitles(),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 46,
+              getTitlesWidget: (value, meta) => Text(_compact.format(value),
+                  style: ChartTheme.axisLabel(context)),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                final i = value.toInt();
+                if (i < 0 || i >= changes.length) {
+                  return const SizedBox.shrink();
+                }
+                final step = (changes.length / 5).ceil();
+                if (changes.length > 5 && i % step != 0) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(_monthLabel(changes[i].year, changes[i].month),
+                      style: ChartTheme.axisLabel(context)),
+                );
+              },
+            ),
+          ),
+        ),
+        barGroups: [
+          for (var i = 0; i < changes.length; i++)
+            BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: changes[i].change,
+                  width: ChartTheme.barWidth,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(4)),
+                  color: _signedColor(changes[i].change),
+                ),
+              ],
+            ),
+        ],
+      ),
+      duration: _chartDuration,
     );
   }
 }

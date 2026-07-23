@@ -31,9 +31,13 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen>
     with WidgetsBindingObserver {
+  late DateTime _selectedMonth;
+
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _selectedMonth = DateTime(now.year, now.month);
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -58,14 +62,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final summaryAsync = ref.watch(briefingSummaryProvider(null));
+    final period = (year: _selectedMonth.year, month: _selectedMonth.month);
+    final summaryAsync = ref.watch(briefingSummaryProvider(period));
 
     return NewsprintPage(
       kicker: 'Briefing',
       title: 'Monthly money briefing',
-      subtitle:
-          'Cashflow, balances, and problem spots in one blunt operating view. '
-          'Charts live in Analytics.',
+      subtitle: 'Cashflow, balances, and problem spots for the selected month. '
+          'Use the month rail to inspect earlier or later periods.',
       child: summaryAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(
@@ -81,6 +85,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           child: ListView(
             padding: EdgeInsets.zero,
             children: [
+              _MonthRail(
+                month: _selectedMonth,
+                onPrevious: () => setState(() {
+                  _selectedMonth = DateTime(
+                    _selectedMonth.year,
+                    _selectedMonth.month - 1,
+                  );
+                }),
+                onNext: () => setState(() {
+                  _selectedMonth = DateTime(
+                    _selectedMonth.year,
+                    _selectedMonth.month + 1,
+                  );
+                }),
+                onPick: _pickMonth,
+              ),
+              const SizedBox(height: 12),
               _StatusLine(summary: summary),
               const SizedBox(height: 12),
               _MetricGrid(summary: summary),
@@ -103,6 +124,159 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _pickMonth() async {
+    final picked = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => _MonthPickerDialog(initialMonth: _selectedMonth),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _selectedMonth = picked);
+  }
+}
+
+class _MonthRail extends StatelessWidget {
+  const _MonthRail({
+    required this.month,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onPick,
+  });
+
+  final DateTime month;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+  final VoidCallback onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final canGoBack = month.year > 1970 || month.month > 1;
+    final canGoForward = month.year < 2100 || month.month < 12;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: AppTheme.panelDecoration(color: AppTheme.paperAlt),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 420;
+          return Row(
+            children: [
+              if (compact)
+                IconButton.outlined(
+                  onPressed: canGoBack ? onPrevious : null,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  tooltip: 'Previous month',
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: canGoBack ? onPrevious : null,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  label: const Text('BACK'),
+                ),
+              Expanded(
+                child: Center(
+                  child: TextButton.icon(
+                    onPressed: onPick,
+                    icon: const Icon(Icons.calendar_month_rounded),
+                    label: Text(
+                      monthTitleFormat.format(month),
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                ),
+              ),
+              if (compact)
+                IconButton.outlined(
+                  onPressed: canGoForward ? onNext : null,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  tooltip: 'Next month',
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: canGoForward ? onNext : null,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  label: const Text('NEXT'),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MonthPickerDialog extends StatefulWidget {
+  const _MonthPickerDialog({required this.initialMonth});
+
+  final DateTime initialMonth;
+
+  @override
+  State<_MonthPickerDialog> createState() => _MonthPickerDialogState();
+}
+
+class _MonthPickerDialogState extends State<_MonthPickerDialog> {
+  late int _month;
+  late int _year;
+
+  @override
+  void initState() {
+    super.initState();
+    _month = widget.initialMonth.month;
+    _year = widget.initialMonth.year;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final years = [for (var y = 1970; y <= 2100; y++) y];
+
+    return AlertDialog(
+      title: const Text('Pick month'),
+      content: Row(
+        children: [
+          Expanded(
+            child: DropdownButtonFormField<int>(
+              initialValue: _month,
+              decoration: const InputDecoration(labelText: 'Month'),
+              items: [
+                for (var m = 1; m <= 12; m++)
+                  DropdownMenuItem(
+                    value: m,
+                    child: Text(DateFormat.MMMM().format(DateTime(2026, m))),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _month = value);
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 116,
+            child: DropdownButtonFormField<int>(
+              initialValue: _year,
+              decoration: const InputDecoration(labelText: 'Year'),
+              items: [
+                for (final y in years)
+                  DropdownMenuItem(value: y, child: Text('$y')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _year = value);
+              },
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('CANCEL'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, DateTime(_year, _month)),
+          child: const Text('APPLY'),
+        ),
+      ],
     );
   }
 }

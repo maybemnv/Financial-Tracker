@@ -44,8 +44,7 @@ class AnalyticsQuery {
   }) =>
       AnalyticsQuery(
         period: period ?? this.period,
-        includeFamilySupport:
-            includeFamilySupport ?? this.includeFamilySupport,
+        includeFamilySupport: includeFamilySupport ?? this.includeFamilySupport,
       );
 
   @override
@@ -92,6 +91,27 @@ class CashFlowPoint {
         familySupport: _num(j['family_support']),
         isPartial: j['is_partial'] as bool? ?? false,
       );
+}
+
+class OutflowMix {
+  const OutflowMix({required this.personalSpend, required this.familySupport});
+
+  final double personalSpend;
+  final double familySupport;
+
+  double get total => personalSpend + familySupport;
+}
+
+class MonthlyNetChange {
+  const MonthlyNetChange({
+    required this.year,
+    required this.month,
+    required this.change,
+  });
+
+  final int year;
+  final int month;
+  final double change;
 }
 
 /// Which bucket a spending slice belongs to. `unlabeled` and `needsPrimary`
@@ -222,6 +242,7 @@ class MerchantTotal {
 /// Everything the Analytics tab renders, from one call.
 class AnalyticsBundle {
   const AnalyticsBundle({
+    required this.months,
     required this.cashFlow,
     required this.byLabel,
     required this.dailySpend,
@@ -231,6 +252,7 @@ class AnalyticsBundle {
     required this.includeFamilySupport,
   });
 
+  final int months;
   final List<CashFlowPoint> cashFlow;
   final List<LabelSpend> byLabel;
   final List<DailyCumulativePoint> dailySpend;
@@ -250,13 +272,23 @@ class AnalyticsBundle {
       );
     }
     final today = (now ?? DateTime.now()).day;
+    final generatedAt = now ?? DateTime.now();
+    final shouldCompleteMonths = json.containsKey('months');
+    final months = (json['months'] as num?)?.toInt() ?? 12;
     List<Map<String, dynamic>> rows(String key) =>
         (json[key] as List? ?? const [])
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
 
     return AnalyticsBundle(
-      cashFlow: rows('cash_flow').map(CashFlowPoint.fromJson).toList(),
+      months: months,
+      cashFlow: shouldCompleteMonths
+          ? _completeCashFlow(
+              rows('cash_flow').map(CashFlowPoint.fromJson).toList(),
+              months,
+              generatedAt,
+            )
+          : rows('cash_flow').map(CashFlowPoint.fromJson).toList(),
       byLabel: rows('by_label').map(LabelSpend.fromJson).toList(),
       dailySpend: rows('daily_spend')
           .map((j) => DailyCumulativePoint.fromJson(j, today))
@@ -271,4 +303,49 @@ class AnalyticsBundle {
   /// Total spend across every bucket — the figure top-N + Other must equal.
   double get totalLabelledSpend =>
       byLabel.fold<double>(0, (sum, s) => sum + s.amount);
+
+  OutflowMix get outflowMix => OutflowMix(
+        personalSpend:
+            cashFlow.fold<double>(0, (sum, p) => sum + p.personalSpend),
+        familySupport:
+            cashFlow.fold<double>(0, (sum, p) => sum + p.familySupport),
+      );
+
+  List<MonthlyNetChange> get netWorthChanges {
+    final usable =
+        netWorth.where((p) => p.available && p.value != null).toList();
+    return [
+      for (var i = 1; i < usable.length; i++)
+        MonthlyNetChange(
+          year: usable[i].year,
+          month: usable[i].month,
+          change: usable[i].value! - usable[i - 1].value!,
+        ),
+    ];
+  }
+}
+
+List<CashFlowPoint> _completeCashFlow(
+  List<CashFlowPoint> raw,
+  int months,
+  DateTime now,
+) {
+  if (months > 24) return raw;
+  final byMonth = {
+    for (final p in raw) DateTime(p.year, p.month): p,
+  };
+  final start = DateTime(now.year, now.month - (months - 1));
+  return [
+    for (var i = 0; i < months; i++)
+      byMonth[DateTime(start.year, start.month + i)] ??
+          CashFlowPoint(
+            year: DateTime(start.year, start.month + i).year,
+            month: DateTime(start.year, start.month + i).month,
+            income: 0,
+            outflow: 0,
+            familySupport: 0,
+            isPartial: DateTime(start.year, start.month + i).year == now.year &&
+                DateTime(start.year, start.month + i).month == now.month,
+          ),
+  ];
 }

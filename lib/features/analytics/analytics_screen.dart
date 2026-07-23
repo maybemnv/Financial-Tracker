@@ -29,8 +29,8 @@ enum _Section {
   final String label;
 }
 
-/// Analytics — exactly four primary charts, each with a typed source, an
-/// accessible alternative, and a drill-down that reconciles to the value shown.
+/// Analytics — curated chart sections, each with a typed source, an accessible
+/// alternative, and drill-downs that reconcile to the value shown.
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key, this.onDrillDown});
 
@@ -53,8 +53,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       kicker: 'Analytics',
       title: 'Where the money went',
       subtitle:
-          'Four charts, one period selector. Every figure reconciles to the '
-          'ledger it links to.',
+          'Curated charts, one period selector. Every figure reconciles to the '
+          'ledger it links to, with spending shown as pies.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -76,46 +76,93 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                   color: AppTheme.redAccent,
                 ),
               ),
-              data: (bundle) => ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  // Only the active section is constructed.
-                  switch (_section) {
-                    _Section.cashFlow => CashFlowChart(
-                        points: bundle.cashFlow,
-                        onMonthTap: (point, income) => _drillToMonth(
-                          point.year,
-                          point.month,
-                          income ? 'credit' : 'debit',
-                        ),
-                      ),
-                    _Section.spending => LabelSpendChart(
-                        slices: bundle.byLabel,
-                        includeFamily: bundle.includeFamilySupport,
-                        onLabelTap: (slice) => _drillToLabel(slice),
-                        onReviewTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const ReviewQueueScreen()),
-                        ),
-                      ),
-                    _Section.daily => DailyCumulativeChart(
-                        points: bundle.dailySpend,
-                        onDayTap: _drillToDay,
-                      ),
-                    _Section.netWorth => NetWorthChart(
-                        points: bundle.netWorth,
-                        current: bundle.netWorthCurrent,
-                      ),
-                    _Section.lists => _Lists(bundle: bundle),
-                  },
-                  const SizedBox(height: 24),
-                ],
+              data: (bundle) => _buildCharts(
+                context,
+                bundle,
+                bundleAsync.isRefreshing || bundleAsync.isReloading,
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildCharts(
+    BuildContext context,
+    AnalyticsBundle bundle,
+    bool isUpdating,
+  ) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        // Only the active section is constructed.
+        switch (_section) {
+          _Section.cashFlow => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CashFlowChart(
+                  points: bundle.cashFlow,
+                  onMonthTap: (point, income) => _drillToMonth(
+                    point.year,
+                    point.month,
+                    income ? 'credit' : 'debit',
+                  ),
+                ),
+                const SizedBox(height: 22),
+                MonthlyNetChart(points: bundle.cashFlow),
+                const SizedBox(height: 22),
+                OutflowMixPieChart(mix: bundle.outflowMix),
+              ],
+            ),
+          _Section.spending => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LabelSpendChart(
+                  slices: bundle.byLabel,
+                  includeFamily: bundle.includeFamilySupport,
+                  onLabelTap: (slice) => _drillToLabel(slice),
+                  onReviewTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const ReviewQueueScreen()),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                OutflowMixPieChart(mix: bundle.outflowMix),
+              ],
+            ),
+          _Section.daily => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DailyCumulativeChart(
+                  points: bundle.dailySpend,
+                  onDayTap: _drillToDay,
+                ),
+                const SizedBox(height: 22),
+                DailySpendDeltaChart(points: bundle.dailySpend),
+              ],
+            ),
+          _Section.netWorth => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                NetWorthChart(
+                  points: bundle.netWorth,
+                  current: bundle.netWorthCurrent,
+                ),
+                const SizedBox(height: 22),
+                NetWorthChangeChart(changes: bundle.netWorthChanges),
+              ],
+            ),
+          _Section.lists => _Lists(bundle: bundle),
+        },
+        if (isUpdating)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: LinearProgressIndicator(),
+          ),
+        const SizedBox(height: 24),
+      ],
     );
   }
 
@@ -234,14 +281,15 @@ class _Lists extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Alias-normalized, so the same shop under several spellings rolls up.
-    final merchants = ref.watch(topMerchantsProvider).valueOrNull ??
-        bundle.topMerchants;
+    final merchants =
+        ref.watch(topMerchantsProvider).valueOrNull ?? bundle.topMerchants;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Expanded(child: NewsprintSectionTitle(label: 'Top merchants')),
+            const Expanded(
+                child: NewsprintSectionTitle(label: 'Top merchants')),
             TextButton(
               onPressed: () => showModalBottomSheet<void>(
                 context: context,
