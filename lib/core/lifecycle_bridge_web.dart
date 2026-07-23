@@ -29,25 +29,30 @@ class _WebBridge implements LifecycleBridge {
   }
 
   Future<void> _handleResume(String attemptId) async {
-    // The JS side already suppresses duplicate signals per attempt; this guards
-    // against a slow revalidation overlapping a fresh request.
+    // Ack on the next rendered frame, BEFORE revalidating. A painted frame is
+    // the whole proof the watchdog needs: it exists to catch a dead or blank
+    // shell, not a slow one. Acking after `_handler` meant a single slow RPC
+    // inside it blew the 3s budget and reloaded a perfectly healthy app,
+    // discarding the tab the owner was on.
+    afterNextFrame(() {
+      _dispatch('md-resume-ack', {
+        'protocol': LifecycleBridge.protocolVersion,
+        'attemptId': attemptId,
+      });
+    });
+
+    // Revalidation continues in the background. The JS side suppresses
+    // duplicate signals per attempt; this guards against a slow revalidation
+    // overlapping a fresh request.
     if (_handling) return;
     _handling = true;
     try {
       await _handler?.call();
     } catch (_) {
-      // A failed refresh still acks: the app is alive and showing its own
-      // error/stale state, which is not the blank-screen case the watchdog is
-      // there to catch. Reloading would throw away that state.
+      // A failed refresh is not the blank-screen case the watchdog is there to
+      // catch: the app is alive and showing its own error/stale state.
     } finally {
-      // Ack only after the next frame actually renders — proof of life.
-      afterNextFrame(() {
-        _dispatch('md-resume-ack', {
-          'protocol': LifecycleBridge.protocolVersion,
-          'attemptId': attemptId,
-        });
-        _handling = false;
-      });
+      _handling = false;
     }
   }
 

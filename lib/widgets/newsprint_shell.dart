@@ -156,6 +156,15 @@ class NewsprintShell extends StatelessWidget {
                   active: currentIndex == 4,
                   onTap: () => onTabSelected(4),
                 ),
+                // Invoices opens the end drawer rather than switching tabs, so
+                // it is never the active slot. It sits in the nav because the
+                // header icon alone is too easy to miss.
+                _NavItem(
+                  icon: Icons.request_quote_rounded,
+                  label: 'Invoices',
+                  active: false,
+                  onTap: onInvoiceTap,
+                ),
               ],
             ),
           ),
@@ -202,12 +211,19 @@ class _NavItem extends StatelessWidget {
                 children: [
                   Icon(icon, size: 20, color: foreground),
                   const SizedBox(height: 4),
-                  Text(
-                    label.toUpperCase(),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: foreground,
-                          letterSpacing: 0.9,
-                        ),
+                  // Six slots leave the longest label ("ANALYTICS") short of
+                  // room on a narrow phone; scale it down rather than clip it.
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label.toUpperCase(),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: foreground,
+                            letterSpacing: 0.9,
+                          ),
+                    ),
                   ),
                 ],
               ),
