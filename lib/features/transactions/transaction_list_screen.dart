@@ -74,42 +74,40 @@ class _TransactionListScreenState extends ConsumerState<TransactionListScreen> {
       kicker: 'Ledger',
       title: 'Daily money ledger',
       subtitle: 'Every inflow, outflow, transfer, and investment leg in one ruled stack.',
-      child: Column(
-        children: [
-          accountsAsync.maybeWhen(
-            data: (accounts) => _AccountBar(
-              accounts: accounts,
-              selected: ledger.query.accountId ?? _allAccounts,
-              onSelected: (value) => _updateQuery((q) => value == _allAccounts
-                  ? q.copyWith(clearAccount: true)
-                  : q.copyWith(accountId: value)),
+      child: _LedgerBody(
+        ledger: ledger,
+        scrollController: _scrollController,
+        onLabelTap: (label) =>
+            _updateQuery((q) => q.copyWith(labelId: label.id)),
+        header: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            accountsAsync.maybeWhen(
+              data: (accounts) => _AccountBar(
+                accounts: accounts,
+                selected: ledger.query.accountId ?? _allAccounts,
+                onSelected: (value) => _updateQuery((q) => value == _allAccounts
+                    ? q.copyWith(clearAccount: true)
+                    : q.copyWith(accountId: value)),
+              ),
+              orElse: () => const SizedBox.shrink(),
             ),
-            orElse: () => const SizedBox.shrink(),
-          ),
-          labelsAsync.maybeWhen(
-            // Merged and deleted labels stay readable for historical
-            // attribution but are noise as filters; archived ones remain
-            // useful for finding older transactions.
-            data: (labels) => _LabelBar(
-              labels: labels
-                  .where((l) => l.isActive || l.isArchived)
-                  .toList(growable: false),
-              selectedId: ledger.query.labelId,
-              onSelected: (id) => _updateQuery((q) => id == null
-                  ? q.copyWith(clearLabel: true)
-                  : q.copyWith(labelId: id)),
-              onCreate: _createLabel,
+            labelsAsync.maybeWhen(
+              data: (labels) => _LabelBar(
+                labels: labels
+                    .where((l) => l.isActive || l.isArchived)
+                    .toList(growable: false),
+                selectedId: ledger.query.labelId,
+                onSelected: (id) => _updateQuery((q) => id == null
+                    ? q.copyWith(clearLabel: true)
+                    : q.copyWith(labelId: id)),
+                onCreate: _createLabel,
+              ),
+              orElse: () => const SizedBox.shrink(),
             ),
-            orElse: () => const SizedBox.shrink(),
-          ),
-          const _ReviewBanner(),
-          Expanded(child: _LedgerBody(
-            ledger: ledger,
-            scrollController: _scrollController,
-            onLabelTap: (label) =>
-                _updateQuery((q) => q.copyWith(labelId: label.id)),
-          )),
-        ],
+            const _ReviewBanner(),
+          ],
+        ),
       ),
     );
   }
@@ -188,25 +186,44 @@ class _LedgerBody extends ConsumerWidget {
     required this.ledger,
     required this.scrollController,
     required this.onLabelTap,
+    this.header,
   });
 
   final LedgerState ledger;
   final ScrollController scrollController;
   final ValueChanged<TransactionLabel> onLabelTap;
+  final Widget? header;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (ledger.isLoadingFirstPage) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (header != null) header!,
+            const Expanded(
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ],
+        ),
+      );
     }
     if (ledger.error != null) {
-      return Center(
-        child: NewsprintNotice(
-          icon: Icons.error_outline_rounded,
-          title: 'Ledger feed interrupted',
-          message: '${ledger.error}',
-          color: AppTheme.redAccent,
-        ),
+      return Column(
+        children: [
+          if (header != null) header!,
+          const Spacer(),
+          Center(
+            child: NewsprintNotice(
+              icon: Icons.error_outline_rounded,
+              title: 'Ledger feed interrupted',
+              message: '${ledger.error}',
+              color: AppTheme.redAccent,
+            ),
+          ),
+          const Spacer(),
+        ],
       );
     }
 
@@ -216,6 +233,7 @@ class _LedgerBody extends ConsumerWidget {
       onRefresh: () => ref.read(ledgerProvider.notifier).refresh(),
       onLabelTap: onLabelTap,
       footer: _PageFooter(ledger: ledger),
+      header: header,
     );
   }
 }
@@ -388,6 +406,7 @@ class _LedgerList extends StatelessWidget {
     required this.onLabelTap,
     this.scrollController,
     this.footer,
+    this.header,
   });
 
   final List<Transaction> transactions;
@@ -398,30 +417,36 @@ class _LedgerList extends StatelessWidget {
   /// Next-page spinner, retry, or end-of-list marker.
   final Widget? footer;
 
+  /// Filter bars and banner that scroll with the list.
+  final Widget? header;
+
   @override
   Widget build(BuildContext context) {
+    final items = <Object>[];
+    if (header != null) items.add(header!);
+
     if (transactions.isEmpty) {
-      return const EmptyState(
+      items.add(const EmptyState(
         icon: Icons.receipt_long,
         title: 'No transactions match',
         subtitle: 'Clear a filter or add a movement to the ledger.',
-      );
+      ));
+    } else {
+      // The server already returns rows in (effective date DESC, id DESC)
+      // order; re-sorting here would fight the cursor and could reorder rows
+      // across a page boundary.
+      final grouped = <DateTime, List<Transaction>>{};
+      for (final transaction in transactions) {
+        final date = transaction.effectiveDate;
+        final key = DateTime(date.year, date.month, date.day);
+        grouped.putIfAbsent(key, () => []).add(transaction);
+      }
+      for (final entry in grouped.entries) {
+        items.add(entry.key);
+        items.addAll(entry.value);
+      }
+      if (footer != null) items.add(footer!);
     }
-    // The server already returns rows in (effective date DESC, id DESC)
-    // order; re-sorting here would fight the cursor and could reorder rows
-    // across a page boundary.
-    final grouped = <DateTime, List<Transaction>>{};
-    for (final transaction in transactions) {
-      final date = transaction.effectiveDate;
-      final key = DateTime(date.year, date.month, date.day);
-      grouped.putIfAbsent(key, () => []).add(transaction);
-    }
-    final items = <Object>[];
-    for (final entry in grouped.entries) {
-      items.add(entry.key);
-      items.addAll(entry.value);
-    }
-    if (footer != null) items.add(footer!);
 
     return RefreshIndicator(
       onRefresh: onRefresh,
