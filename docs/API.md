@@ -1,14 +1,13 @@
 # API Reference
 
 All backend interactions go through two interfaces:
-1. **Supabase client SDK** (`supabase_flutter`) — table CRUD, RPCs, Realtime subscriptions
-2. **Gemini API** (2.5 Flash, OpenAI-compatible endpoint) — Agent Desk Q&A
+1. **Supabase client SDK** (`supabase_flutter`) — authenticated table reads,
+   RPCs, and Realtime subscriptions.
+2. **Supabase Edge Function** (`/functions/v1/agent`) — authenticated Agent Desk
+   Q&A; it owns Gemini and its read-only tool loop.
 
-No custom backend server. Everything is client-to-service today. **Planned
-(Phase 3):** all Gemini traffic moves behind one authenticated Supabase Edge
-Function and the browser-side `GEMINI_API_KEY` is removed and rotated; **Phase
-2** adds owner authentication so every Supabase call below runs under the
-owner's JWT instead of the open anon policies.
+The implementation requires owner-scoped Auth/RLS migrations and a deployed
+Edge Function. The browser never receives `GEMINI_API_KEY`.
 
 ---
 
@@ -38,9 +37,8 @@ SupabaseService().client.from('transactions').select();
 
 | Operation | Method | Code |
 |---|---|---|
-| List (full ledger — **defect D4**, cursor pagination planned in Phase 7) | `SELECT` | `.from('transactions').select('*, transaction_labels(label:labels(id, name, color))').eq('is_deleted', false).order('created_at', ascending: false)` |
-| Insert | `INSERT` | `.from('transactions').insert(tx.toJson()).select()` then label rows into `transaction_labels` |
-| Update (appends `edit_history`) | `UPDATE` | `.from('transactions').update({...tx.toJson(), 'edit_history': history}).eq('id', id)` then label replacement — **planned:** replaced by the atomic `save_transaction_with_labels` RPC (Phase 5) |
+| List | `get_transaction_page` RPC | Cursor-paginated owner ledger used by `ledgerProvider`; filters/search execute in SQL. |
+| Insert / update debit or credit | `save_transaction_with_labels` RPC | Atomic fields, attached labels, and primary label. An unlabelled expense is valid. |
 | Soft delete | `UPDATE` | `.from('transactions').update({'is_deleted': true, 'deleted_at': DateTime.now().toIso8601String()}).eq('id', id)` |
 | Filter by account | `SELECT` | `.from('transactions').select().eq('account_id', accountId)` |
 | Filter by invoice | `SELECT` | `.from('transactions').select().eq('linked_invoice_id', invoiceId)` |
@@ -52,7 +50,9 @@ SupabaseService().client.from('transactions').select();
 |---|---|---|
 | List | `SELECT` | `.from('goals').select().eq('is_deleted', false).limit(100)` |
 | Insert | `INSERT` | `.from('goals').insert(goal.toJson())` |
-| Allocate (**defect D6** — read-then-write with no history; replaced by a `goal_contributions` transactional RPC in Phase 6) | `UPDATE` | `.from('goals').update({'allocated_amount': newTotal}).eq('id', id)` |
+| Allocate / correct | `contribute_to_goal` RPC | Appends a contribution and maintains the total atomically. |
+| Reallocate | `reallocate_goal_funds` RPC | Paired contribution changes in one transaction. |
+| Edit / status / delete | `update_goal`, `set_goal_status`, `delete_goal` RPCs | Enforces target, overfund, and safe-delete guards. |
 | Soft delete | `UPDATE` | `.from('goals').update({'is_deleted': true, 'deleted_at': ...}).eq('id', id)` |
 
 ### `invoices`
@@ -206,79 +206,32 @@ replaces this with row-level patching or debounced targeted invalidation.
 
 ---
 
-## Gemini API (Agent Desk)
+## Agent Edge Function
 
-> **Security status:** the request below currently runs **in the browser** with
-> `GEMINI_API_KEY` bundled into the web build (defect D5). Phase 3 moves this
-> entire exchange into an authenticated Supabase Edge Function, stores the key
-> as a function secret, and rotates the exposed key. This section documents the
-> current implementation (`lib/features/agent/llm_service.dart`).
+`POST /functions/v1/agent` accepts the current owner's visible conversation and
+returns an answer plus a correlation ID. The function validates the JWT and
+`app_is_owner()`, then calls Gemini 2.5 Flash and executes up to 10 server-side,
+read-only tool rounds. It limits requests to 60 messages and 128 KiB.
 
-### Endpoint
-
-```
-POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
-```
-
-OpenAI-compatible chat-completions surface. Model: `gemini-2.5-flash`.
-
-### Headers
-
-```
-Content-Type: application/json
-Authorization: Bearer {GEMINI_API_KEY}
-```
-
-### Request shape
-
-```json
-{
-  "model": "gemini-2.5-flash",
-  "messages": [ { "role": "system", "content": "..." }, { "role": "user", "content": "Can I afford a new keyboard?" } ],
-  "tools": [ { "type": "function", "function": { "name": "get_accounts", ... } } ],
-  "tool_choice": "auto"
-}
-```
-
-Tool-call turns come back as `message.tool_calls`; the client executes each
-against Supabase and appends `role: "tool"` results, looping up to **10 rounds**
-per user message. Chat history persists to `chat_sessions` (best-effort).
-
-### Tool registry (10 tools, all read-only)
-
-| Tool | Supabase call | Notes |
-|---|---|---|
-| `get_accounts` | `accounts` + `fn_account_balance()` per account | Derived balances |
-| `get_net_worth` | `fn_net_worth()` RPC | Single numeric |
-| `get_transactions` | `transactions` with type/label/days/account/limit filters | |
-| `get_label_breakdown` | Client-side aggregation | **Currently splits multi-label spend evenly (defect D3); becomes primary-label attribution in Phase 5** |
-| `get_cashflow_summary` | Client-side aggregation by month or rolling window | **Gains Personal Spend / Family Support split in Phase 4** |
-| `get_goals` | `goals` | Progress + % funded |
-| `get_invoices` | `invoices` | Per-client summary |
-| `get_recurring_expenses` | `recurring_expenses` | Committed outflows |
-| `get_recurring_income` | `recurring_income` | Expected inflows |
-| `get_monthly_snapshots` | `monthly_snapshots` | Historical aggregates |
-
-No tool can insert, update, delete, allocate, or move money. That boundary is
-permanent.
+The function returns stable error codes including `unauthorized`, `not_owner`,
+`invalid_request`, and `server_misconfigured`; callers should surface its safe
+message and correlation ID rather than backend details. No Agent tool can
+insert, update, delete, allocate, or move money.
 
 ---
 
-## Planned interfaces (not yet implemented)
+## Owner-scoped interfaces
 
-Contracts land with their phases (`docs/TODO.md`); listed here so client and
-SQL work agree on names:
-
-| Interface | Phase | Purpose |
-|---|---|---|
-| `save_transaction_with_labels(...)` RPC | 5 | Atomic create/edit of fields + label joins + primary label with exactly one audit entry |
-| Label lifecycle RPCs (rename / archive / merge / guarded soft-delete) | 5 | Identity-preserving label management |
-| `contribute_to_goal(goal_id, amount, note)` RPC | 6 | Contribution history + allocated total, atomically; rejects negative totals |
-| `get_briefing_summary(month)` RPC | 7 | Canonical metrics (Income, Total Outflow, Personal Spend, Family Support, Net Cash Surplus), balances, unresolved counts |
-| `get_account_balances()` RPC | 7 | Batch balances (replaces N× `fn_account_balance` calls) |
-| `get_analytics(period, filters)` RPC | 7 | Typed bundle for the four approved Analytics charts |
-| Ledger page query (cursor: effective date + id, 50 rows) | 7 | Replaces the full-table select |
-| Agent Desk Edge Function | 3 | Authenticated owner-only Gemini proxy; versioned request/response contract with correlation IDs |
+| Interface | Purpose |
+|---|---|
+| `save_transaction_with_labels(...)` RPC | Atomic debit/credit fields + label joins + primary label |
+| Label lifecycle RPCs | Identity-preserving rename, archive, merge, restore, and guarded soft-delete |
+| Goal RPCs | Contribution history, reallocation, edit, status, and guarded delete |
+| `get_briefing_summary`, `get_account_balances`, `get_label_usage` | Canonical aggregate data |
+| `get_transaction_page` | Keyset-paginated ledger query |
+| `get_analytics`, `fn_net_worth_asof`, `fn_account_balance_asof` | Analytics and bounded historical balances |
+| `confirm_obligation`, `get_forecast_inputs` | Obligation settlement and reproducible forecast inputs |
+| `get_top_merchants` | Alias-normalized top-merchant results |
 
 All planned RPCs derive the owner from `auth.uid()`, fail closed for
 anonymous/non-owner callers, exclude soft-deleted rows, and follow the metric

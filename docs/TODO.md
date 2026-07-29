@@ -1,8 +1,8 @@
 # TODO: Secure, Correct, Mobile-First Production Roadmap
 
-This is the implementation checklist for `docs/enhancement.md` (requirements
-and metric definitions in `docs/PRD.md`). Work through the phases in order
-unless a task explicitly says it can run in parallel.
+This is the implementation checklist for `docs/PRD.md` (requirements and metric
+definitions). Work through the phases in order unless a task explicitly says it
+can run in parallel.
 
 ## Product boundaries
 
@@ -120,13 +120,14 @@ No ownership or policy migration starts until this phase is complete.
 - [x] List every owner-controlled table from all migrations, including
   transactions, transaction-label joins, labels, accounts, goals, invoices,
   category rules, recurring items, monthly snapshots, and chat sessions.
-  (See `docs/phase1-inventory.md`.)
+   (Historical inventory is preserved in git; see `docs/DATABASE.md` for the
+   current schema.)
 - [x] List every view, function, trigger, Realtime publication, storage bucket,
   and client query that can expose or mutate owner data.
-  (See `docs/phase1-inventory.md`; no views or storage buckets exist.)
+   (No views or storage buckets exist.)
 - [x] Record current unique constraints and foreign keys that need `user_id` in
   their key, especially snapshot month/year and case-insensitive label names.
-  (See `docs/phase1-inventory.md` "Keys that must gain `user_id`".)
+   (The current owner-scoped keys are documented in `docs/DATABASE.md`.)
 - [x] Identify all RPCs using `SECURITY DEFINER`; verify each has a fixed
   `search_path`, explicit authorization, least-privilege grants, and no caller-
   supplied owner UUID. (None exist yet — documented as a Phase 2+ requirement.)
@@ -223,8 +224,7 @@ No ownership or policy migration starts until this phase is complete.
 - [x] Keep physical `DELETE` revoked and expose only audited soft-delete updates
   or RPCs. (`00009` creates no DELETE policy + `REVOKE DELETE`.)
 - [x] Apply equivalent ownership controls to storage objects if attachments or
-  other user files already exist. (No storage buckets exist — no-op, per
-  `docs/phase1-inventory.md`.)
+   other user files already exist. (No storage buckets exist — no-op.)
 - [ ] Recheck Realtime: authenticated changes are delivered to the owner while
   anonymous and non-owner subscribers receive no finance rows. (Live verify —
   RUNBOOK §3 + `rls_owner_scoping.sql`.)

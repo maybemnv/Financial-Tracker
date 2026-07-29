@@ -16,16 +16,14 @@ editorial
 
 ## Theme
 
-- `--color-paper` oklch(0.95 0.02 85)
-- `--color-paper-2` oklch(0.91 0.025 85)
-- `--color-paper-3` oklch(0.87 0.03 84)
-- `--color-ink` oklch(0.22 0.02 40)
-- `--color-ink-2` oklch(0.37 0.02 45)
-- `--color-rule` oklch(0.52 0.02 60)
-- `--color-accent` oklch(0.54 0.18 28)
-- `--color-positive` oklch(0.56 0.12 145)
-- `--color-negative` oklch(0.55 0.19 28)
-- `--color-focus` oklch(0.47 0.11 250)
+- `--color-paper` `#F7F0E4`
+- `--color-paper-2` `#E7DDCC`
+- `--color-paper-3` `#C4B59F`
+- `--color-ink` `#1F1A17`
+- `--color-ink-2` `#5B5147`
+- `--color-accent` `#B5472F`
+- `--color-positive` `#2D6A4F`
+- `--color-focus` `#355C7D`
 
 ## Typography
 
@@ -70,8 +68,10 @@ Charts belong to the same newsprint system as everything else (binding on the
 Analytics work in `docs/PRD.md` §8):
 
 - `fl_chart` only; square corners, strong ruled axes, warm paper background
-- No gradients, glow, 3D, gauges, or decorative charts; one value axis per
-  chart (never dual-axis)
+- No glow, 3D, gauges, or decorative charts; one value axis per chart (never
+  dual-axis). The current accent-top panel decoration uses a narrow linear
+  gradient and is an implementation exception to remove if strict no-gradient
+  compliance is required.
 - Ink for structure; accent/positive/negative only where a delta or state
   demands it; mono numerals for values
 - Currency values and axis units always visible; tooltips carry full values
@@ -99,15 +99,13 @@ Analytics work in `docs/PRD.md` §8):
 
 ```css
 :root {
-  --color-paper: oklch(0.95 0.02 85);
-  --color-paper-2: oklch(0.91 0.025 85);
-  --color-paper-3: oklch(0.87 0.03 84);
-  --color-ink: oklch(0.22 0.02 40);
-  --color-ink-2: oklch(0.37 0.02 45);
-  --color-rule: oklch(0.52 0.02 60);
-  --color-accent: oklch(0.54 0.18 28);
-  --color-positive: oklch(0.56 0.12 145);
-  --color-negative: oklch(0.55 0.19 28);
-  --color-focus: oklch(0.47 0.11 250);
+  --color-paper: #F7F0E4;
+  --color-paper-2: #E7DDCC;
+  --color-paper-3: #C4B59F;
+  --color-ink: #1F1A17;
+  --color-ink-2: #5B5147;
+  --color-accent: #B5472F;
+  --color-positive: #2D6A4F;
+  --color-focus: #355C7D;
 }
 ```
