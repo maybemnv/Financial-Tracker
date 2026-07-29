@@ -3,7 +3,7 @@
 /// its own convention.
 library;
 
-/// Selectable window. 12M is the default.
+/// Selectable window. Analytics is month-first, so 1M is the default.
 enum AnalyticsPeriod {
   oneMonth('1M', 1),
   threeMonths('3M', 3),
@@ -17,7 +17,7 @@ enum AnalyticsPeriod {
   final String label;
   final int _months;
 
-  static const AnalyticsPeriod defaultPeriod = AnalyticsPeriod.twelveMonths;
+  static const AnalyticsPeriod defaultPeriod = AnalyticsPeriod.oneMonth;
 
   /// Month count to request. YTD is resolved against [now] rather than stored,
   /// so the window is correct whenever it is asked for.

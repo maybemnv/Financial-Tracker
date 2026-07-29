@@ -7,8 +7,8 @@ import 'merchant_alias_provider.dart';
 import 'ledger_provider.dart';
 
 /// The active analytics selection. Held separately from the data so changing
-/// period or the Family toggle does not rebuild anything until the new bundle
-/// arrives.
+/// the selected month or Family toggle does not rebuild anything until the new
+/// bundle arrives.
 final analyticsQueryProvider =
     StateProvider<AnalyticsQuery>((ref) => const AnalyticsQuery());
 

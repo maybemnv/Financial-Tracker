@@ -5,9 +5,9 @@ import 'package:finance_tracker/core/analytics_types.dart';
 /// `supabase/tests/analytics_reconciliation.sql`.
 void main() {
   group('period resolution', () {
-    test('12M is the default window', () {
-      expect(AnalyticsPeriod.defaultPeriod, AnalyticsPeriod.twelveMonths);
-      expect(const AnalyticsQuery().period, AnalyticsPeriod.twelveMonths);
+    test('1M is the default window', () {
+      expect(AnalyticsPeriod.defaultPeriod, AnalyticsPeriod.oneMonth);
+      expect(const AnalyticsQuery().period, AnalyticsPeriod.oneMonth);
     });
 
     test('fixed windows ignore the current date', () {
@@ -156,7 +156,12 @@ void main() {
       final bundle = AnalyticsBundle.fromRpc(envelope({
         'by_label': [
           {'label_id': 'a', 'name': 'Food', 'amount': 100, 'bucket': 'label'},
-          {'label_id': null, 'name': 'Unlabeled', 'amount': 50, 'bucket': 'unlabeled'},
+          {
+            'label_id': null,
+            'name': 'Unlabeled',
+            'amount': 50,
+            'bucket': 'unlabeled'
+          },
           {
             'label_id': null,
             'name': 'Needs primary label',

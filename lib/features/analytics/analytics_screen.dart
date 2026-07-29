@@ -39,13 +39,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       kicker: 'Analytics',
       title: 'Where the money went',
       subtitle:
-          'Every chart in one scroll, with one month selector and ledger-backed '
-          'drill-downs for the numbers behind each figure.',
+          'A visual monthly workbench: cash flow, spending mix, daily pace, net '
+          'worth, and merchant context in one ledger-backed surface.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _PeriodBar(
-            query: query,
+          _ControlDeck(
             month: selectedMonth,
             onPrevious: () => _setMonth(DateTime(
               selectedMonth.year,
@@ -72,6 +71,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               data: (bundle) => _buildCharts(
                 context,
                 bundle,
+                selectedMonth,
                 bundleAsync.isRefreshing || bundleAsync.isReloading,
               ),
             ),
@@ -84,49 +84,104 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   Widget _buildCharts(
     BuildContext context,
     AnalyticsBundle bundle,
+    DateTime selectedMonth,
     bool isUpdating,
   ) {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        CashFlowChart(
-          points: bundle.cashFlow,
-          onMonthTap: (point, income) => _drillToMonth(
-            point.year,
-            point.month,
-            income ? 'credit' : 'debit',
-          ),
+        _MonthBriefing(
+          month: selectedMonth,
+          bundle: bundle,
+          onDrill: _drillToMonth,
         ),
-        const SizedBox(height: 22),
-        MonthlyNetChart(points: bundle.cashFlow),
-        const SizedBox(height: 22),
-        LabelSpendChart(
-          slices: bundle.byLabel,
-          includeFamily: bundle.includeFamilySupport,
-          onLabelTap: (slice) => _drillToLabel(slice),
-          onReviewTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ReviewQueueScreen()),
-          ),
+        const SizedBox(height: 14),
+        _SectionBand(
+          label: 'Cash Movement',
+          detail: 'Income, outflow, and the month\'s net result.',
+          children: [
+            _ChartPanel(
+              code: '01 / cash in vs out',
+              child: CashFlowChart(
+                points: bundle.cashFlow,
+                onMonthTap: (point, income) => _drillToMonth(
+                  point.year,
+                  point.month,
+                  income ? 'credit' : 'debit',
+                ),
+              ),
+            ),
+            _ChartPanel(
+              code: '02 / net pressure',
+              child: MonthlyNetChart(points: bundle.cashFlow),
+            ),
+          ],
         ),
-        const SizedBox(height: 22),
-        OutflowMixPieChart(mix: bundle.outflowMix),
-        const SizedBox(height: 22),
-        DailyCumulativeChart(
-          points: bundle.dailySpend,
-          onDayTap: _drillToDay,
+        const SizedBox(height: 14),
+        _SectionBand(
+          label: 'Spend Anatomy',
+          detail: 'Every label stays visible; Family Support remains explicit.',
+          children: [
+            _ChartPanel(
+              code: '03 / labels',
+              featured: true,
+              child: LabelSpendChart(
+                slices: bundle.byLabel,
+                includeFamily: bundle.includeFamilySupport,
+                onLabelTap: (slice) => _drillToLabel(slice),
+                onReviewTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ReviewQueueScreen()),
+                ),
+              ),
+            ),
+            _ChartPanel(
+              code: '04 / outflow split',
+              child: OutflowMixPieChart(mix: bundle.outflowMix),
+            ),
+          ],
         ),
-        const SizedBox(height: 22),
-        DailySpendDeltaChart(points: bundle.dailySpend),
-        const SizedBox(height: 22),
-        NetWorthChart(
-          points: bundle.netWorth,
-          current: bundle.netWorthCurrent,
+        const SizedBox(height: 14),
+        _SectionBand(
+          label: 'Daily Pace',
+          detail: 'This selected month against the previous month.',
+          children: [
+            _ChartPanel(
+              code: '05 / cumulative',
+              child: DailyCumulativeChart(
+                points: bundle.dailySpend,
+                onDayTap: _drillToDay,
+              ),
+            ),
+            _ChartPanel(
+              code: '06 / pulses',
+              child: DailySpendDeltaChart(points: bundle.dailySpend),
+            ),
+          ],
         ),
-        const SizedBox(height: 22),
-        NetWorthChangeChart(changes: bundle.netWorthChanges),
-        const SizedBox(height: 22),
-        _Lists(bundle: bundle),
+        const SizedBox(height: 14),
+        _SectionBand(
+          label: 'Balance Sheet',
+          detail: 'Net worth context without estimating missing snapshots.',
+          children: [
+            _ChartPanel(
+              code: '07 / history',
+              child: NetWorthChart(
+                points: bundle.netWorth,
+                current: bundle.netWorthCurrent,
+              ),
+            ),
+            _ChartPanel(
+              code: '08 / monthly change',
+              child: NetWorthChangeChart(changes: bundle.netWorthChanges),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        NewsprintPanel(
+          color: AppTheme.paperAlt,
+          child: _Lists(bundle: bundle),
+        ),
         if (isUpdating)
           const Padding(
             padding: EdgeInsets.only(top: 12),
@@ -153,8 +208,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final now = DateTime.now();
     final query = ref.read(analyticsQueryProvider);
     final asOfMonth = query.monthAsOf(now);
-    final months = query.period.monthsAsOf(asOfMonth);
-    final from = DateTime(asOfMonth.year, asOfMonth.month - (months - 1), 1);
+    final from = DateTime(asOfMonth.year, asOfMonth.month, 1);
     final to = DateTime(asOfMonth.year, asOfMonth.month + 1, 0);
     _apply(
       LedgerQuery(labelId: slice.labelId, from: from, to: to, type: 'debit'),
@@ -190,16 +244,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   }
 }
 
-class _PeriodBar extends ConsumerWidget {
-  const _PeriodBar({
-    required this.query,
+class _ControlDeck extends ConsumerWidget {
+  const _ControlDeck({
     required this.month,
     required this.onPrevious,
     required this.onNext,
     required this.onPick,
   });
 
-  final AnalyticsQuery query;
   final DateTime month;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
@@ -216,43 +268,306 @@ class _PeriodBar extends ConsumerWidget {
           onNext: onNext,
           onPick: onPick,
         ),
-        const SizedBox(height: 10),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        const SizedBox(height: 8),
+        // The toggle changes which outflows are counted and nothing else — it
+        // never alters how an expense is attributed.
+        NewsprintPanel(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: AppTheme.paper,
           child: Row(
             children: [
-              for (final period in AnalyticsPeriod.values)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(period.label),
-                    selected: query.period == period,
-                    onSelected: (_) => ref
-                        .read(analyticsQueryProvider.notifier)
-                        .update((q) => q.copyWith(period: period)),
-                  ),
+              const NewsprintTag(
+                label: 'Month Scope',
+                backgroundColor: AppTheme.ink,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Analytics follows this selected month only.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
+              ),
+              Switch(
+                value: ref.watch(analyticsQueryProvider).includeFamilySupport,
+                onChanged: (v) => ref
+                    .read(analyticsQueryProvider.notifier)
+                    .update((q) => q.copyWith(includeFamilySupport: v)),
+              ),
+              Text('Family', style: Theme.of(context).textTheme.labelSmall),
             ],
           ),
         ),
-        const SizedBox(height: 4),
-        // The toggle changes which outflows are counted and nothing else — it
-        // never alters how an expense is attributed.
+      ],
+    );
+  }
+}
+
+class _MonthBriefing extends StatelessWidget {
+  const _MonthBriefing({
+    required this.month,
+    required this.bundle,
+    required this.onDrill,
+  });
+
+  final DateTime month;
+  final AnalyticsBundle bundle;
+  final void Function(int year, int month, String type) onDrill;
+
+  @override
+  Widget build(BuildContext context) {
+    final point = _pointForMonth();
+    final net = point.net;
+    final tone = net < 0 ? AppTheme.redAccent : AppTheme.primaryGreen;
+    final topLabel = bundle.byLabel.isEmpty ? null : bundle.byLabel.first;
+    final savingsRate = point.income == 0 ? 0 : net / point.income * 100;
+
+    return NewsprintPanel(
+      color: AppTheme.paper,
+      accentTop: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 680;
+          final headline = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                DateFormat('MMMM yyyy').format(month).toUpperCase(),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      letterSpacing: 1.4,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _currency.format(net),
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      color: tone,
+                      fontFamilyFallback: AppTheme.monoFallback,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                net >= 0
+                    ? 'Surplus month. Income is ahead of outflow.'
+                    : 'Deficit month. Outflow is ahead of income.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => onDrill(point.year, point.month, 'credit'),
+                    icon: const Icon(Icons.arrow_downward_rounded, size: 17),
+                    label: const Text('INCOME ROWS'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => onDrill(point.year, point.month, 'debit'),
+                    icon: const Icon(Icons.arrow_upward_rounded, size: 17),
+                    label: const Text('OUTFLOW ROWS'),
+                  ),
+                ],
+              ),
+            ],
+          );
+          final metrics = Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _BriefingTile(
+                  label: 'Income', value: _currency.format(point.income)),
+              _BriefingTile(
+                label: 'Outflow',
+                value: _currency.format(point.outflow),
+                valueColor: AppTheme.redAccent,
+              ),
+              _BriefingTile(
+                label: 'Personal',
+                value: _currency.format(point.personalSpend),
+              ),
+              _BriefingTile(
+                label: 'Family',
+                value: _currency.format(point.familySupport),
+              ),
+              _BriefingTile(
+                label: 'Savings rate',
+                value: '${savingsRate.toStringAsFixed(1)}%',
+                valueColor: savingsRate < 0 ? AppTheme.redAccent : null,
+              ),
+              _BriefingTile(
+                label: 'Top label',
+                value: topLabel == null ? '—' : topLabel.name,
+              ),
+            ],
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                headline,
+                const SizedBox(height: 16),
+                metrics,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 5, child: headline),
+              const SizedBox(width: 18),
+              Expanded(flex: 7, child: metrics),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  CashFlowPoint _pointForMonth() {
+    for (final point in bundle.cashFlow) {
+      if (point.year == month.year && point.month == month.month) return point;
+    }
+    return CashFlowPoint(
+      year: month.year,
+      month: month.month,
+      income: 0,
+      outflow: 0,
+      familySupport: 0,
+      isPartial: false,
+    );
+  }
+}
+
+class _BriefingTile extends StatelessWidget {
+  const _BriefingTile({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 142,
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 11),
+      decoration: BoxDecoration(
+        color: AppTheme.paperAlt,
+        border: Border.all(color: AppTheme.ink, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  letterSpacing: 1,
+                ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: valueColor ?? AppTheme.ink,
+                  fontFamilyFallback: AppTheme.monoFallback,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionBand extends StatelessWidget {
+  const _SectionBand({
+    required this.label,
+    required this.detail,
+    required this.children,
+  });
+
+  final String label;
+  final String detail;
+  final List<_ChartPanel> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Switch(
-              value: query.includeFamilySupport,
-              onChanged: (v) => ref
-                  .read(analyticsQueryProvider.notifier)
-                  .update((q) => q.copyWith(includeFamilySupport: v)),
-            ),
             Expanded(
-              child: Text('Include Family Support in spending',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ),
+                child: NewsprintSectionTitle(label: label, detail: detail)),
+            const SizedBox(width: 8),
+            Text('MONTHLY VIEW', style: Theme.of(context).textTheme.labelSmall),
           ],
         ),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final twoColumn = constraints.maxWidth >= 860;
+            final width = twoColumn
+                ? (constraints.maxWidth - 12) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final child in children)
+                  SizedBox(
+                    width: twoColumn && !child.featured
+                        ? width
+                        : constraints.maxWidth,
+                    child: child,
+                  ),
+              ],
+            );
+          },
+        ),
       ],
+    );
+  }
+}
+
+class _ChartPanel extends StatelessWidget {
+  const _ChartPanel({
+    required this.code,
+    required this.child,
+    this.featured = false,
+  });
+
+  final String code;
+  final Widget child;
+  final bool featured;
+
+  @override
+  Widget build(BuildContext context) {
+    return NewsprintPanel(
+      color: featured ? AppTheme.paper : AppTheme.paperAlt,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            code.toUpperCase(),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AppTheme.inkSoft,
+                  letterSpacing: 1.1,
+                ),
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
     );
   }
 }
