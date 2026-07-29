@@ -536,8 +536,8 @@ class OutflowMixPieChart extends StatelessWidget {
 
 // --- Chart 2: Spending by Primary Label -------------------------------------
 
-/// Spending as a pie: top two labels plus Other, so the chart stays inside the
-/// validated three-colour palette while the table keeps the exact ledger total.
+/// Spending as a pie with every returned label represented. The value rows keep
+/// small slices readable when their in-pie percentage labels get crowded.
 class LabelSpendChart extends StatelessWidget {
   const LabelSpendChart({
     super.key,
@@ -554,7 +554,7 @@ class LabelSpendChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shown = LabelSpend.topWithOther(slices, keep: 2);
+    final shown = slices.where((s) => s.amount > 0).toList(growable: false);
     final total = shown.fold<double>(0, (s, e) => s + e.amount);
     final hasReview = shown.any((s) =>
         s.bucket == SpendBucket.unlabeled ||
@@ -563,14 +563,14 @@ class LabelSpendChart extends StatelessWidget {
     return ChartFrame(
       title: 'Spending by label',
       note:
-          '${includeFamily ? 'Pie is top two labels plus Other. Personal Spend and Family Support.' : 'Pie is top two labels plus Other. Family Support is excluded.'}'
+          '${includeFamily ? 'Pie includes every label across Personal Spend and Family Support.' : 'Pie includes every Personal Spend label. Family Support is excluded.'}'
           '${hasReview ? ' Not a category: review slices need cleanup.' : ''}',
       summary: _summary(shown, total),
       legend: shown.isEmpty
           ? null
           : ChartLegend(entries: [
               for (var i = 0; i < shown.length; i++)
-                (label: shown[i].name, color: ChartTheme.seriesColor(i)),
+                (label: shown[i].name, color: _sliceColor(i, shown[i])),
             ]),
       table: ChartTable(
         headers: const ['Label', 'Amount', 'Share'],
@@ -593,12 +593,17 @@ class LabelSpendChart extends StatelessWidget {
                   _PieValueRow(
                     label: shown[i].name,
                     amount: shown[i].amount,
-                    color: ChartTheme.seriesColor(i),
+                    color: _sliceColor(i, shown[i]),
                   ),
               ],
             ),
     );
   }
+
+  Color _sliceColor(int index, LabelSpend slice) => ChartTheme.pieSliceColor(
+        index,
+        labelColor: slice.color,
+      );
 
   Widget _pie(BuildContext context, List<LabelSpend> shown, double total) {
     return PieChart(
@@ -621,12 +626,10 @@ class LabelSpendChart extends StatelessWidget {
         sections: [
           for (var i = 0; i < shown.length; i++)
             PieChartSectionData(
-              color: ChartTheme.seriesColor(i),
+              color: _sliceColor(i, shown[i]),
               value: shown[i].amount,
               radius: 76,
-              title: shown[i].amount / total >= 0.09
-                  ? _share(shown[i].amount, total)
-                  : '',
+              title: _share(shown[i].amount, total),
               titleStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: AppTheme.paper,
                     fontWeight: FontWeight.w900,

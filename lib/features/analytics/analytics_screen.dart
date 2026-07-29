@@ -16,19 +16,6 @@ import 'obligations_view.dart';
 final _currency =
     NumberFormat.currency(symbol: '₹', decimalDigits: 0, locale: 'en_IN');
 
-/// Which section is on screen. Only the selected one is built, so hidden charts
-/// cost nothing (TODO 7.6 / 8.8).
-enum _Section {
-  cashFlow('Cash flow'),
-  spending('Spending'),
-  daily('Daily'),
-  netWorth('Net worth'),
-  lists('Lists');
-
-  const _Section(this.label);
-  final String label;
-}
-
 /// Analytics — curated chart sections, each with a typed source, an accessible
 /// alternative, and drill-downs that reconcile to the value shown.
 class AnalyticsScreen extends ConsumerStatefulWidget {
@@ -42,27 +29,33 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
-  _Section _section = _Section.cashFlow;
-
   @override
   Widget build(BuildContext context) {
     final query = ref.watch(analyticsQueryProvider);
     final bundleAsync = ref.watch(analyticsProvider);
+    final selectedMonth = query.monthAsOf(DateTime.now());
 
     return NewsprintPage(
       kicker: 'Analytics',
       title: 'Where the money went',
       subtitle:
-          'Curated charts, one period selector. Every figure reconciles to the '
-          'ledger it links to, with spending shown as pies.',
+          'Every chart in one scroll, with one month selector and ledger-backed '
+          'drill-downs for the numbers behind each figure.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _PeriodBar(query: query),
-          const SizedBox(height: 8),
-          _SectionBar(
-            section: _section,
-            onSelected: (s) => setState(() => _section = s),
+          _PeriodBar(
+            query: query,
+            month: selectedMonth,
+            onPrevious: () => _setMonth(DateTime(
+              selectedMonth.year,
+              selectedMonth.month - 1,
+            )),
+            onNext: () => _setMonth(DateTime(
+              selectedMonth.year,
+              selectedMonth.month + 1,
+            )),
+            onPick: () => _pickMonth(selectedMonth),
           ),
           const SizedBox(height: 12),
           Expanded(
@@ -96,66 +89,44 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        // Only the active section is constructed.
-        switch (_section) {
-          _Section.cashFlow => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CashFlowChart(
-                  points: bundle.cashFlow,
-                  onMonthTap: (point, income) => _drillToMonth(
-                    point.year,
-                    point.month,
-                    income ? 'credit' : 'debit',
-                  ),
-                ),
-                const SizedBox(height: 22),
-                MonthlyNetChart(points: bundle.cashFlow),
-                const SizedBox(height: 22),
-                OutflowMixPieChart(mix: bundle.outflowMix),
-              ],
-            ),
-          _Section.spending => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                LabelSpendChart(
-                  slices: bundle.byLabel,
-                  includeFamily: bundle.includeFamilySupport,
-                  onLabelTap: (slice) => _drillToLabel(slice),
-                  onReviewTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ReviewQueueScreen()),
-                  ),
-                ),
-                const SizedBox(height: 22),
-                OutflowMixPieChart(mix: bundle.outflowMix),
-              ],
-            ),
-          _Section.daily => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DailyCumulativeChart(
-                  points: bundle.dailySpend,
-                  onDayTap: _drillToDay,
-                ),
-                const SizedBox(height: 22),
-                DailySpendDeltaChart(points: bundle.dailySpend),
-              ],
-            ),
-          _Section.netWorth => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                NetWorthChart(
-                  points: bundle.netWorth,
-                  current: bundle.netWorthCurrent,
-                ),
-                const SizedBox(height: 22),
-                NetWorthChangeChart(changes: bundle.netWorthChanges),
-              ],
-            ),
-          _Section.lists => _Lists(bundle: bundle),
-        },
+        CashFlowChart(
+          points: bundle.cashFlow,
+          onMonthTap: (point, income) => _drillToMonth(
+            point.year,
+            point.month,
+            income ? 'credit' : 'debit',
+          ),
+        ),
+        const SizedBox(height: 22),
+        MonthlyNetChart(points: bundle.cashFlow),
+        const SizedBox(height: 22),
+        LabelSpendChart(
+          slices: bundle.byLabel,
+          includeFamily: bundle.includeFamilySupport,
+          onLabelTap: (slice) => _drillToLabel(slice),
+          onReviewTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ReviewQueueScreen()),
+          ),
+        ),
+        const SizedBox(height: 22),
+        OutflowMixPieChart(mix: bundle.outflowMix),
+        const SizedBox(height: 22),
+        DailyCumulativeChart(
+          points: bundle.dailySpend,
+          onDayTap: _drillToDay,
+        ),
+        const SizedBox(height: 22),
+        DailySpendDeltaChart(points: bundle.dailySpend),
+        const SizedBox(height: 22),
+        NetWorthChart(
+          points: bundle.netWorth,
+          current: bundle.netWorthCurrent,
+        ),
+        const SizedBox(height: 22),
+        NetWorthChangeChart(changes: bundle.netWorthChanges),
+        const SizedBox(height: 22),
+        _Lists(bundle: bundle),
         if (isUpdating)
           const Padding(
             padding: EdgeInsets.only(top: 12),
@@ -179,31 +150,73 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
   void _drillToLabel(LabelSpend slice) {
     if (slice.labelId == null) return;
-    final months =
-        ref.read(analyticsQueryProvider).period.monthsAsOf(DateTime.now());
     final now = DateTime.now();
-    final from = DateTime(now.year, now.month - (months - 1), 1);
-    _apply(LedgerQuery(labelId: slice.labelId, from: from, type: 'debit'));
+    final query = ref.read(analyticsQueryProvider);
+    final asOfMonth = query.monthAsOf(now);
+    final months = query.period.monthsAsOf(asOfMonth);
+    final from = DateTime(asOfMonth.year, asOfMonth.month - (months - 1), 1);
+    final to = DateTime(asOfMonth.year, asOfMonth.month + 1, 0);
+    _apply(
+      LedgerQuery(labelId: slice.labelId, from: from, to: to, type: 'debit'),
+    );
   }
 
   void _drillToDay(int day) {
     final now = DateTime.now();
-    if (day > now.day) return;
-    final date = DateTime(now.year, now.month, day);
+    final query = ref.read(analyticsQueryProvider);
+    final asOf = query.asOfInstant(now);
+    final month = query.monthAsOf(now);
+    final date = DateTime(month.year, month.month, day);
+    if (date.isAfter(asOf)) return;
     _apply(LedgerQuery(from: date, to: date, type: 'debit'));
+  }
+
+  void _setMonth(DateTime month) {
+    ref.read(analyticsQueryProvider.notifier).update(
+          (query) => query.copyWith(
+            anchorYear: month.year,
+            anchorMonth: month.month,
+          ),
+        );
+  }
+
+  Future<void> _pickMonth(DateTime selectedMonth) async {
+    final picked = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => _MonthPickerDialog(initialMonth: selectedMonth),
+    );
+    if (picked == null || !mounted) return;
+    _setMonth(picked);
   }
 }
 
 class _PeriodBar extends ConsumerWidget {
-  const _PeriodBar({required this.query});
+  const _PeriodBar({
+    required this.query,
+    required this.month,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onPick,
+  });
 
   final AnalyticsQuery query;
+  final DateTime month;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+  final VoidCallback onPick;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _MonthRail(
+          month: month,
+          onPrevious: onPrevious,
+          onNext: onNext,
+          onPick: onPick,
+        ),
+        const SizedBox(height: 10),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -244,29 +257,146 @@ class _PeriodBar extends ConsumerWidget {
   }
 }
 
-class _SectionBar extends StatelessWidget {
-  const _SectionBar({required this.section, required this.onSelected});
+class _MonthRail extends StatelessWidget {
+  const _MonthRail({
+    required this.month,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onPick,
+  });
 
-  final _Section section;
-  final ValueChanged<_Section> onSelected;
+  final DateTime month;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+  final VoidCallback onPick;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final s in _Section.values)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(s.label),
-                selected: section == s,
-                onSelected: (_) => onSelected(s),
+    final canGoBack = month.year > 1970 || month.month > 1;
+    final canGoForward = month.year < 2100 || month.month < 12;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: AppTheme.panelDecoration(color: AppTheme.paperAlt),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 420;
+          return Row(
+            children: [
+              if (compact)
+                IconButton.outlined(
+                  onPressed: canGoBack ? onPrevious : null,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  tooltip: 'Previous month',
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: canGoBack ? onPrevious : null,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  label: const Text('BACK'),
+                ),
+              Expanded(
+                child: Center(
+                  child: TextButton.icon(
+                    onPressed: onPick,
+                    icon: const Icon(Icons.calendar_month_rounded),
+                    label: Text(
+                      DateFormat('MMMM yyyy').format(month),
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                ),
               ),
+              if (compact)
+                IconButton.outlined(
+                  onPressed: canGoForward ? onNext : null,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  tooltip: 'Next month',
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: canGoForward ? onNext : null,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  label: const Text('NEXT'),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MonthPickerDialog extends StatefulWidget {
+  const _MonthPickerDialog({required this.initialMonth});
+
+  final DateTime initialMonth;
+
+  @override
+  State<_MonthPickerDialog> createState() => _MonthPickerDialogState();
+}
+
+class _MonthPickerDialogState extends State<_MonthPickerDialog> {
+  late int _month;
+  late int _year;
+
+  @override
+  void initState() {
+    super.initState();
+    _month = widget.initialMonth.month;
+    _year = widget.initialMonth.year;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final years = [for (var y = 1970; y <= 2100; y++) y];
+
+    return AlertDialog(
+      title: const Text('Pick month'),
+      content: Row(
+        children: [
+          Expanded(
+            child: DropdownButtonFormField<int>(
+              initialValue: _month,
+              decoration: const InputDecoration(labelText: 'Month'),
+              items: [
+                for (var m = 1; m <= 12; m++)
+                  DropdownMenuItem(
+                    value: m,
+                    child: Text(DateFormat.MMMM().format(DateTime(2026, m))),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _month = value);
+              },
             ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 116,
+            child: DropdownButtonFormField<int>(
+              initialValue: _year,
+              decoration: const InputDecoration(labelText: 'Year'),
+              items: [
+                for (final y in years)
+                  DropdownMenuItem(value: y, child: Text('$y')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _year = value);
+              },
+            ),
+          ),
         ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('CANCEL'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, DateTime(_year, _month)),
+          child: const Text('APPLY'),
+        ),
+      ],
     );
   }
 }

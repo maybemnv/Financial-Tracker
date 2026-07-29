@@ -21,16 +21,18 @@ final analyticsProvider = FutureProvider<AnalyticsBundle>((ref) async {
 
   return Perf.timeAsync('analytics_bundle', () async {
     final now = DateTime.now();
+    final asOf = query.asOfInstant(now);
     final result = await SupabaseService().client.rpc(
       'get_analytics',
       params: {
-        'p_months': query.period.monthsAsOf(now),
+        'p_months': query.period.monthsAsOf(asOf),
         'p_include_family': query.includeFamilySupport,
+        'p_as_of': asOf.toIso8601String(),
       },
     );
     return AnalyticsBundle.fromRpc(
       Map<String, dynamic>.from(result as Map),
-      now: now,
+      now: asOf,
     );
   });
 });
@@ -42,8 +44,12 @@ final topMerchantsProvider = FutureProvider<List<MerchantTotal>>((ref) async {
   ref.watch(ledgerProvider.select((s) => s.rows.length));
   ref.watch(merchantAliasProvider);
   final query = ref.watch(analyticsQueryProvider);
-  final result = await SupabaseService().client.rpc('get_top_merchants', params: {
-    'p_months': query.period.monthsAsOf(DateTime.now()),
+  final now = DateTime.now();
+  final asOf = query.asOfInstant(now);
+  final result =
+      await SupabaseService().client.rpc('get_top_merchants', params: {
+    'p_months': query.period.monthsAsOf(asOf),
+    'p_as_of': asOf.toIso8601String(),
   });
   final map = Map<String, dynamic>.from(result as Map);
   return (map['merchants'] as List? ?? const [])

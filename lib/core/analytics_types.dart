@@ -30,6 +30,8 @@ class AnalyticsQuery {
   const AnalyticsQuery({
     this.period = AnalyticsPeriod.defaultPeriod,
     this.includeFamilySupport = false,
+    this.anchorYear,
+    this.anchorMonth,
   });
 
   final AnalyticsPeriod period;
@@ -38,23 +40,45 @@ class AnalyticsQuery {
   /// and changes nothing else — it never alters attribution.
   final bool includeFamilySupport;
 
+  /// The month the analytics window ends on. Null means the current month.
+  final int? anchorYear;
+  final int? anchorMonth;
+
+  DateTime monthAsOf(DateTime now) => DateTime(
+        anchorYear ?? now.year,
+        anchorMonth ?? now.month,
+      );
+
+  DateTime asOfInstant(DateTime now) {
+    final month = monthAsOf(now);
+    if (month.year == now.year && month.month == now.month) return now;
+    return DateTime(month.year, month.month + 1, 0, 23, 59, 59, 999, 999);
+  }
+
   AnalyticsQuery copyWith({
     AnalyticsPeriod? period,
     bool? includeFamilySupport,
+    int? anchorYear,
+    int? anchorMonth,
   }) =>
       AnalyticsQuery(
         period: period ?? this.period,
         includeFamilySupport: includeFamilySupport ?? this.includeFamilySupport,
+        anchorYear: anchorYear ?? this.anchorYear,
+        anchorMonth: anchorMonth ?? this.anchorMonth,
       );
 
   @override
   bool operator ==(Object other) =>
       other is AnalyticsQuery &&
       other.period == period &&
-      other.includeFamilySupport == includeFamilySupport;
+      other.includeFamilySupport == includeFamilySupport &&
+      other.anchorYear == anchorYear &&
+      other.anchorMonth == anchorMonth;
 
   @override
-  int get hashCode => Object.hash(period, includeFamilySupport);
+  int get hashCode =>
+      Object.hash(period, includeFamilySupport, anchorYear, anchorMonth);
 }
 
 double _num(Object? v) => (v as num?)?.toDouble() ?? 0;
@@ -124,6 +148,7 @@ class LabelSpend {
     required this.name,
     required this.amount,
     this.labelId,
+    this.color,
     this.excluded = false,
     this.bucket = SpendBucket.label,
   });
@@ -131,6 +156,7 @@ class LabelSpend {
   final String? labelId;
   final String name;
   final double amount;
+  final String? color;
 
   /// Family Support (`exclude_from_personal_spend`).
   final bool excluded;
@@ -140,6 +166,7 @@ class LabelSpend {
         labelId: j['label_id'] as String?,
         name: j['name'] as String? ?? 'Unlabeled',
         amount: _num(j['amount']),
+        color: j['color'] as String?,
         excluded: j['excluded'] as bool? ?? false,
         bucket: switch (j['bucket'] as String?) {
           'unlabeled' => SpendBucket.unlabeled,

@@ -70,6 +70,29 @@ class ChartTheme {
     };
   }
 
+  static Color pieSliceColor(int index, {String? labelColor}) {
+    final parsed = _parseHex(labelColor);
+    if (parsed != null) return parsed;
+    return switch (index % 8) {
+      0 => series1,
+      1 => series2,
+      2 => series3,
+      3 => const Color(0xFF7B5FB2),
+      4 => const Color(0xFFB34B73),
+      5 => const Color(0xFF8C6D1F),
+      6 => const Color(0xFF167F8C),
+      _ => const Color(0xFF6F6A60),
+    };
+  }
+
+  static Color? _parseHex(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final normalized = value.trim().replaceFirst('#', '');
+    if (normalized.length != 6) return null;
+    final parsed = int.tryParse('FF$normalized', radix: 16);
+    return parsed == null ? null : Color(parsed);
+  }
+
   static TextStyle axisLabel(BuildContext context) =>
       Theme.of(context).textTheme.labelSmall?.copyWith(color: mutedInk) ??
       const TextStyle(fontSize: 10, color: mutedInk);
