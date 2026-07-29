@@ -26,16 +26,15 @@ graph TB
         CS[chat_sessions]
     end
 
-    subgraph Gemini["Gemini API (2.5 Flash)"]
-        CAT[categorization fallback]
-        AGT[agent Q&A]
+    subgraph Edge["Supabase Edge Function"]
+        AGT[agent: Gemini + read-only tools]
     end
 
     WebApp -->|insert / select / subscribe| Supabase
     Supabase -->|realtime push| WebApp
 
-    WebApp -.->|unmatched tx / question| Gemini
-    Gemini -.->|category + tags / answer| WebApp
+    WebApp -->|authenticated Agent request| Edge
+    Edge -->|owner-scoped reads| Supabase
 ```
 
 ---
@@ -49,33 +48,34 @@ graph TD
 
     AppTabs --> Tab0["0: TransactionListScreen (Ledger)"]
     AppTabs --> Tab1["1: DashboardScreen (Briefing)"]
-    AppTabs --> Tab2["2: GoalsScreen (Targets)"]
-    AppTabs --> Tab3["3: AgentChatScreen (Agent Desk)"]
+    AppTabs --> Tab2["2: AnalyticsScreen"]
+    AppTabs --> Tab3["3: GoalsScreen (Targets)"]
+    AppTabs --> Tab4["4: AgentChatScreen (Agent Desk)"]
 
     Tab0 --> FAB["FAB"] --> AddTx["AddTransactionScreen (push, also edit mode)"]
-    Tab2 --> AddGoal["Add Goal Dialog"]
-    Tab2 --> Allocate["Allocate Dialog"]
-    Tab1 --> PieChart["Category Pie Chart"]
+    Tab3 --> AddGoal["Add Goal Dialog"]
+    Tab3 --> Allocate["Allocate Dialog"]
 
-    BottomNav["BottomNavigationBar (5 items)"] -->|index 0-3| AppTabs
-    BottomNav -->|index 4| InvoiceSidebar
+    BottomNav["BottomNavigationBar"] -->|index 0-4| AppTabs
+    BottomNav -->|index 5| InvoiceSidebar
 ```
 
-5 bottom nav items (labels as shipped):
+The shell lazily builds five `IndexedStack` tabs:
 - Ledger (index 0, FAB visible; card edit button pushes `AddTransactionScreen` in edit mode)
 - Briefing (index 1)
-- Targets (index 2)
-- Agent Desk (index 3)
-- Invoices (index 4 — opens end drawer instead of switching tab)
+- Analytics (index 2)
+- Targets (index 3)
+- Agent Desk (index 4)
 
-**Planned (Phase 8):** Analytics becomes the fifth primary destination; invoice
-access moves to an app-bar/drawer action so the bar stays at five items.
+Invoices still appear as a sixth bottom-navigation item and open the end drawer.
+This is an outstanding deviation from the five-destination product boundary.
 
 ---
 
 ## State Management
 
-All state managed by Riverpod `StateNotifierProvider`.
+State uses Riverpod `StateNotifierProvider`, `FutureProvider.family`, and
+`StateProvider` according to the data shape.
 
 ```mermaid
 graph LR
@@ -120,12 +120,11 @@ graph LR
     IS -->|watch| IN
 ```
 
-Each provider:
-1. Calls `load()` on creation (SELECT with order, no limit — all non-deleted rows)
-2. Subscribes to Realtime channel (pushes trigger `load()` on change)
-3. Exposes `add()`, `update()`, `delete()` that call Supabase then refresh local state
-
-The `DashboardScreen` uses a `WidgetsBindingObserver` to call `_refresh()` on mount and app resume — invalidating all account/balance providers and reloading the transaction provider so metrics are always fresh.
+`ledgerProvider` calls `get_transaction_page`, loads further pages on demand,
+patches base-row Realtime events, and debounces a first-page refresh for
+label-join changes. Account, label, goal, and invoice providers retain their
+own list reload subscriptions. Aggregate providers call the corresponding RPCs
+rather than deriving Briefing or Analytics from a loaded ledger page.
 
 ---
 
@@ -140,16 +139,15 @@ sequenceDiagram
 
     alt Manual Entry
         User->>App: Fill form + tap Save
-        App->>Provider: add(tx)
-        Provider->>Supabase: INSERT ... RETURNING *
-        Provider->>Supabase: replace transaction_labels rows
+        App->>Provider: save debit/credit
+        Provider->>Supabase: save_transaction_with_labels RPC
         Supabase-->>Provider: inserted row
-        Provider->>App: reload list
+        Provider->>App: refresh affected ledger state
         App-->>User: success
     else Realtime Sync
         Note over App: Other device/tab
         Supabase-->>Provider: PostgresChanges event
-        Provider->>Supabase: SELECT (full reload — Phase 7 replaces with patching)
+        Provider->>Provider: patch row or debounce targeted refresh
         Provider->>App: rebuild UI
     else Edit / Delete
         User->>App: tap edit / long-press delete
@@ -162,9 +160,9 @@ sequenceDiagram
 Transfers and investments insert **two linked legs** (`transfer_group_id`,
 explicit `direction` per leg) via `addTransfer`/`addInvestment`.
 
-**Planned (Phase 5):** the update path (separate field UPDATE + label
-replacement) is replaced by one `save_transaction_with_labels` RPC that writes
-fields, labels, and primary label atomically with a single audit entry.
+Debit and credit writes use `save_transaction_with_labels`. Transfers and
+investments still insert their two linked legs directly and create label joins
+through the legacy provider path.
 
 ---
 
@@ -176,58 +174,54 @@ sequenceDiagram
     participant App as AgentChatScreen
     participant LS as LlmService
     participant Supabase
+    participant Edge as Supabase Edge Function
     participant Gemini
 
     User->>App: "Can I afford a new keyboard?"
     App->>LS: sendMessage(question)
-    LS->>Gemini: POST /chat/completions (10 tool definitions, tool_choice auto)
+    LS->>Edge: functions.invoke('agent')
+    Edge->>Gemini: server-side model request
 
     loop Tool-call loop (up to 10 rounds)
-        Gemini-->>LS: tool_calls: get_net_worth
-        LS->>Supabase: fn_net_worth() RPC
-        Supabase-->>LS: 45000
-        LS->>Gemini: role:tool result 45000
+        Gemini-->>Edge: tool_calls: get_net_worth
+        Edge->>Supabase: owner-scoped RPC
+        Supabase-->>Edge: result
+        Edge->>Gemini: tool result
 
         opt More tools needed
-            Gemini-->>LS: tool_calls: get_transactions / get_goals / ...
-            LS->>Supabase: SELECT from relevant table
-            Supabase-->>LS: data
-            LS->>Gemini: role:tool result
+            Gemini-->>Edge: further tool call
+            Edge->>Supabase: owner-scoped query
+            Supabase-->>Edge: data
+            Edge->>Gemini: tool result
         end
     end
 
-    Gemini-->>LS: text response
+    Gemini-->>Edge: text response
+    Edge-->>LS: answer + correlation ID
     LS->>Supabase: persist chat_sessions (best-effort)
     LS-->>App: render answer bubble
     App-->>User: answer with data citations
 ```
 
-Agent uses the **tool-call pattern** — Gemini decides which of the 10 read-only
-tools to call each turn (`gemini-2.5-flash` via the OpenAI-compatible
-endpoint). No tool can modify data.
-
-**Planned (Phase 3):** this entire loop moves into an authenticated Supabase
-Edge Function; the browser sends only the conversation and receives the answer
-plus privacy-safe tool-activity metadata. `GEMINI_API_KEY` leaves the client
-bundle and is rotated.
+The Edge Function owns the Gemini/tool loop. The browser sends sanitized visible
+conversation text and persists user/assistant messages; it never receives the
+Gemini key or executes finance tools.
 
 ---
 
-## Parsing and Classification (dormant)
+## Parsing and Classification
 
 Native SMS capture was **removed** with the Android runner; the app is
-web-only. Two building blocks are retained for the Phase 10 quick-capture
-feature and remain unused at runtime today:
+web-only. Quick capture uses deterministic amount/account/label parsing to
+produce a reviewable draft. The retained SMS parser and category-rule engine
+remain unused by the runtime flow:
 
 - `lib/features/sms/sms_parser.dart` — pure Dart regex parser for UPI-style
   bank messages (future paste/import parsing).
 - `category_rules` table + `CategoryRule` model — priority-ordered matching
   engine, dormant since labels replaced categories/tags (migration `00005`).
 
-**Planned (Phase 10):** quick capture parses one-field input (`250 biryani
-cash`) deterministically first (amount token, account-name match, label
-keywords), with Gemini as fallback — always producing a reviewable draft,
-never a silent save.
+Quick capture does not currently provide the planned Gemini fallback.
 
 ---
 
@@ -237,37 +231,31 @@ never a silent save.
 |---|---|---|
 | State management | Riverpod (StateNotifier) | Simple, no codegen, testable. Locked — no second state system. |
 | Navigation | IndexedStack + bottom nav | Preserves tab state, fast switching |
-| Invoice access | End drawer via 5th nav item | No dedicated screen needed (moves to app-bar action when Analytics takes the slot, Phase 8) |
-| Data sync | Supabase Realtime (PostgresChanges) | Sub-second cross-device, no polling. Full-reload handler is defect D4; row patching planned (Phase 7). |
+| Invoice access | End drawer via sixth nav item | Works today but exceeds the five-destination boundary |
+| Data sync | Supabase Realtime (PostgresChanges) | Ledger patches base rows and debounces label joins; list providers reload their own data |
 | SMS integration | Removed (web-only); pure Dart parser retained | Feeds future quick-capture/paste parsing, not runtime capture |
-| Agent approach | Gemini tool-calls (10 read-only tools) | Model decides which queries to run per turn — no pre-fetching. Browser-direct today; Edge Function planned (Phase 3). |
+| Agent approach | Gemini tool-calls in the Edge Function | Model decides which owner-scoped read-only queries to run; browser is a thin client |
 | Agent model | `gemini-2.5-flash` via OpenAI-compatible endpoint | Single model; no switcher |
 | Transaction dates | `transacted_at` (user-set) + `created_at` (server) | `transacted_at` is the actual money-move date; falls back to `created_at` for display/balance calculation |
 | Ledger direction | `direction` column (`inflow`/`outflow`) | Independent of `type` — the RPC uses `direction` directly so transfer/investment legs balance correctly. Model helpers `isInflow`/`isOutflow` fall back to `type` for backward compatibility. |
 | Account selection | Explicit, required, always visible in forms | Cash spends must hit Cash, bank spends the selected bank; never a silent default (PRD §5.1) |
 | Dashboard refresh | `WidgetsBindingObserver` + `ref.invalidate()` | On mount and app resume, all providers are invalidated so metrics reflect the latest DB state. Pull-to-refresh also reloads the transaction provider. |
-| Dashboard analytics | `DashboardAnalytics.fromTransactions()` | Pure computation over the full ledger — replaced by aggregate RPCs + canonical metrics in Phases 7–8 (its even multi-label split is defect D3) |
-| Auth | None today (single anon key) — **being replaced** | Single-owner Supabase Auth + owner-only RLS is Phase 2; open policies are defect D5, not an accepted end state |
+| Briefing and Analytics | Aggregate RPCs | Ledger page state is never treated as whole-ledger analytics input |
+| Auth | Supabase Auth + `AuthGate` | Single owner is checked before rendering the finance shell; live configuration must still be provisioned |
 | Charts | fl_chart | Locked — no second chart library. Analytics is capped at four primary charts (PRD §8). |
 
 ---
 
-## Planned Architecture Changes (summary)
+## Current limitations
 
-In dependency order (details in `docs/enhancement.md` / `docs/TODO.md`):
-
-1. **Auth gate** wrapping the app shell: session restore → owner check →
-   finance providers. Fail-closed for non-owners.
-2. **Supabase Edge Function** for Agent Desk (the only new infrastructure).
-3. **Correctness layer:** explicit-account enforcement + Family Support flag,
-   primary labels with one transactional save RPC, goal contributions.
-4. **Data layer:** cursor-paginated ledger, row-level Realtime patching,
-   aggregate RPCs (`get_briefing_summary`, `get_analytics`,
-   `get_account_balances`), monthly + account-balance snapshots.
-5. **Presentation:** numbers-only Briefing; separate Analytics tab with exactly
-   four charts; lazy tab initialization.
- 6. **Web platform:** `flutter_bootstrap.js` startup surface, browser-agnostic
-    JS/Dart resume handshake with bounded WebGL-context-loss recovery, 24-hour
-    local drafts (installed-PWA resume reliability for the mobile Brave
-    shortcut; Brave on desktop + Helium/Zen possible future browsers — no
-    native app).
+- Analytics currently renders eight panels, including pie charts, for a selected
+  month. It has no range selector and does not lazily render active sections.
+- The client supplies `p_as_of` to `get_analytics` and `get_top_merchants`, but
+  the current SQL signatures accept no such parameter. Historical month
+  selection therefore requires an RPC/client contract correction.
+- `MonthlySnapshotJob` still reads all transactions for a missing snapshot and
+  calls unbounded `fn_net_worth()`, producing `unbounded` snapshot-basis rows
+  that the historical chart cannot use.
+- `DraftStore` exists but has no runtime call sites; active navigation and
+  analytics state are not persisted, and the Agent UI does not show tool
+  activity returned by the function.

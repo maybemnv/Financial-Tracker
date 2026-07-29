@@ -2,7 +2,10 @@
 
 Postgres database hosted on Supabase. All tables use UUID primary keys with `gen_random_uuid()`. Timestamps use `timestamptz` with `now()` defaults.
 
-This file documents the **current deployed schema** (migrations `00001`–`00005`) plus a [Planned schema changes](#planned-schema-changes) section for the approved roadmap (`docs/enhancement.md`, `docs/TODO.md`). Canonical financial-metric definitions live in `docs/PRD.md` §4 and bind every aggregate built on this schema.
+This file documents the schema implemented by migrations `00001`-`00020`.
+Production availability still depends on applying those migrations in order.
+Canonical financial-metric definitions live in `docs/PRD.md` §4 and bind every
+aggregate built on this schema.
 
 ---
 
@@ -13,7 +16,9 @@ Core ledger. Every financial event lives here — debits, credits, transfers, an
 | Column | Type | Default | Notes |
 |---|---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
+| `user_id` | `uuid FK` | | Required owner, references `auth.users.id`. |
 | `account_id` | `uuid FK` | | References `accounts.id`. Every transaction belongs to an account. |
+| `primary_label_id` | `uuid FK` | `nullable` | Explicit spending attribution; when null, the effective-primary helper falls back to the sole attached label. |
 | `amount` | `numeric` | | Always positive. Direction determined by `direction` column. |
 | `type` | `text` | | `debit`, `credit`, `transfer`, or `investment` |
 | `direction` | `text` | | `inflow` or `outflow`. Explicit ledger direction — the RPC uses this directly instead of inferring from `type`. Required (non-null) after migration 00004. |
@@ -73,11 +78,18 @@ Reusable GitHub-style labels. Each has a user-selected color and can be attached
 | Column | Type | Default | Notes |
 |---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
-| `name` | `text` | | Case-insensitive unique name, e.g. `Food`, `Drinks`, `FAMILY` |
+| `user_id` | `uuid FK` | | Required owner, references `auth.users.id`. |
+| `name` | `text` | | Case-insensitive unique active name per owner, e.g. `Food`, `Drinks`, `FAMILY` |
 | `color` | `text` | | Six-digit hex color, e.g. `#1D76DB` |
+| `exclude_from_personal_spend` | `boolean` | `false` | The `FAMILY` label is the permitted excluded outflow label. |
+| `status` | `text` | `'active'` | `active`, `archived`, `merged`, or `deleted`. |
+| `merged_into_id` | `uuid FK` | `nullable` | Target label for a merged label. |
+| lifecycle timestamps | `timestamptz` | `nullable` | `updated_at`, `archived_at`, `merged_at`, and `deleted_at`. |
 | `created_at` | `timestamptz` | `now()` | |
 
-> **Family Support.** The production label previously named `TRANSFER TO OTHER` represents money sent to family. It is renamed to `FAMILY` via an identity-preserving `UPDATE` (same row/ID, all joins retained — never delete-and-recreate). Family payments are normal debit outflows, **not** `transfer`-type rows. Planned: `exclude_from_personal_spend boolean NOT NULL DEFAULT false` (true for `FAMILY`) drives the Personal Spend vs Family Support split through the primary-label system. See [Planned schema changes](#planned-schema-changes).
+`label_audit` records label lifecycle actions. Family payments are normal debit
+outflows, not `transfer` rows; `exclude_from_personal_spend` drives the Personal
+Spend versus Family Support split through effective primary labels.
 
 ## Table: `transaction_labels`
 
@@ -98,6 +110,7 @@ Financial accounts the user holds. Every transaction references one of these.
 | Column | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `id` | `uuid PK` | `gen_random_uuid()` | |
+| `user_id` | `uuid FK` | | Required owner, references `auth.users.id`. |
 | `name` | `text` | | Display name: `SBI`, `Kotak`, `PayPal`, `Cash`, `Nifty 50` |
 | `type` | `text` | | `cash`, `bank`, `paypal`, `investment` |
 | `opening_balance` | `numeric` | `0` | Balance on `opening_date`. Source of truth is transactions — `balance` is intentionally absent to avoid drift between derived and stored values. |
@@ -138,18 +151,24 @@ CREATE INDEX idx_category_rules_priority ON category_rules(priority);
 
 Savings goals with manual allocation tracking.
 
-> **Allocation is earmarking, not money movement.** Allocating to a goal changes no account balance and no net worth — it assigns existing money to a purpose. Today `allocated_amount` is mutated directly by the client (read-then-write, no history — defect D6); the Goals redesign replaces this with a `goal_contributions` history table and one transactional RPC. See [Planned schema changes](#planned-schema-changes).
+> **Allocation is earmarking, not money movement.** Allocating to a goal changes
+> no account balance and no net worth. `goal_contributions` records every
+> allocation/correction and goal RPCs maintain the stored total atomically.
 
 | Column | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `id` | `uuid PK` | `gen_random_uuid()` | |
+| `user_id` | `uuid FK` | | Required owner. |
 | `name` | `text` | | Goal name, e.g. `Emergency Fund`, `Phone`, `Keyboard` |
 | `type` | `text` | `'custom'` | `emergency_fund`, `custom`. Agent and dashboard use this, not the name — renaming "Emergency Fund" to "Oh Shit Fund" won't break anything. |
 | `target_amount` | `numeric` | | Target in INR |
 | `allocated_amount` | `numeric` | `0` | Running total allocated so far |
+| `status` | `text` | `'active'` | `active`, `paused`, `completed`, or `archived`. |
+| `target_date` | `date` | `nullable` | Optional target date. |
 | `is_deleted` | `boolean` | `false` | Soft delete |
 | `deleted_at` | `timestamptz` | `nullable` | |
 | `created_at` | `timestamptz` | `now()` | |
+| `updated_at` | `timestamptz` | `now()` | Auto-updated by trigger. |
 
 ### Computed (client-side)
 
@@ -212,11 +231,16 @@ Known recurring outflows. Used by the agent to compute "committed money" — wha
 | Column | Type | Default | Notes |
 |---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
+| `user_id` | `uuid FK` | | Required owner. |
 | `name` | `text` | | e.g. `Spotify`, `SBI SIP`, `Netflix` |
 | `amount` | `numeric` | | Per-cycle amount (INR) |
 | `frequency` | `text` | | `monthly`, `weekly`, `yearly` |
 | `category` | `text` | | e.g. `Subscriptions`, `Investments` |
 | `next_due` | `date` | `nullable` | Next expected date |
+| `account_id` | `uuid FK` | `nullable` | Optional paying account. |
+| `is_paused` | `boolean` | `false` | Excluded from active obligations when true. |
+| `confirmed_transaction_id` | `uuid FK` | `nullable` | Ledger row that confirmed the obligation. |
+| `confirmed_for` | `date` | `nullable` | Due date covered by the confirmation. |
 | `is_deleted` | `boolean` | `false` | Soft delete |
 | `deleted_at` | `timestamptz` | `nullable` | |
 | `created_at` | `timestamptz` | `now()` | |
@@ -230,11 +254,16 @@ Expected recurring inflows. Enables agent questions like "How much income should
 | Column | Type | Default | Notes |
 |---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
+| `user_id` | `uuid FK` | | Required owner. |
 | `name` | `text` | | e.g. `Salary`, `Freelance retainer`, `Rent` |
 | `amount` | `numeric` | | Per-cycle amount (INR) |
 | `frequency` | `text` | | `monthly`, `weekly`, `yearly` |
 | `source` | `text` | | e.g. `Employer`, `Client`, `Tenant` |
 | `next_expected` | `date` | `nullable` | Next expected date |
+| `account_id` | `uuid FK` | `nullable` | Optional receiving account. |
+| `is_paused` | `boolean` | `false` | Excluded from active obligations when true. |
+| `confirmed_transaction_id` | `uuid FK` | `nullable` | Ledger row that confirmed the income. |
+| `confirmed_for` | `date` | `nullable` | Expected date covered by the confirmation. |
 | `is_deleted` | `boolean` | `false` | Soft delete |
 | `deleted_at` | `timestamptz` | `nullable` | |
 | `created_at` | `timestamptz` | `now()` | |
@@ -248,6 +277,7 @@ Pre-computed monthly aggregates. Avoids recalculating from raw transactions ever
 | Column | Type | Default | Notes |
 |---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
+| `user_id` | `uuid FK` | | Required owner. |
 | `month` | `int` | | 1–12 |
 | `year` | `int` | | e.g. 2026 |
 | `income` | `numeric` | `0` | Total credits this month |
@@ -257,12 +287,14 @@ Pre-computed monthly aggregates. Avoids recalculating from raw transactions ever
 | `savings_rate` | `numeric` | `0` | (savings / income) * 100. Also computed client-side. See savings note. |
 | `net_worth` | `numeric` | `0` | End-of-month net worth |
 | `recorded_at` | `timestamptz` | `now()` | |
+| `net_worth_basis` | `text` | `'unbounded'` | Only `as_of_month_end` rows are chartable historical net-worth points. |
+| `calculated_at` | `timestamptz` | `nullable` | Calculation time. |
+| `calc_version` | `int` | `nullable` | Snapshot calculation version. |
 
 ### Constraints
 
 ```sql
-UNIQUE(month, year)
--- No is_deleted / deleted_at: append-only by design. Rows are never modified after insertion.
+UNIQUE(user_id, year, month)
 ```
 
 ### Indexes
@@ -275,12 +307,15 @@ CREATE INDEX idx_monthly_snapshots_year_month ON monthly_snapshots(year DESC, mo
 
 ## Table: `chat_sessions`
 
-Persists the Agent Desk (Gemini) message history so context survives app restarts. Currently global with **no `user_id`** (pre-auth design); gains ownership in the Phase 2 migration. The client keeps one rolling session: it loads the most recently updated row on launch and rewrites it after each completed turn.
+Persists the Agent Desk's visible user/assistant history so context survives app
+restarts. The client keeps one rolling, owner-scoped session. Tool-call history
+stays in the Edge Function and is not stored in this table.
 
 | Column | Type | Default | Notes |
 |---|---|---|---|
 | `id` | `uuid PK` | `gen_random_uuid()` | |
-| `messages` | `jsonb` | `'[]'` | OpenAI-compatible message array (Gemini endpoint), including tool-call turns needed for context continuity. |
+| `user_id` | `uuid FK` | | Required owner. |
+| `messages` | `jsonb` | `'[]'` | Visible user/assistant message array. |
 | `created_at` | `timestamptz` | `now()` | |
 | `updated_at` | `timestamptz` | `now()` | Auto-updated by trigger |
 
@@ -308,7 +343,7 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
-Applied to: `transactions`, `invoices`, `chat_sessions`
+Applied to: `transactions`, `invoices`, `chat_sessions`, `labels`, and `goals`.
 
 ### `fn_account_balance(p_account_id uuid)`
 
@@ -342,7 +377,10 @@ $$ LANGUAGE plpgsql;
 
 ### `fn_net_worth()`
 
-Returns sum of all account balances (opening + transaction deltas) for cash/bank/paypal accounts minus investment accounts. Uses `fn_account_balance` per account.
+Returns the owner-scoped sum of all non-deleted account balances, including
+investment accounts. `fn_net_worth_asof(p_as_of)` and
+`fn_account_balance_asof(p_account_id, p_as_of)` provide bounded historical
+calculation for valid snapshots.
 
 ```sql
 CREATE OR REPLACE FUNCTION fn_net_worth()
@@ -368,28 +406,19 @@ $$ LANGUAGE plpgsql;
 | `labels` | `supabase_realtime` | Yes (migration `00005`) |
 | `transaction_labels` | `supabase_realtime` | Yes (migration `00005`) |
 
-The client also opens channels on `accounts`, `goals`, and `invoices`; add them to the publication as needed:
-
-```sql
-ALTER PUBLICATION supabase_realtime ADD TABLE accounts;
-ALTER PUBLICATION supabase_realtime ADD TABLE goals;
-ALTER PUBLICATION supabase_realtime ADD TABLE invoices;
-```
+`accounts`, `goals`, and `invoices` are also published. The ledger patches
+transaction row events and debounces label-join refreshes; the remaining list
+providers reload their own collection when a channel event arrives.
 
 ---
 
 ## Row Level Security
 
-**Current state (defect D5 — being replaced, not an accepted production design):** all tables use open RLS for the single anon key:
-
-```sql
-ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all" ON <table> FOR ALL USING (true);
-```
-
-Applied to: `transactions`, `labels`, `transaction_labels`, `category_rules`, `goals`, `invoices`, `accounts`, `recurring_expenses`, `recurring_income`, `monthly_snapshots`, `chat_sessions`
-
-**Planned (Phase 2, `docs/TODO.md`):** every `anon_all` policy is replaced by owner-only `SELECT`/`INSERT`/`UPDATE`/soft-delete policies requiring `user_id = auth.uid()` plus membership in a private `app_owner` registry; physical `DELETE` stays revoked; policies fail closed when owner configuration is missing.
+Migration `00009` replaces historical `anon_all` policies with owner-only RLS:
+protected rows require `user_id = auth.uid()` and `app_is_owner()`. Finance
+tables grant no client physical-delete policy; merchant aliases intentionally
+allow owner-only physical deletion as metadata. The live project must be seeded
+with the owner and have all migrations applied before this protection is active.
 
 ---
 
@@ -399,7 +428,7 @@ These are enforced at the application layer (not in SQL constraints):
 
 | Rule | Description |
 |---|---|
-| **Soft delete** | Nothing is ever `DELETE FROM`. Use `is_deleted = true` + `deleted_at`. |
+| **Soft delete** | Financial records use `is_deleted = true` + `deleted_at`. Merchant aliases are a deliberate metadata-only delete exception. |
 | **Immutable history** | Every update appends to `edit_history` JSONB. Previous values are never overwritten silently. |
 | **Explicit ledger direction** | Every row has a `direction` column (`inflow`/`outflow`) independent of `type`. The RPC uses `direction` directly so transfer/investment legs are balanced correctly. The model's `isInflow`/`isOutflow` helpers fall back to `type` when `direction` is null for backward compatibility. |
 | **Double-entry transfers** | A transfer creates two rows in `transactions` — one with `direction = outflow` from source account, one with `direction = inflow` to destination account — linked by `transfer_group_id`. |
@@ -412,10 +441,9 @@ These are enforced at the application layer (not in SQL constraints):
 
 ---
 
-## Planned schema changes
+## Implemented schema additions
 
-Approved by `docs/enhancement.md` / `docs/TODO.md`. All additive; all preserve
-existing data. Nothing here exists in migrations yet.
+The following roadmap changes are implemented in migrations `00006`-`00020`.
 
 | Phase | Change | Justification (correctness reason) |
 |---|---|---|
@@ -448,6 +476,8 @@ Pay import), holdings/market-price tables, event-sourcing tables.
 | `RecurringIncome` | `lib/models/recurring_income.dart` | `recurring_income` |
 | `MonthlySnapshot` | `lib/models/monthly_snapshot.dart` | `monthly_snapshots` |
 | `TransactionLabel` | `lib/models/transaction_label.dart` | `labels` (+ `transaction_labels` join) |
+| `GoalContribution` | `lib/models/goal_contribution.dart` | `goal_contributions` |
+| `MerchantAlias` | `lib/models/merchant_alias.dart` | `merchant_aliases` |
 | (attachments) | _future backlog_ | Deliberately absent. Would only serve the deferred Google Pay screenshot import; not added in the current phases. |
 
 ---

@@ -12,9 +12,11 @@ by Supabase (Postgres + Realtime), state managed with Riverpod, charts with
 
 ---
 
-## 1. Current product (verified against code)
+## 1. Current product (verified against source)
 
-What exists and works in production today:
+The following is implemented in this branch. Production availability still
+requires applying migrations `00006`-`00020`, provisioning the owner, and
+deploying the `agent` Edge Function as described in `docs/RUNBOOK.md`.
 
 - **Ledger** — manual entry of debits, credits, double-entry transfers, and
   investment moves; every row belongs to an account; soft delete; immutable
@@ -23,33 +25,39 @@ What exists and works in production today:
 - **Accounts** — Cash, bank (Kotak/PSB), PayPal, investment accounts. Balances
   are derived by `fn_account_balance()` from `opening_balance` + transaction
   legs; net worth by `fn_net_worth()`. No stored balance column.
-- **Labels** — GitHub-style many-to-many labels with user-chosen colors
-  (create only; no rename/archive/merge/delete yet).
-- **Briefing (dashboard)** — month selector, hero summary, metric grid, account
-  balances, six-month trend line chart, daily bar chart, label pie chart, goal
-  trackers, action items — all computed client-side from the full ledger.
-- **Goals** — create goal, allocate positive amounts, soft delete. Emergency
-  Fund pinned by `type`, funded % progress bars.
+- **Labels** — GitHub-style many-to-many labels with primary attribution,
+  rename, archive, restore, merge, guarded delete, and audit records.
+- **Briefing** — numbers-only monthly metrics, account balances, obligations,
+  latest activity, and concise status, served by aggregate RPCs.
+- **Goals** — contribution-backed earmarking with corrections, reallocations,
+  lifecycle states, detail/history, and guarded editing. Emergency Fund remains
+  pinned by `type`.
 - **Invoices** — freelance invoice drawer with USD/PayPal/bank receipt tracking.
-- **Agent Desk** — Gemini 2.5 Flash with 10 read-only tools querying Supabase;
-  chat history persisted in `chat_sessions`.
-- **Recurring items** — `recurring_expenses` and `recurring_income` tables used
-  as agent context (no UI surfacing yet).
+- **Agent Desk** — Gemini 2.5 Flash runs behind the authenticated Supabase Edge
+  Function; its 10 read-only tools execute server-side and conversation text is
+  persisted in owner-scoped `chat_sessions`.
+- **Analytics** — a first-class tab with analytics RPCs, merchant aliases,
+  obligations, and a deterministic 30-day forecast. See the known deviations
+  below from the intended four-chart design.
+- **Quick capture** — deterministic one-field transaction parsing into a user
+  review step; it does not currently fall back to Gemini.
+- **Recurring items** — obligations and forecast UI use `recurring_expenses`
+  and `recurring_income`.
 - **Monthly snapshots** — previous-month aggregate written client-side on first
   open of a new month.
 
-Known defects (fixed by this PRD's roadmap):
+Known implementation gaps and operational requirements:
 
 | # | Defect | Consequence |
 |---|---|---|
 | D1 | Cash expenses recorded against a bank account (data-level; the form never enforced deliberate account choice historically) | Bank balances understate, Cash overstates; account-filtered reports wrong |
 | D2 | The label "TRANSFER TO OTHER" holds money sent to family but reads as an internal transfer | Family support is invisible in reporting and conflated with account transfers |
 | D3 | Multi-label expenses are split evenly across labels (`DashboardAnalytics`, `get_label_breakdown`) | Category totals do not reconcile; per-label numbers are fabricated fractions |
-| D4 | Full-ledger `SELECT` with no pagination; full reload on every Realtime event | Slow loads that get worse every month |
-| D5 | `anon_all` RLS on every table; Gemini key shipped in the browser bundle | Anyone with the URL + anon key can read/write all finance data |
-| D6 | Goal allocation is an unaudited read-then-write on `allocated_amount` | No history, no corrections, race-prone |
+| D4 | Main ledger path is paginated and row-patched, but the snapshot job still scans transactions when creating a missing snapshot; legacy provider code still performs unbounded reloads | Some background/legacy paths remain unbounded |
+| D5 | Owner RLS, Auth, and server-side Gemini are implemented in source but require the live migration/function rollout | Do not deploy this client against a database below migration `00020` |
+| D6 | Contribution-backed goals are implemented | Live migration and verification remain operational work |
 | D7 | Widget test uses `find.byDisplayValue`, breaking the test gate | `flutter test` cannot act as a release gate |
-| D8 | Installed PWA resume (mobile Brave shortcut) can blank-screen when the browser suspends it and the WebGL context is lost | App unusable after a switch until manual reload |
+| D8 | Bootstrap and lifecycle recovery are implemented, but active tab, analytics state, drafts, and offline/stale state are not fully restored | Resume acceptance still requires device verification |
 
 ---
 
@@ -59,10 +67,10 @@ Known defects (fixed by this PRD's roadmap):
 |---|---|---|
 | Frontend | Flutter Web (single codebase, mobile-first) | Locked |
 | Deployment | Vercel (`vercel-build.sh` → `build/web`) | Locked |
-| Backend/DB | Supabase — Postgres, Realtime, RPCs; **planned:** Auth + one Edge Function | Locked |
+| Backend/DB | Supabase — Postgres, Realtime, Auth, RPCs, and one Edge Function | Locked |
 | State | Riverpod (StateNotifier) | Locked — no second state system |
 | Charts | `fl_chart` | Locked — no second chart library |
-| AI | Gemini 2.5 Flash (currently browser-side; moving server-side behind a Supabase Edge Function) | Locked |
+| AI | Gemini 2.5 Flash through the server-side Supabase Edge Function | Locked |
 | Design | Brutal Newsprint Workbench (`docs/design.md`) | Locked |
 
 No new backend server, microservice, event-sourcing system, or generalized
@@ -81,7 +89,8 @@ planned Supabase Edge Function.
 - **AI reads, never moves money.** AI may read, classify, summarize, forecast,
   and answer. It must never create, modify, delete, allocate, or move money
   without explicit user review and confirmation.
-- **Soft delete everywhere.** Financial records are never physically deleted.
+- **Soft delete for financial records.** Merchant aliases are intentional
+  metadata-only exceptions and are physically deleted.
 - **Balances are derived.** `opening_balance` + transactions. No mutable
   balance column, ever.
 - **Transfers are two linked legs** (`transfer_group_id`) and do not change net
@@ -95,9 +104,9 @@ planned Supabase Edge Function.
   shortcut (installed PWA) on mobile. Helium/Zen are possible future browsers.
   All recovery/resume logic must stay browser-agnostic — never hardcoded to one
   engine or OS.
-- **Navigation stays at five primary destinations.** Analytics becomes a tab;
-  invoice access moves to an app-bar/drawer action. No further tabs unless the
-  Analytics tab genuinely cannot contain a feature.
+- **Navigation target is five primary destinations.** The current shell has five
+  tabs plus an Invoices bottom-navigation item, so it does not yet meet this
+  boundary.
 
 ---
 
@@ -246,7 +255,7 @@ existing newsprint style.
 
 ## 8. Analytics tab — restrained chart specification
 
-**Hard cap: exactly four primary charts.** Every chart answers a
+**Target: exactly four primary charts.** Every chart answers a
 decision-relevant question and drills into the filtered ledger. Do not add a
 chart merely because data exists.
 
@@ -282,15 +291,18 @@ Chart rules (all four charts):
 
 ## 9. Security, performance, reliability (summary)
 
-Fully specified in `docs/enhancement.md`; the requirements are:
+The implemented architecture and remaining requirements are specified below and
+in `docs/TODO.md`:
 
 - **Auth + RLS:** one Supabase owner account (Google + magic link), `user_id`
   ownership on all tables, owner-only policies replacing `anon_all`,
   fail-closed RPCs. (D5)
 - **Server-side AI:** Gemini behind an authenticated Supabase Edge Function;
   key removed from the bundle and rotated. (D5)
-- **Primary labels + audit:** exactly one primary label per new/edited expense;
-  one transactional RPC per edit; one audit entry per logical change. (D3)
+- **Primary labels + audit:** a labelled new/edited expense has one primary
+  label; unlabelled expenses remain valid and are reported as `Unlabeled`.
+  `save_transaction_with_labels` is transactional, but its current transaction
+  audit stores the prior row rather than a complete old/new label-set record.
 - **Performance:** cursor pagination (50/page), server-side filtering,
   aggregate RPCs, snapshot/live-month split, lazy tabs. (D4)
 - **Installed-PWA resume resilience:** bootstrap surface (no blank screen),
@@ -314,17 +326,16 @@ one page.
 | 4 | Cash/account correctness + Family-support semantics | Must | done |
 | 5 | Primary-label auditing + label lifecycle | Must | done |
 | 6 | Goals redesign | Must | done |
-| 7 | Pagination, aggregate RPCs, snapshots, performance | Must | done |
-| 8 | Briefing slim-down + four-chart Analytics tab | Must | done |
-| 9 | Upcoming obligations + deterministic cash-flow forecast | Should | done |
-| 10 | Quick capture + merchant normalization | Should | done |
-| 11 | Installed-PWA resume resilience (browser-agnostic) + production acceptance | Must | code complete; 11.6/11.9 acceptance are on-device owner steps |
+| 7 | Pagination, aggregate RPCs, snapshots, performance | Must | partial: main ledger path complete; snapshot and legacy full-scan caveats remain |
+| 8 | Briefing slim-down + four-chart Analytics tab | Must | partial: Briefing complete; Analytics has eight panels, pie charts, a one-month scope, and no lazy section rendering |
+| 9 | Upcoming obligations + deterministic cash-flow forecast | Should | partial: schema/calculation/UI exist; no UI confirms an obligation |
+| 10 | Quick capture + merchant normalization | Should | partial: deterministic parser and aliases exist; Gemini fallback is absent |
+| 11 | Installed-PWA resume resilience (browser-agnostic) + production acceptance | Must | partial: recovery handshake exists; draft/state restoration, offline status, and on-device acceptance remain |
 | — | Monthly digest, automated backup | Later | not started |
 | — | Google Pay screenshot import | Future backlog | not started |
 
-**Defects:** D1 (code done; historical reassignment is a live owner step),
-D2/D3/D5/D6/D7 done, D4 fixed in Phase 7, D8 addressed in Phase 11 (bounded
-WebGL-loss recovery) pending on-device confirmation.
+**Status:** D1 needs historical owner review; D2/D3/D6/D7 are implemented in
+source; D4 and D8 are partial; D5 requires the documented live rollout.
 
 The detailed checklist is `docs/TODO.md`.
 

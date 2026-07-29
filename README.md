@@ -6,22 +6,28 @@ mobile.
 
 ## Features
 
-- **Manual Entry** — Add transactions with account selector, type (debit/credit/transfer/investment), category, merchant, custom tags, date & time picker (Paytm-style)
-- **Real-time Sync** — Powered by Supabase Realtime; add a transaction in one browser tab, appears in another within seconds
-- **Dashboard** — Emergency Fund progress card, Savings Rate (target 20%+), per-account balance breakdown, summary cards (Earned/Spent/Saved/Net) + category pie chart
+- **Ledger** — Add debits, credits, transfers, and investments with an explicit
+  account, labels, primary attribution, merchant/note, and date/time.
+- **Real-time Sync** — Ledger pages patch row events and debounce label-join
+  refreshes; aggregate views use owner-scoped RPCs.
+- **Briefing and Analytics** — A numbers-first Briefing plus a separate monthly
+  Analytics workbench with cash flow, label spend, daily pace, net-worth,
+  merchant aliases, obligations, and a 30-day forecast.
 - **Accounts** — Multiple accounts (SBI, Kotak, PayPal, Cash) with derived balances via `fn_account_balance()` — never stored, never drift
 - **Transfers** — Double-entry transfer support: two linked rows with matching `transfer_group_id`, net worth unaffected
 - **Investments** — `type = 'investment'` moves money from cash account to investment account, excluded from expense reports
-- **Custom Tags** — Free-form tag input on every transaction (chip builder). Tags are normalised to lowercase, deduped, and shown as pills on each row.
 - **Transaction Dates** — `transacted_at` is user-set via date/time picker; falls back to `created_at`. Balance calculation uses `COALESCE(transacted_at, created_at)`.
 - **Paytm-Style List** — Transactions grouped by date ("Today", "Yesterday", "Fri, 27 Jun 2026"), 24hr time on each row.
-- **Soft Delete** — Nothing is ever hard-deleted; `is_deleted` + `deleted_at` on all tables + confirmation dialog
-- **Immutable Audit Trail** — `edit_history` JSONB stores old/new values + `edited_at` on every change
-- **Labels** — GitHub-style colored labels replace categories/tags (many-to-many); the priority-ordered rules engine is retained but currently dormant
-- **Goals** — Set savings goals with live progress tracking; Emergency Fund goal detected by `type` field, pinned to top
+- **Soft Delete** — Financial records use `is_deleted` + `deleted_at`; merchant
+  aliases are a deliberate metadata-only delete exception.
+- **Labels** — GitHub-style labels support primary attribution, review queues,
+  rename, archive, restore, merge, and guarded delete.
+- **Goals** — Contribution-backed earmarking with corrections, reallocations,
+  status controls, history, and an Emergency Fund pinned by `type`.
 - **Invoice Sidebar** — Track freelance invoices with PayPal USD, INR bank receipts, FX rate, and fee chips
 - **Finance Agent** — Gemini-powered Q&A behind an authenticated Supabase Edge Function (read-only tools; the key never reaches the browser)
-- **Monthly Snapshots** — Pre-computed monthly aggregates written on first open of each new month
+- **Monthly Snapshots** — Previous-month aggregates are written on first open of
+  a new month. See `docs/PRD.md` for the current snapshot-basis limitation.
 
 ## Tech Stack
 
@@ -39,7 +45,7 @@ mobile.
 
 - Flutter SDK (stable)
 - Supabase account (free tier)
-- Gemini API key
+- Gemini API key for the server-side Edge Function
 
 ### 1. Environment
 
@@ -67,9 +73,9 @@ it and it would be exposed in the bundle.
    `GEMINI_API_KEY` secret.
 5. Copy your project URL and anon key into `.env`.
 
-**Going to production?** `docs/GO_LIVE.md` is the ordered runbook (backup, auth
-config, the RLS cutover, deploy, verify, lockdown), and `scripts/release_gate.sh`
-runs the automated pre-deploy gates.
+**Going to production?** `docs/RUNBOOK.md` covers backup, owner provisioning,
+the migration sequence, key rotation, and snapshot/cache recovery. Run
+`scripts/release_gate.sh` for the automated pre-deploy gates.
 
 ### 3. Run
 
@@ -91,11 +97,11 @@ Output in `build/web/` — deploy as static files.
 ```
 lib/
 ├── main.dart                  # Entry point (inits Supabase + runs MonthlySnapshotJob)
-├── app.dart                   # App shell with bottom nav + invoice drawer
+├── app.dart                   # Auth-gated shell with lazy tabs + invoice drawer
 ├── core/
-│   ├── theme.dart             # AppTheme (dark palette)
+│   ├── theme.dart             # Newsprint AppTheme and design tokens
 │   ├── supabase.dart          # SupabaseService singleton
-│   ├── constants.dart         # Categories, AppConstants
+│   ├── analytics_types.dart   # Typed analytics query and bundle DTOs
 │   ├── dedup.dart             # SHA-256 dedup for SMS
 │   └── monthly_snapshot.dart  # Backfill monthly aggregates
 ├── models/
@@ -108,18 +114,23 @@ lib/
 │   ├── recurring_income.dart  # Expected recurring inflows
 │   └── monthly_snapshot.dart  # Pre-computed monthly totals
 ├── providers/
-│   ├── transaction_provider   # CRUD + Realtime + dedup + edit_history + transfer
-│   ├── goal_provider          # CRUD + soft delete
+│   ├── ledger_provider        # Paged ledger + targeted Realtime updates
+│   ├── analytics_provider     # Analytics and merchant RPCs
+│   ├── transaction_provider   # Legacy transfer/investment writes
+│   ├── goal_provider          # Contribution-backed goal lifecycle
 │   ├── invoice_provider       # CRUD + soft delete
 │   ├── account_provider       # Load + per-account balance + net worth RPCs
 │   ├── recurring_expense_provider
 │   └── recurring_income_provider
 ├── features/
-│   ├── transactions/          # Transaction list (Paytm-style date grouping, custom tags) + add form (date/time picker, tag input, account selector)
-│   ├── dashboard/             # Emergency Fund, Savings Rate, per-account balances, pie chart
-│   ├── goals/                 # Goal list (emergency fund pinned) + add/allocate
+│   ├── auth/                  # Owner auth gate and sign-in flow
+│   ├── transactions/          # Paged ledger, quick capture, add/edit forms
+│   ├── dashboard/             # Numbers-first monthly Briefing
+│   ├── analytics/             # Charts, merchants, obligations, forecast
+│   ├── labels/                # Lifecycle management and review queue
+│   ├── goals/                 # Contribution-backed savings board
 │   ├── invoices/              # Slide-in sidebar with FX chips
-│   ├── agent/                 # Chat UI + Gemini tool-use service (10 tools)
+│   ├── agent/                 # Thin Edge Function chat client
 │   └── sms/                   # SMS parser (kept for future paste/import)
 └── widgets/                   # Shared UI components (EmptyState, SummaryCard)
 ```
@@ -133,22 +144,30 @@ This app is designed for Vercel deployment.
 3. Set environment variables in the Vercel project dashboard:
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
-   - `GEMINI_API_KEY`
-4. Vercel builds with `vercel.json` which generates `.env` from these vars before `flutter build web`
+4. `vercel-build.sh` writes the browser-safe `.env` and builds `build/web`.
+
+Deploy the Edge Function separately and set `GEMINI_API_KEY` and an explicit
+`ALLOWED_ORIGINS` allowlist with `supabase secrets set`. `vercel.json` permits
+Git deployments only from `master`; deploy a feature branch manually if needed.
 
 ### Security Notes
 
-- The browser bundle currently contains `SUPABASE_ANON_KEY` and `GEMINI_API_KEY`. The anon key is designed to be public **once owner-only RLS is in place**; the exposed Gemini key is a known defect (D5) — the roadmap (`docs/TODO.md` Phases 2–3) adds single-owner auth + RLS, moves Gemini behind an authenticated Supabase Edge Function, and rotates the key. Do not treat the current open-RLS state as an accepted design.
+- The browser bundle contains only `SUPABASE_ANON_KEY`, which is intended to be
+  public when owner-only RLS is applied. Gemini remains a server-side Edge
+  Function secret.
 - `SUPABASE_SERVICE_KEY` must never be added to the Flutter `.env` or Vercel env vars — it would grant full database access to anyone who inspects the web bundle.
-- For higher security, move Gemini calls behind a Supabase Edge Function so the API key never reaches the browser.
+- Apply migrations `00006`-`00020`, provision the owner, and deploy `agent`
+  before treating this branch as production-ready.
 
 ## Design Principles
 
 - **AI never modifies money** — categorize/summarize/answer only. Edit/delete requires user confirmation.
-- **Soft-delete everything** — `is_deleted` + `deleted_at` on all tables.
+- **Soft-delete financial records** — `is_deleted` + `deleted_at`; aliases are
+  the narrow metadata exception.
 - **Double-entry transfers** — two rows linked by `transfer_group_id`, net worth unchanged.
 - **Investments are not expenses** — `type = 'investment'`, net worth unchanged.
 - **Immutable history** — `edit_history` JSONB stores every change.
 - **Balances are derived** — `accounts` has `opening_balance` + `opening_date`. Current balance is `fn_account_balance()`. No `balance` column.
-- **Agent uses tool-use, not context injection** — Gemini decides which of the 8 tools to call per turn. No pre-fetching data.
+- **Agent uses tool-use, not context injection** — the Edge Function runs 10
+  read-only tools; the browser does not pre-fetch data or hold the Gemini key.
 - **No streaming** — Agent responses appear after 2–4s. SSE removed from scope permanently.

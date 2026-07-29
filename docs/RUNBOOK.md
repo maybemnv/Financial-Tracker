@@ -102,7 +102,7 @@ prove anon/non-owner access fails closed.
 leave an anon client pointed at owner-only RLS, and never leave owner-only RLS
 un-deployed behind an anon client.
 
-### Later migrations (Phases 4–6)
+### Application migrations (Phases 4–10)
 
 | File | Effect | Guard |
 |---|---|---|
@@ -111,6 +111,11 @@ un-deployed behind an anon client.
 | `00013_label_and_transaction_rpcs.sql` | atomic transaction save + label lifecycle RPCs | `authenticated` grant only |
 | `00014_goal_contributions.sql` | goal status/target date, contribution history, atomic allocation | seeds one opening contribution per goal |
 | `00015_goal_editing_and_states.sql` | goal edit/status/delete RPCs, overfund + safe-delete guards | replaces the 00014 RPC signatures |
+| `00016_transaction_rpc_labelled_expense.sql` | permits unlabelled expenses and preserves SMS provenance | deploy matching transaction client |
+| `00017_pagination_aggregates.sql` | ledger paging, Briefing, balances, and label usage aggregates | deploy matching paged-ledger client |
+| `00018_analytics_asof_net_worth.sql` | analytics RPC, as-of balances, snapshot metadata | only `as_of_month_end` snapshots are chartable |
+| `00019_obligations_forecast.sql` | recurring confirmations and forecast inputs | deploy matching obligations UI |
+| `00020_merchant_aliases.sql` | alias storage and normalized merchant aggregate | aliases are read-time only |
 
 **After 00015** — run `supabase/tests/goal_allocation.sql` (Phase 6.5). It runs
 inside a rolled-back transaction and proves allocation stays reconciled, never
@@ -136,17 +141,23 @@ Vercel env, `.env`, and `vercel-build.sh` (already done in the Phase 3 client).
 
 ## 5. Snapshot rebuild (Phase 7.5 / 8.6)
 
-When historical transactions are corrected (e.g. Phase 4 account reassignments),
-recompute the affected month's snapshot as-of month end:
+When historical transactions are corrected (e.g. account reassignments), rebuild
+the affected snapshot with a privileged database role and the explicit owner
+UUID. `auth.uid()` is not available in the SQL Editor/Postgres context:
 ```sql
--- see fn_net_worth_asof() once 00020 lands; delete + rebuild the stale row.
-DELETE FROM monthly_snapshots WHERE user_id = auth.uid() AND year = $1 AND month = $2;
+DELETE FROM monthly_snapshots
+WHERE user_id = '<owner-uuid>' AND year = <year> AND month = <month>;
 ```
+
+`fn_net_worth_asof()` was introduced in `00018`. Do not rely on opening the app
+to rebuild this row: `MonthlySnapshotJob` currently calls unbounded
+`fn_net_worth()` and writes the default `net_worth_basis = 'unbounded'`.
 
 ---
 
 ## 6. Cache recovery (Phase 11.6)
 
-On release, clear obsolete service-worker caches so the installed PWA receives
-the new build (bump the cache-buster query in `vercel.json`/bootstrap). Confirm
-via the browser Application panel that the new version is served.
+On release, confirm via the browser Application panel that the installed PWA
+received the new version. `flutter_bootstrap.js` owns its timestamped recovery
+reload; neither `vercel.json` nor the bootstrap file has a manual cache-buster
+to bump.
