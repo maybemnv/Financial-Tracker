@@ -15,3 +15,5 @@ key.properties
 .env
 .flutter-plugins-dependencies
 android/finance_tracker_android.iml
+supabase/migrations/
+supabase/reports/
