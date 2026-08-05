@@ -16,8 +16,9 @@ final analyticsQueryProvider =
 /// call. Nothing here recomputes the ledger client-side.
 final analyticsProvider = FutureProvider<AnalyticsBundle>((ref) async {
   final query = ref.watch(analyticsQueryProvider);
-  // Refresh when the ledger changes, not on every page scroll.
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  // Refresh when loaded ledger data changes, not when pagination appends a
+  // page during normal scrolling.
+  ref.watch(ledgerProvider.select((s) => s.dataRevision));
 
   return Perf.timeAsync('analytics_bundle', () async {
     final now = DateTime.now();
@@ -41,7 +42,7 @@ final analyticsProvider = FutureProvider<AnalyticsBundle>((ref) async {
 /// bundle's raw list so the same shop under several spellings totals as one
 /// once aliases exist. Watches the alias set so a new rule reflows immediately.
 final topMerchantsProvider = FutureProvider<List<MerchantTotal>>((ref) async {
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  ref.watch(ledgerProvider.select((s) => s.dataRevision));
   ref.watch(merchantAliasProvider);
   final query = ref.watch(analyticsQueryProvider);
   final now = DateTime.now();

@@ -59,6 +59,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           const SizedBox(height: 12),
           Expanded(
             child: bundleAsync.when(
+              // Keep the last chart tree mounted while a new RPC reloads, so
+              // scrolling or changing the month does not blank the workbench.
+              skipLoadingOnReload: true,
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(
                 child: NewsprintNotice(

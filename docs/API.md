@@ -309,7 +309,7 @@ than read the payload.
 
 | Function | Args | Returns | Notes |
 |---|---|---|---|
-| `get_analytics` | `p_months`, `p_include_family` | `{version, cash_flow[], by_label[], daily_spend[], net_worth[], net_worth_current, top_merchants[]}` | The four charts + top merchants in one call. Net-worth points on the legacy basis are `available:false`. |
+| `get_analytics` | `p_months`, `p_include_family`, `p_as_of?` | `{version, cash_flow[], by_label[], daily_spend[], net_worth[], net_worth_current, top_merchants[]}` | The four charts + top merchants in one call. Historical series are bounded by `p_as_of`; `net_worth_current` remains the live figure. Legacy net-worth points are `available:false`. |
 | `fn_net_worth_asof` / `fn_account_balance_asof` | `p_as_of` | `numeric` | Bounded to a cut-off; fixes the snapshot leak. |
 
 ### Goals (`00014`, `00015`)
@@ -325,7 +325,7 @@ Allocation is earmarking — none of these touch an account balance or net worth
 |---|---|---|---|
 | `confirm_obligation` | `p_kind`, `p_id`, `p_transaction_id` | `date` | Links the settling ledger row and advances the due date atomically. |
 | `get_forecast_inputs` | `p_lookback_days` | `{version, liquid_balance, investment_balance, earmarked_total, personal_spend_per_day, ...}` | Measured inputs only; the projection is computed client-side and reproducible by hand. |
-| `get_top_merchants` | `p_months`, `p_limit` | `{version, merchants[]}` | Rolls up by `app_canonical_merchant`; raw merchant on the row is untouched. |
+| `get_top_merchants` | `p_months`, `p_limit`, `p_as_of?` | `{version, merchants[]}` | Rolls up by `app_canonical_merchant` through the requested cut-off; raw merchant on the row is untouched. |
 
 ### Edge Function
 

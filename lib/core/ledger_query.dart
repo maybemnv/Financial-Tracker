@@ -73,7 +73,8 @@ class LedgerQuery {
         'p_account_id': accountId,
         'p_label_id': labelId,
         'p_type': type,
-        'p_search': (search == null || search!.trim().isEmpty) ? null : search!.trim(),
+        'p_search':
+            (search == null || search!.trim().isEmpty) ? null : search!.trim(),
         'p_from': from?.toIso8601String().split('T').first,
         'p_to': to?.toIso8601String().split('T').first,
         'p_unresolved': unresolved.wireValue,
@@ -110,7 +111,9 @@ class LedgerQuery {
     final at = t.transactedAt ?? t.createdAt;
     if (at != null) {
       if (from != null && at.isBefore(from!)) return false;
-      if (to != null && at.isAfter(to!.add(const Duration(days: 1)))) return false;
+      if (to != null && at.isAfter(to!.add(const Duration(days: 1)))) {
+        return false;
+      }
     }
 
     final term = search?.trim().toLowerCase();
@@ -142,7 +145,9 @@ class LedgerCursor {
 
   @override
   bool operator ==(Object other) =>
-      other is LedgerCursor && other.effectiveAt == effectiveAt && other.id == id;
+      other is LedgerCursor &&
+      other.effectiveAt == effectiveAt &&
+      other.id == id;
 
   @override
   int get hashCode => Object.hash(effectiveAt, id);
@@ -191,6 +196,7 @@ class LedgerPage {
 class LedgerState {
   const LedgerState({
     this.rows = const [],
+    this.dataRevision = 0,
     this.query = const LedgerQuery(),
     this.cursor,
     this.hasMore = true,
@@ -201,6 +207,12 @@ class LedgerState {
   });
 
   final List<Transaction> rows;
+
+  /// Changes when loaded data is refreshed or patched, but not when another
+  /// page is appended. Aggregate providers can refresh without treating
+  /// normal ledger scrolling as a data mutation.
+  final int dataRevision;
+
   final LedgerQuery query;
   final LedgerCursor? cursor;
   final bool hasMore;
@@ -218,6 +230,7 @@ class LedgerState {
 
   LedgerState copyWith({
     List<Transaction>? rows,
+    int? dataRevision,
     LedgerQuery? query,
     LedgerCursor? cursor,
     bool? hasMore,
@@ -231,6 +244,7 @@ class LedgerState {
   }) =>
       LedgerState(
         rows: rows ?? this.rows,
+        dataRevision: dataRevision ?? this.dataRevision,
         query: query ?? this.query,
         cursor: clearCursor ? null : (cursor ?? this.cursor),
         hasMore: hasMore ?? this.hasMore,

@@ -74,7 +74,7 @@ final accountProvider =
 /// into memory just to know when a balance might have changed.
 final accountBalancesProvider =
     FutureProvider<Map<String, double>>((ref) async {
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  ref.watch(ledgerProvider.select((s) => s.dataRevision));
   final result = await SupabaseService().client.rpc('get_account_balances');
   final balances = AccountBalance.listFromRpc(
     Map<String, dynamic>.from(result as Map),
@@ -89,7 +89,7 @@ final accountBalancesProvider =
 /// failure — the same "failure becomes an authoritative answer" bug the Agent
 /// tools had.
 final netWorthProvider = FutureProvider<double>((ref) async {
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  ref.watch(ledgerProvider.select((s) => s.dataRevision));
   final value = await SupabaseService().client.rpc('fn_net_worth');
   return (value as num?)?.toDouble() ?? 0;
 });

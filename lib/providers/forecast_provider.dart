@@ -24,9 +24,8 @@ final obligationsProvider = Provider<List<Obligation>>((ref) {
 
 /// Measured inputs only — balances and the observed spend rate.
 final forecastInputsProvider = FutureProvider<ForecastInputs>((ref) async {
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
-  final result =
-      await SupabaseService().client.rpc('get_forecast_inputs');
+  ref.watch(ledgerProvider.select((s) => s.dataRevision));
+  final result = await SupabaseService().client.rpc('get_forecast_inputs');
   return ForecastInputs.fromRpc(Map<String, dynamic>.from(result as Map));
 });
 

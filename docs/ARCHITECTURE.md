@@ -250,9 +250,8 @@ Quick capture does not currently provide the planned Gemini fallback.
 
 - Analytics currently renders eight panels, including pie charts, for a selected
   month. It has no range selector and does not lazily render active sections.
-- The client supplies `p_as_of` to `get_analytics` and `get_top_merchants`, but
-  the current SQL signatures accept no such parameter. Historical month
-  selection therefore requires an RPC/client contract correction.
+- Analytics RPCs accept the client-supplied `p_as_of` cut-off, so historical
+  month selection does not leak later transactions into the selected window.
 - `MonthlySnapshotJob` still reads all transactions for a missing snapshot and
   calls unbounded `fn_net_worth()`, producing `unbounded` snapshot-basis rows
   that the historical chart cannot use.

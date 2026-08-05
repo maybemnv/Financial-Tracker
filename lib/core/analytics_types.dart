@@ -175,6 +175,32 @@ class LabelSpend {
         },
       );
 
+  /// The RPC normally returns one row per label id, but legacy label rows can
+  /// still share a display name after a merge or rename. A pie slice is a
+  /// display bucket, so repeated names must be combined before rendering.
+  static List<LabelSpend> mergeByName(Iterable<LabelSpend> input) {
+    final merged = <String, LabelSpend>{};
+    for (final slice in input) {
+      final key = slice.name.trim().toLowerCase();
+      final current = merged[key];
+      if (current == null) {
+        merged[key] = slice;
+        continue;
+      }
+      merged[key] = LabelSpend(
+        name: current.name,
+        amount: current.amount + slice.amount,
+        labelId: current.labelId == slice.labelId ? current.labelId : null,
+        color: current.color == slice.color
+            ? current.color
+            : (current.color ?? slice.color),
+        excluded: current.excluded || slice.excluded,
+        bucket: _mergeSpendBucket(current.bucket, slice.bucket),
+      );
+    }
+    return merged.values.toList()..sort((a, b) => b.amount.compareTo(a.amount));
+  }
+
   /// Top [keep] slices with the remainder folded into a single `Other`.
   ///
   /// The fold is what keeps the chart inside the validated palette's series
@@ -192,6 +218,19 @@ class LabelSpend {
       LabelSpend(name: 'Other', amount: rest, bucket: SpendBucket.other),
     ];
   }
+}
+
+SpendBucket _mergeSpendBucket(SpendBucket a, SpendBucket b) {
+  if (a == SpendBucket.needsPrimary || b == SpendBucket.needsPrimary) {
+    return SpendBucket.needsPrimary;
+  }
+  if (a == SpendBucket.unlabeled || b == SpendBucket.unlabeled) {
+    return SpendBucket.unlabeled;
+  }
+  if (a == SpendBucket.other || b == SpendBucket.other) {
+    return SpendBucket.other;
+  }
+  return SpendBucket.label;
 }
 
 /// Chart 3 point: cumulative personal spend on day N, this month vs last.
