@@ -62,9 +62,11 @@ $$;
 -- Roll top-merchant analytics up by canonical name. get_analytics keeps its own
 -- raw top_merchants for the pre-alias view; this is what the UI calls once
 -- aliases exist so the same shop under several spellings totals as one.
+DROP FUNCTION IF EXISTS get_top_merchants(integer, integer);
 CREATE OR REPLACE FUNCTION get_top_merchants(
   p_months int DEFAULT 12,
-  p_limit  int DEFAULT 10
+  p_limit  int DEFAULT 10,
+  p_as_of  timestamptz DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -75,13 +77,14 @@ AS $$
 DECLARE
   v_owner uuid := auth.uid();
   v_start timestamptz;
+  v_as_of timestamptz := COALESCE(p_as_of, now());
 BEGIN
   IF NOT app_is_owner() THEN
     RAISE EXCEPTION 'Not authorized.' USING ERRCODE = '42501';
   END IF;
   p_months := LEAST(GREATEST(COALESCE(p_months, 12), 1), 120);
   p_limit  := LEAST(GREATEST(COALESCE(p_limit, 10), 1), 50);
-  v_start := date_trunc('month', now()) - make_interval(months => p_months - 1);
+  v_start := date_trunc('month', v_as_of) - make_interval(months => p_months - 1);
 
   RETURN jsonb_build_object(
     'version', 1,
@@ -93,12 +96,13 @@ BEGIN
                sum(t.amount) AS amount, count(*) AS n
         FROM transactions t
         WHERE t.user_id = v_owner AND t.is_deleted = false AND t.type = 'debit'
-          AND COALESCE(t.transacted_at, t.created_at) >= v_start
+           AND COALESCE(t.transacted_at, t.created_at) >= v_start
+           AND COALESCE(t.transacted_at, t.created_at) <= v_as_of
         GROUP BY 1 ORDER BY 2 DESC LIMIT p_limit
       ) m
     ), '[]'::jsonb)
   );
 END;
 $$;
-REVOKE ALL ON FUNCTION get_top_merchants(int, int) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION get_top_merchants(int, int) TO authenticated;
+REVOKE ALL ON FUNCTION get_top_merchants(int, int, timestamptz) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION get_top_merchants(int, int, timestamptz) TO authenticated;

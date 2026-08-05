@@ -554,7 +554,9 @@ class LabelSpendChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shown = slices.where((s) => s.amount > 0).toList(growable: false);
+    final shown = LabelSpend.mergeByName(slices)
+        .where((s) => s.amount > 0)
+        .toList(growable: false);
     final total = shown.fold<double>(0, (s, e) => s + e.amount);
     final hasReview = shown.any((s) =>
         s.bucket == SpendBucket.unlabeled ||
@@ -566,12 +568,10 @@ class LabelSpendChart extends StatelessWidget {
           '${includeFamily ? 'Pie includes every label across Personal Spend and Family Support.' : 'Pie includes every Personal Spend label. Family Support is excluded.'}'
           '${hasReview ? ' Not a category: review slices need cleanup.' : ''}',
       summary: _summary(shown, total),
-      legend: shown.isEmpty
-          ? null
-          : ChartLegend(entries: [
-              for (var i = 0; i < shown.length; i++)
-                (label: shown[i].name, color: _sliceColor(i, shown[i])),
-            ]),
+      // The value rows below the pie already provide the colour, label, and
+      // exact amount. Rendering ChartFrame's legend as well duplicated every
+      // label on the page.
+      legend: null,
       table: ChartTable(
         headers: const ['Label', 'Amount', 'Share'],
         rows: [

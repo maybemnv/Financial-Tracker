@@ -32,8 +32,8 @@ void main() {
 
   group('query equality drives page resets', () {
     test('same filters compare equal', () {
-      expect(const LedgerQuery(accountId: 'a'),
-          const LedgerQuery(accountId: 'a'));
+      expect(
+          const LedgerQuery(accountId: 'a'), const LedgerQuery(accountId: 'a'));
       expect(const LedgerQuery(accountId: 'a').hashCode,
           const LedgerQuery(accountId: 'a').hashCode);
     });
@@ -82,8 +82,8 @@ void main() {
     });
 
     test('the cursor is sent as an ISO timestamp plus id', () {
-      final cursor = LedgerCursor(
-          effectiveAt: DateTime.utc(2026, 7, 10, 12), id: 'abc');
+      final cursor =
+          LedgerCursor(effectiveAt: DateTime.utc(2026, 7, 10, 12), id: 'abc');
       final params = const LedgerQuery().toParams(limit: 50, cursor: cursor);
       expect(params['p_cursor_at'], '2026-07-10T12:00:00.000Z');
       expect(params['p_cursor_id'], 'abc');
@@ -103,21 +103,25 @@ void main() {
 
     test('label filter checks attachments', () {
       expect(const LedgerQuery(labelId: 'food').matches(tx()), isFalse);
-      expect(
-          const LedgerQuery(labelId: 'food').matches(tx(labels: [food])), isTrue);
+      expect(const LedgerQuery(labelId: 'food').matches(tx(labels: [food])),
+          isTrue);
     });
 
     test('search spans merchant, note, and vpa, case-insensitively', () {
-      expect(const LedgerQuery(search: 'CAFE').matches(tx(merchant: 'Corner Cafe')),
+      expect(
+          const LedgerQuery(search: 'CAFE')
+              .matches(tx(merchant: 'Corner Cafe')),
           isTrue);
-      expect(const LedgerQuery(search: 'rent').matches(tx(note: 'Monthly Rent')),
+      expect(
+          const LedgerQuery(search: 'rent').matches(tx(note: 'Monthly Rent')),
           isTrue);
       expect(const LedgerQuery(search: 'zzz').matches(tx(merchant: 'Cafe')),
           isFalse);
     });
 
     test('date range excludes rows outside it', () {
-      final q = LedgerQuery(from: DateTime(2026, 7, 1), to: DateTime(2026, 7, 31));
+      final q =
+          LedgerQuery(from: DateTime(2026, 7, 1), to: DateTime(2026, 7, 31));
       expect(q.matches(tx(transactedAt: DateTime(2026, 7, 10))), isTrue);
       expect(q.matches(tx(transactedAt: DateTime(2026, 6, 10))), isFalse);
     });
@@ -188,5 +192,11 @@ void main() {
       expect(LedgerCursor.fromJson({'at': null, 'id': 'a'}), isNull);
       expect(LedgerCursor.fromJson({'at': '2026-07-10T00:00:00Z'}), isNull);
     });
+  });
+
+  test('aggregate revision is independent of appended row pages', () {
+    const state = LedgerState(dataRevision: 4);
+    expect(state.copyWith(rows: const []).dataRevision, 4);
+    expect(state.copyWith(dataRevision: 5).dataRevision, 5);
   });
 }

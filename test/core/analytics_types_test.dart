@@ -77,6 +77,19 @@ void main() {
     });
   });
 
+  test('duplicate label names merge into one display bucket', () {
+    final merged = LabelSpend.mergeByName([
+      const LabelSpend(name: 'Food', amount: 100, labelId: 'new'),
+      const LabelSpend(name: ' food ', amount: 40, labelId: 'old'),
+    ]);
+
+    expect(merged, hasLength(1));
+    expect(merged.single.name, 'Food');
+    expect(merged.single.amount, 140);
+    expect(merged.single.labelId, isNull,
+        reason: 'A duplicate display name cannot safely drill into one id.');
+  });
+
   group('bundle parsing', () {
     Map<String, dynamic> envelope(Map<String, dynamic> overrides) => {
           'version': 1,

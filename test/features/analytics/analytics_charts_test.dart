@@ -97,6 +97,22 @@ void main() {
   });
 
   group('spending by label', () {
+    testWidgets('a label is not repeated in a separate legend and value row',
+        (tester) async {
+      await _pump(
+        tester,
+        const LabelSpendChart(
+          includeFamily: false,
+          slices: [
+            LabelSpend(name: 'Food', amount: 500, labelId: 'food'),
+            LabelSpend(name: ' food ', amount: 250, labelId: 'food-legacy'),
+          ],
+        ),
+      );
+      expect(find.text('Food'), findsOneWidget);
+      expect(find.text('₹750'), findsOneWidget);
+    });
+
     testWidgets('review buckets are labelled as not-a-category',
         (tester) async {
       await _pump(
@@ -161,10 +177,8 @@ void main() {
         const NetWorthChart(
           current: 5000,
           points: [
-            NetWorthPoint(
-                year: 2026, month: 5, value: null, available: false),
-            NetWorthPoint(
-                year: 2026, month: 6, value: 4000, available: true),
+            NetWorthPoint(year: 2026, month: 5, value: null, available: false),
+            NetWorthPoint(year: 2026, month: 6, value: 4000, available: true),
           ],
         ),
       );

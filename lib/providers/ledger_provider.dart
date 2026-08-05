@@ -41,6 +41,7 @@ class LedgerNotifier extends StateNotifier<LedgerState> {
       if (generation != _generation) return;
       state = state.copyWith(
         rows: page.rows,
+        dataRevision: state.dataRevision + 1,
         cursor: page.nextCursor,
         hasMore: page.hasMore,
         isLoadingFirstPage: false,
@@ -176,7 +177,10 @@ class LedgerNotifier extends StateNotifier<LedgerState> {
       return;
     }
     final rows = [...state.rows]..[index] = patched;
-    state = state.copyWith(rows: rows);
+    state = state.copyWith(
+      rows: rows,
+      dataRevision: state.dataRevision + 1,
+    );
   }
 
   /// Applies changed scalar fields from a Realtime record onto a loaded row,
@@ -202,6 +206,7 @@ class LedgerNotifier extends StateNotifier<LedgerState> {
     if (!state.rows.any((r) => r.id == id)) return;
     state = state.copyWith(
       rows: state.rows.where((r) => r.id != id).toList(growable: false),
+      dataRevision: state.dataRevision + 1,
     );
   }
 

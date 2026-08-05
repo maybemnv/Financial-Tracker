@@ -16,7 +16,7 @@ final briefingSummaryProvider =
         (ref, period) async {
   // Recompute when the ledger changes; the notifier only emits on real writes
   // and patched Realtime events, not on every scroll page.
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  ref.watch(ledgerProvider.select((s) => s.dataRevision));
 
   return Perf.timeAsync('briefing_summary', () async {
     final result = await SupabaseService().client.rpc(
@@ -33,7 +33,7 @@ final briefingSummaryProvider =
 /// Whole-ledger label usage, keyed by label id.
 final labelUsageStatsProvider =
     FutureProvider<Map<String, LabelUsageStat>>((ref) async {
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  ref.watch(ledgerProvider.select((s) => s.dataRevision));
 
   final result = await SupabaseService().client.rpc('get_label_usage');
   return LabelUsageStat.mapFromRpc(Map<String, dynamic>.from(result as Map));
@@ -47,7 +47,7 @@ final labelUsageStatsProvider =
 final reviewBucketProvider =
     FutureProvider.family<List<Transaction>, UnresolvedFilter>(
         (ref, filter) async {
-  ref.watch(ledgerProvider.select((s) => s.rows.length));
+  ref.watch(ledgerProvider.select((s) => s.dataRevision));
 
   final query = LedgerQuery(unresolved: filter);
   final result = await SupabaseService().client.rpc(

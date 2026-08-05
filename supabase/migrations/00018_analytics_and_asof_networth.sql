@@ -166,9 +166,13 @@ WHERE c.id = s.id;
 -- One typed bundle for the four approved charts. Attribution matches
 -- finance_metrics.dart and get_briefing_summary: full amount to the effective
 -- primary label, Family Support separated by exclude_from_personal_spend.
+-- The explicit as-of argument keeps the selected analytics month aligned with
+-- the client request instead of silently recalculating everything from now().
+DROP FUNCTION IF EXISTS get_analytics(integer, boolean);
 CREATE OR REPLACE FUNCTION get_analytics(
   p_months          int     DEFAULT 12,
-  p_include_family  boolean DEFAULT false
+  p_include_family  boolean DEFAULT false,
+  p_as_of           timestamptz DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -179,9 +183,10 @@ AS $$
 DECLARE
   v_owner uuid := auth.uid();
   v_start timestamptz;
-  v_now   timestamptz := now();
+  v_now   timestamptz := COALESCE(p_as_of, now());
   v_month_start timestamptz;
   v_prev_start  timestamptz;
+  v_is_partial  boolean;
 BEGIN
   IF NOT app_is_owner() THEN
     RAISE EXCEPTION 'Not authorized.' USING ERRCODE = '42501';
@@ -191,6 +196,8 @@ BEGIN
   v_month_start := date_trunc('month', v_now);
   v_prev_start  := v_month_start - interval '1 month';
   v_start := v_month_start - make_interval(months => p_months - 1);
+  v_is_partial := v_month_start = date_trunc('month', now())
+                  AND v_now < v_month_start + interval '1 month';
 
   RETURN jsonb_build_object(
     'version', 1,
@@ -202,8 +209,9 @@ BEGIN
     'cash_flow', COALESCE((
       SELECT jsonb_agg(jsonb_build_object(
                'year', y, 'month', m, 'income', inc, 'outflow', outf,
-               'family_support', fam, 'is_partial', (y = EXTRACT(YEAR FROM v_now)::int
-                                                 AND m = EXTRACT(MONTH FROM v_now)::int))
+                'family_support', fam, 'is_partial', v_is_partial
+                  AND y = EXTRACT(YEAR FROM v_now)::int
+                  AND m = EXTRACT(MONTH FROM v_now)::int)
              ORDER BY y, m)
       FROM (
         SELECT
@@ -219,6 +227,7 @@ BEGIN
         FROM transactions t
         WHERE t.user_id = v_owner AND t.is_deleted = false
           AND COALESCE(t.transacted_at, t.created_at) >= v_start
+          AND COALESCE(t.transacted_at, t.created_at) <= v_now
         GROUP BY y, m
       ) mo
     ), '[]'::jsonb),
@@ -246,6 +255,7 @@ BEGIN
           WHERE t2.user_id = v_owner AND t2.is_deleted = false
             AND t2.type = 'debit'
             AND COALESCE(t2.transacted_at, t2.created_at) >= v_start
+            AND COALESCE(t2.transacted_at, t2.created_at) <= v_now
         ) t
         LEFT JOIN labels l ON l.id = t.eff
         WHERE p_include_family OR NOT COALESCE(l.exclude_from_personal_spend, false)
@@ -261,9 +271,10 @@ BEGIN
           gs.d,
           (SELECT COALESCE(sum(t.amount), 0) FROM transactions t
            WHERE t.user_id = v_owner AND t.is_deleted = false AND t.type = 'debit'
-             AND NOT app_effective_excluded(t.id, t.primary_label_id)
-             AND COALESCE(t.transacted_at, t.created_at) >= v_month_start
-             AND COALESCE(t.transacted_at, t.created_at) <  v_month_start + make_interval(days => gs.d)
+              AND NOT app_effective_excluded(t.id, t.primary_label_id)
+              AND COALESCE(t.transacted_at, t.created_at) >= v_month_start
+              AND COALESCE(t.transacted_at, t.created_at) <= v_now
+              AND COALESCE(t.transacted_at, t.created_at) <  v_month_start + make_interval(days => gs.d)
              AND EXTRACT(DAY FROM v_now)::int >= gs.d) AS cur,
           (SELECT COALESCE(sum(t.amount), 0) FROM transactions t
            WHERE t.user_id = v_owner AND t.is_deleted = false AND t.type = 'debit'
@@ -287,10 +298,13 @@ BEGIN
                'available', s.net_worth_basis = 'as_of_month_end')
              ORDER BY s.year, s.month)
       FROM monthly_snapshots s
-      WHERE s.user_id = v_owner
-        AND make_timestamptz(s.year, s.month, 1, 0, 0, 0) >= v_start
-    ), '[]'::jsonb),
-    'net_worth_current', fn_net_worth(),
+       WHERE s.user_id = v_owner
+         AND make_timestamptz(s.year, s.month, 1, 0, 0, 0) >= v_start
+         AND make_timestamptz(s.year, s.month, 1, 0, 0, 0) <= v_now
+     ), '[]'::jsonb),
+     -- Keep the live figure live; historical month-end points above remain
+     -- bounded by the selected cut-off.
+     'net_worth_current', fn_net_worth(),
 
     -- Non-chart: top merchants over the window.
     'top_merchants', COALESCE((
@@ -301,12 +315,13 @@ BEGIN
                sum(t.amount) AS amount, count(*) AS n
         FROM transactions t
         WHERE t.user_id = v_owner AND t.is_deleted = false AND t.type = 'debit'
-          AND COALESCE(t.transacted_at, t.created_at) >= v_start
+           AND COALESCE(t.transacted_at, t.created_at) >= v_start
+           AND COALESCE(t.transacted_at, t.created_at) <= v_now
         GROUP BY 1 ORDER BY 2 DESC LIMIT 10
       ) m
     ), '[]'::jsonb)
   );
 END;
 $$;
-REVOKE ALL ON FUNCTION get_analytics(int, boolean) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION get_analytics(int, boolean) TO authenticated;
+REVOKE ALL ON FUNCTION get_analytics(int, boolean, timestamptz) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION get_analytics(int, boolean, timestamptz) TO authenticated;
