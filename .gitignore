@@ -17,3 +17,4 @@ key.properties
 android/finance_tracker_android.iml
 supabase/migrations/
 supabase/reports/
+supabase/apply/
