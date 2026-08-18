@@ -83,15 +83,15 @@ can run in parallel.
 - [x] D3 — multi-label expenses split evenly in reports (Phase 5). Even-split
   removed; full amount attributes to the primary label (Phase 4 groundwork;
   RPC-level enforcement in Phase 5).
-- [ ] D4 — full-ledger loading and full reloads on Realtime events (Phase 7).
+- [~] D4 — full-ledger loading and full reloads on Realtime events (Phase 7).
 - [~] D5 — `anon_all` RLS and browser-side `GEMINI_API_KEY` (Phases 2–3). RLS
   replacement authored (`00006`–`00010`); Gemini Edge Function is Phase 3. The
   current Vercel build requirement for the Gemini key is an interim state, not
   the permanent fix.
-- [ ] D6 — goal allocation without history or corrections (Phase 6).
+- [x] D6 — goal allocation without history or corrections (Phase 6).
 - [x] D7 — `find.byDisplayValue` breaks the test gate (Phase 1). Fixed:
   replaced with an `EditableText` predicate finder + tall test surface.
-- [ ] D8 — installed-PWA (mobile Brave shortcut) resume blank-screen on WebGL
+- [~] D8 — installed-PWA (mobile Brave shortcut) resume blank-screen on WebGL
   context loss (Brave now, Helium/Zen possible future browsers) (Phase 11).
 
 ---
@@ -108,8 +108,10 @@ No ownership or policy migration starts until this phase is complete.
 - [x] Run `flutter pub get`, `flutter analyze`, and `flutter test`; record any
   pre-existing failures before feature work. Result: analyze clean, all tests
   green (fixing D7 also surfaced/fixed a lazy-`ListView` off-screen finder).
-- [x] Run a release `flutter build web` with the current required environment to
-  prove the pre-migration client still builds. Result: `√ Built build\web`.
+- [~] Run a release `flutter build web` with the current required environment to
+  prove the pre-migration client still builds. Historical run reported a
+  successful build; the current verification rerun exceeded five minutes and
+  is inconclusive.
 - [x] Add one smoke test that boots the app with mocked initialization and one
   model/provider test that proves the test harness can exercise async state.
   Added `test/smoke_test.dart` (boot-failure surface) and
@@ -142,16 +144,16 @@ No ownership or policy migration starts until this phase is complete.
   and representative transaction, label, invoice, goal, and snapshot records.
 - [ ] Record the production owner UUID, project reference, callback URLs, and
   maintenance-window procedure outside source control.
-- [ ] Prepare forward-only corrective migrations. Do not plan a destructive
+- [x] Prepare forward-only corrective migrations. Do not plan a destructive
   rollback that removes populated ownership or primary-label columns.
-- [ ] Define row-count and ownership verification SQL to run before and after
+- [x] Define row-count and ownership verification SQL to run before and after
   each production migration.
 
 ### Phase 1 exit criteria
 
 - [ ] Static analysis, tests, and the release web build pass.
 - [ ] A tested backup exists and can be restored.
-- [ ] Every protected table and callable database interface has an owner-scoping
+- [x] Every protected table and callable database interface has an owner-scoping
   migration task in Phase 2.
 
 ---
@@ -233,7 +235,7 @@ No ownership or policy migration starts until this phase is complete.
 
 - [x] Update account-balance and net-worth functions to derive the owner from
   `auth.uid()` and never accept a trusted `user_id` from the browser. (`00010`)
-- [~] Scope transaction, label, snapshot, recurring, goal, invoice, chat, and
+- [x] Scope transaction, label, snapshot, recurring, goal, invoice, chat, and
   future analytics RPCs to the authenticated owner. (Balance/net-worth done in
   `00010`; the aggregate/save RPCs are authored in their own phases: Phase 5
   `save_transaction_with_labels`, Phase 6 `contribute_to_goal`, Phase 7
@@ -322,7 +324,7 @@ No ownership or policy migration starts until this phase is complete.
   recurring commitments, expected income, and snapshots using owner-scoped
   database calls under the caller's JWT. (Function client bound to the JWT.)
 - [x] Keep all money-changing operations absent from the tool registry.
-- [~] Update tool semantics to the canonical metrics: label breakdown uses
+- [x] Update tool semantics to the canonical metrics: label breakdown uses
   primary-label attribution once Phase 5 lands (no even splitting), and
   cash-flow summaries report Income, Total Outflow, Personal Spend, and Family
   Support distinctly once Phase 4 lands. (Cashflow already reports Income/Total
@@ -417,7 +419,7 @@ No ownership or policy migration starts until this phase is complete.
 - [x] **Restrict the toggle to the `FAMILY` label only.** (`00011`
   `labels_single_exclusion_guard` trigger — at most one excluded label per
   owner, so the reconciliation invariant cannot break.)
-- [~] Extend the label model/provider with the flag; expose it in label
+- [x] Extend the label model/provider with the flag; expose it in label
   management UI. (Model + provider carry the flag; the management UI toggle is
   built with the Phase 5.11 label-management screen.)
 - [x] Implement the canonical metrics (PRD §4) in shared computation code.
@@ -461,7 +463,7 @@ No ownership or policy migration starts until this phase is complete.
 
 ## Phase 5: Primary labels, unified auditing, and label lifecycle
 
-> **Status (this branch):** complete. The schema (`00012`) and the full RPC
+> **Status (this branch):** partial. The schema (`00012`) and the full RPC
 > layer (`00013`: `save_transaction_with_labels`, `rename_label`,
 > `set_label_status`, `merge_labels`, `delete_label`) are authored, each writing
 > exactly one audit entry. The model carries `primary_label_id` +
@@ -476,156 +478,156 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 5.1 Add primary-label schema
 
-- [ ] Add nullable `transactions.primary_label_id` through an additive migration.
-- [ ] Tie the primary label to the same owner as the transaction and add indexes
+- [x] Add nullable `transactions.primary_label_id` through an additive migration.
+- [x] Tie the primary label to the same owner as the transaction and add indexes
   for unresolved-review and analytics queries.
-- [ ] Add database validation that a non-null primary label is also attached in
+- [x] Add database validation that a non-null primary label is also attached in
   the transaction-label join table.
-- [ ] Define expense applicability from canonical transaction direction/type so
+- [x] Define expense applicability from canonical transaction direction/type so
   credits, transfers, and investments are not accidentally treated as spending.
-- [ ] Do not immediately make legacy primary labels non-null; preserve ambiguous
+- [x] Do not immediately make legacy primary labels non-null; preserve ambiguous
   data for explicit review.
 
 ### 5.2 Classify and backfill legacy transactions
 
-- [ ] For each non-deleted legacy expense with exactly one attached label, assign
+- [x] For each non-deleted legacy expense with exactly one attached label, assign
   that label as primary.
-- [ ] Leave zero-label expenses without a primary and report them as `Unlabeled`.
-- [ ] Leave multi-label expenses without a primary and report them as
+- [x] Leave zero-label expenses without a primary and report them as `Unlabeled`.
+- [x] Leave multi-label expenses without a primary and report them as
   `Needs primary label`.
-- [ ] Keep all contextual joins unchanged during backfill; verify join and
+- [x] Keep all contextual joins unchanged during backfill; verify join and
   transaction counts before and after.
-- [ ] Produce a review report with resolved, unlabeled, ambiguous, skipped
+- [x] Produce a review report with resolved, unlabeled, ambiguous, skipped
   non-expense, and invalid-reference counts.
 
 ### 5.3 Add explicit model state
 
-- [ ] Extend `Transaction` serialization and `copyWith` with `primaryLabelId`.
-- [ ] Add a typed derived primary-label status: `notRequired`, `resolved`,
+- [x] Extend `Transaction` serialization and `copyWith` with `primaryLabelId`.
+- [x] Add a typed derived primary-label status: `notRequired`, `resolved`,
   `unlabeled`, and `needsPrimaryLabel`.
-- [ ] Extend `TransactionLabel` with lifecycle, merge, and
+- [x] Extend `TransactionLabel` with lifecycle, merge, and
   `excludeFromPersonalSpend` fields; do not infer primary from list order.
-- [ ] Add tests for old payloads, null primary IDs, missing joined labels, and all
+- [x] Add tests for old payloads, null primary IDs, missing joined labels, and all
   four derived statuses.
 
 ### 5.4 Replace split writes with one transaction RPC
 
-- [ ] Add an owner-scoped `save_transaction_with_labels` RPC supporting the
+- [x] Add an owner-scoped `save_transaction_with_labels` RPC supporting the
   required create/edit fields, attached label IDs, and primary label ID.
-- [ ] Lock the existing transaction and attached labels before an edit so the
+- [x] Lock the existing transaction and attached labels before an edit so the
   audit compares one consistent old state.
-- [ ] Validate owner, editability, soft-delete state, account relationships,
+- [x] Validate owner, editability, soft-delete state, account relationships,
   label lifecycle, duplicate label IDs, and primary membership.
-- [ ] Require exactly one primary label for every newly created or edited expense;
+- [x] Require exactly one primary label for every newly created or edited expense;
   allow contextual labels without a spending primary for other transaction types.
-- [ ] Update transaction fields, replace label relationships, and set primary
+- [x] Update transaction fields, replace label relationships, and set primary
   status in one database transaction.
 - [ ] Append exactly one immutable audit record containing old/new transaction
   fields plus old/new label IDs, names, colors, and primary flags.
-- [ ] Use database timestamps and actor identity for the audit; do not trust
+- [x] Use database timestamps and actor identity for the audit; do not trust
   caller-provided audit JSON.
-- [ ] Roll back field, join, primary, and audit changes together if any validation
+- [x] Roll back field, join, primary, and audit changes together if any validation
   or write fails.
-- [ ] Restrict direct client updates that could bypass unified auditing; route
+- [x] Restrict direct client updates that could bypass unified auditing; route
   supported transaction edits through the RPC.
-- [ ] Update providers to refresh or patch local state only after the RPC commits.
+- [x] Update providers to refresh or patch local state only after the RPC commits.
 
 ### 5.5 Update transaction UI and review workflow
 
-- [ ] Make primary selection explicit in add/edit forms while retaining optional
+- [x] Make primary selection explicit in add/edit forms while retaining optional
   contextual multi-label selection.
-- [ ] Prevent save with zero or multiple primary choices when the entry is an
+- [x] Prevent save with zero or multiple primary choices when the entry is an
   expense; clear the spending-primary requirement when type changes to a credit,
   transfer, or investment.
 - [ ] Include selected labels and primary state in the local form draft once
   Phase 11 draft persistence lands.
-- [ ] Display primary status in ledger rows and detail/edit views without making
+- [x] Display primary status in ledger rows and detail/edit views without making
   contextual labels look like additional spend categories.
-- [ ] Add a review queue for unresolved multi-label expenses with owner-scoped
+- [x] Add a review queue for unresolved multi-label expenses with owner-scoped
   pagination and a focused assign-primary action.
-- [ ] Provide separate filters for `Unlabeled` and `Needs primary label`.
+- [x] Provide separate filters for `Unlabeled` and `Needs primary label`.
 
 ### 5.6 Make reports double-count safe (D3)
 
-- [ ] Update all reporting surfaces, exports, and Agent Desk context to
+- [x] Update all reporting surfaces, exports, and Agent Desk context to
   attribute each expense's full amount exactly once to its primary label —
   removing the even-split logic in `DashboardAnalytics` and the
   `get_label_breakdown` tool.
-- [ ] Bucket zero-label expenses as `Unlabeled` and ambiguous legacy expenses as
+- [x] Bucket zero-label expenses as `Unlabeled` and ambiguous legacy expenses as
   `Needs primary label` until reviewed.
-- [ ] Keep contextual labels available for ledger search and analysis filters,
+- [x] Keep contextual labels available for ledger search and analysis filters,
   but never split or duplicate monetary totals across them.
-- [ ] Add invariants comparing total expense amount with the sum of primary,
+- [x] Add invariants comparing total expense amount with the sum of primary,
   unlabeled, and unresolved buckets for the same filter set.
 
 ### 5.7 Add lifecycle schema and audit records
 
-- [ ] Add label state constrained to `active`, `archived`, `merged`, or `deleted`.
-- [ ] Add same-owner `merged_into_id`, `updated_at`, `archived_at`, `merged_at`,
+- [x] Add label state constrained to `active`, `archived`, `merged`, or `deleted`.
+- [x] Add same-owner `merged_into_id`, `updated_at`, `archived_at`, `merged_at`,
   `deleted_at`, and actor metadata where required.
-- [ ] Prevent self-merges, merge cycles, merged-target chains, and references to a
+- [x] Prevent self-merges, merge cycles, merged-target chains, and references to a
   deleted target.
-- [ ] Add owner-scoped, case-insensitive uniqueness for assignable label names.
-- [ ] Create immutable label audit records for create, rename, archive, merge,
+- [x] Add owner-scoped, case-insensitive uniqueness for assignable label names.
+- [x] Create immutable label audit records for create, rename, archive, merge,
   restore if supported, soft delete, and `exclude_from_personal_spend` changes.
-- [ ] Backfill all existing labels as active without changing IDs or joins.
+- [x] Backfill all existing labels as active without changing IDs or joins.
 
 ### 5.8 Implement rename and archive
 
-- [ ] Add an owner-scoped rename RPC that trims/normalizes input, detects names
+- [x] Add an owner-scoped rename RPC that trims/normalizes input, detects names
   case-insensitively, preserves label identity, and records old/new names.
-- [ ] Decide and test case-only rename behavior explicitly.
-- [ ] Add archive RPC behavior that hides the label from new assignments and
+- [x] Decide and test case-only rename behavior explicitly.
+- [x] Add archive RPC behavior that hides the label from new assignments and
   rules while retaining historical joins, primary references, colors, flags,
   and reports.
-- [ ] Keep archived labels visible on historical transactions and offer an
+- [x] Keep archived labels visible on historical transactions and offer an
   archived filter in label management.
-- [ ] Prevent archived or merged labels from being assigned by transaction save
+- [x] Prevent archived or merged labels from being assigned by transaction save
   RPCs.
 
 ### 5.9 Implement atomic merge
 
-- [ ] Add an owner-scoped merge RPC accepting one source and one active target.
-- [ ] Lock both labels and all affected primary/join references in a deterministic
+- [x] Add an owner-scoped merge RPC accepting one source and one active target.
+- [x] Lock both labels and all affected primary/join references in a deterministic
   order.
-- [ ] Move contextual joins to the target, resolve source/target duplicate joins,
+- [x] Move contextual joins to the target, resolve source/target duplicate joins,
   and migrate every source primary reference to the target.
-- [ ] Surface a confirmation when source and target differ on
+- [x] Surface a confirmation when source and target differ on
   `exclude_from_personal_spend`; the target keeps its own flag.
-- [ ] Update category rules and recurring-item references where labels are stored
+- [x] Update category rules and recurring-item references where labels are stored
   by ID; add an explicit migration plan if any still use label names.
 - [ ] Append affected transaction audit entries containing old/new contextual and
   primary label states.
-- [ ] Record a label merge event with source, target, actor, timestamp, and
+- [x] Record a label merge event with source, target, actor, timestamp, and
   affected counts, then mark the source `merged` with `merged_into_id`.
-- [ ] Roll back all relationship, audit, and lifecycle changes on any failure.
-- [ ] Prove the merge is idempotent or returns a stable already-merged result on
+- [x] Roll back all relationship, audit, and lifecycle changes on any failure.
+- [x] Prove the merge is idempotent or returns a stable already-merged result on
   accidental retry.
 
 ### 5.10 Guard label deletion
 
-- [ ] Add a reference-check function covering contextual transaction joins,
+- [x] Add a reference-check function covering contextual transaction joins,
   primary labels, category rules, recurring items, merge targets, and any other
   owner data discovered in Phase 1.
-- [ ] Permit delete only when the active/archived label has zero references.
-- [ ] Implement delete as a soft-delete state transition with audit metadata;
+- [x] Permit delete only when the active/archived label has zero references.
+- [x] Implement delete as a soft-delete state transition with audit metadata;
   never physically remove the row.
-- [ ] For referenced labels, return affected counts and expose Archive and Merge
+- [x] For referenced labels, return affected counts and expose Archive and Merge
   actions instead of Delete.
-- [ ] Exclude soft-deleted labels from assignment, default management lists, and
+- [x] Exclude soft-deleted labels from assignment, default management lists, and
   aggregate category output.
 
 ### 5.11 Build label management UI
 
-- [ ] Add active and archived label views with usage counts and primary-usage
+- [x] Add active and archived label views with usage counts and primary-usage
   counts.
-- [ ] Add rename, archive, merge, and eligible-delete dialogs with clear impact
+- [x] Add rename, archive, merge, and eligible-delete dialogs with clear impact
   summaries and confirmation.
-- [ ] Exclude invalid merge targets and preserve form state on recoverable RPC
+- [x] Exclude invalid merge targets and preserve form state on recoverable RPC
   errors.
-- [ ] Refresh visible labels and patch affected transactions after lifecycle RPCs
+- [x] Refresh visible labels and patch affected transactions after lifecycle RPCs
   without reloading the full ledger.
-- [ ] Provide accessible status text and controls at 360-pixel width.
+- [x] Provide accessible status text and controls at 360-pixel width.
 
 ### Phase 5 exit criteria
 
@@ -653,72 +655,72 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 6.1 Schema and contribution history
 
-- [ ] Migration: add `goals.status` (`active` / `paused` / `completed` /
+- [x] Migration: add `goals.status` (`active` / `paused` / `completed` /
   `archived`, default `active`), nullable `goals.target_date`, and
   `goals.updated_at`.
-- [ ] Migration: create `goal_contributions` (`id`, `goal_id`, `amount`
+- [x] Migration: create `goal_contributions` (`id`, `goal_id`, `amount`
   positive or negative, `note`, `created_at`, `user_id`). Corrections are new
   negative rows, never edits of old rows.
-- [ ] Backfill: one seed contribution per goal equal to its current
+- [x] Backfill: one seed contribution per goal equal to its current
   `allocated_amount` (note: "opening allocation"), so history and totals
   reconcile from day one.
-- [ ] Add one transactional RPC (`contribute_to_goal` or equivalent) that
+- [x] Add one transactional RPC (`contribute_to_goal` or equivalent) that
   inserts the contribution and updates/derives the allocated total atomically;
   reject any contribution that would make the total negative.
-- [ ] Reallocation between goals runs as one transaction: negative entry on the
+- [x] Reallocation between goals runs as one transaction: negative entry on the
   source, positive entry on the target, both audited.
-- [ ] Add a drift assertion: stored `allocated_amount` (if retained) always
+- [x] Add a drift assertion: stored `allocated_amount` (if retained) always
   equals the sum of non-deleted contributions.
 
 ### 6.2 Goal editing and states
 
-- [ ] Edit goal name, target amount, optional target date, and type where valid
+- [x] Edit goal name, target amount, optional target date, and type where valid
   through audited updates.
-- [ ] Warn before reducing the target below the currently allocated amount.
-- [ ] Allow overfunding only after explicit confirmation.
-- [ ] Auto-mark `completed` when the funded amount reaches the target; allow
+- [x] Warn before reducing the target below the currently allocated amount.
+- [x] Allow overfunding only after explicit confirmation.
+- [x] Auto-mark `completed` when the funded amount reaches the target; allow
   manual pause/archive/restore transitions.
-- [ ] Soft-delete only a goal with no contribution history; otherwise offer
+- [x] Soft-delete only a goal with no contribution history; otherwise offer
   Archive.
-- [ ] Keep the Emergency Fund pinned above custom goals by `type`.
+- [x] Keep the Emergency Fund pinned above custom goals by `type`.
 
 ### 6.3 Goal UI
 
-- [ ] Compact goal-detail view: saved, target, remaining, % funded, latest
+- [x] Compact goal-detail view: saved, target, remaining, % funded, latest
   allocation, edit actions, and allocation history list.
-- [ ] Add-funds, correct/remove-allocation, and reallocate dialogs with clear
+- [x] Add-funds, correct/remove-allocation, and reallocate dialogs with clear
   confirmation copy ("earmarks existing money; no account balance changes").
-- [ ] Status controls (pause, complete, archive, restore) with the newsprint
+- [x] Status controls (pause, complete, archive, restore) with the newsprint
   design language at 360-pixel width.
-- [ ] Show estimated completion only when ≥ 3 contributions across ≥ 2 distinct
+- [x] Show estimated completion only when ≥ 3 contributions across ≥ 2 distinct
   months exist; otherwise show "not enough history".
 
 ### 6.4 Agent context
 
-- [ ] Update Agent Desk goal tools/context to include status, target date,
+- [x] Update Agent Desk goal tools/context to include status, target date,
   contribution pace, and the earmarking rule; the agent explains progress and
   affordability but has no allocation-modifying tool.
 
 ### 6.5 Phase 6 tests
 
-- [ ] Contribution history always reconciles with the allocated total.
-- [ ] Negative adjustments cannot make a total negative.
-- [ ] Reallocation is atomic and conserves the combined earmarked total.
-- [ ] Allocation changes no account balance and no net worth.
-- [ ] Completion, archive, restore, and safe-delete rules behave as specified.
-- [ ] Estimate gating: no estimate from a single allocation.
+- [x] Contribution history always reconciles with the allocated total.
+- [x] Negative adjustments cannot make a total negative.
+- [x] Reallocation is atomic and conserves the combined earmarked total.
+- [x] Allocation changes no account balance and no net worth.
+- [x] Completion, archive, restore, and safe-delete rules behave as specified.
+- [x] Estimate gating: no estimate from a single allocation.
 
 ### Phase 6 exit criteria
 
-- [ ] Every allocation change is a recorded contribution row.
-- [ ] Goals are fully editable within the stated guards.
-- [ ] Earmarking never touches account balances.
+- [x] Every allocation change is a recorded contribution row.
+- [x] Goals are fully editable within the stated guards.
+- [x] Earmarking never touches account balances.
 
 ---
 
 ## Phase 7: Data and rendering performance
 
-> **Status (this branch):** complete. `00017` adds keyset `get_transaction_page`
+> **Status (this branch):** partial. `00017` adds keyset `get_transaction_page`
 > plus the whole-ledger aggregates (`get_briefing_summary`, `get_account_balances`,
 > `get_label_usage`). `ledgerProvider` pages on scroll, patches single Realtime
 > rows, and resets atomically on filter change; the Briefing, review queue, and
@@ -729,79 +731,79 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 7.1 Define server-side ledger queries
 
-- [ ] Add a typed `LedgerQuery` containing date range, direction/type, account,
+- [x] Add a typed `LedgerQuery` containing date range, direction/type, account,
   primary label, contextual label, merchant text, unresolved state, and sort.
-- [ ] Implement an owner-scoped transaction-page query/RPC returning 50 rows and
+- [x] Implement an owner-scoped transaction-page query/RPC returning 50 rows and
   a stable cursor based on effective transaction timestamp plus transaction ID.
-- [ ] Define null/equal-timestamp ordering explicitly so rows are never duplicated
+- [x] Define null/equal-timestamp ordering explicitly so rows are never duplicated
   or skipped between pages.
-- [ ] Push search and filters into indexed Supabase queries; stop filtering an
+- [x] Push search and filters into indexed Supabase queries; stop filtering an
   ever-growing full ledger in memory.
-- [ ] Return only fields and joined label/account data required by ledger rows;
+- [x] Return only fields and joined label/account data required by ledger rows;
   fetch heavier detail on demand.
 - [ ] Add indexes validated with representative `EXPLAIN (ANALYZE, BUFFERS)` plans
   for common owner-scoped filters.
 
 ### 7.2 Replace the transaction provider
 
-- [ ] Replace the full-table query with first-page, next-page, refresh, filter-
+- [x] Replace the full-table query with first-page, next-page, refresh, filter-
   change, empty, and error states.
-- [ ] Reset cursor and loaded pages atomically when filters or owner session
+- [x] Reset cursor and loaded pages atomically when filters or owner session
   change.
-- [ ] Trigger next-page loading near scroll end, prevent concurrent duplicates,
+- [x] Trigger next-page loading near scroll end, prevent concurrent duplicates,
   and stop at the server's end-of-list signal.
-- [ ] Preserve visible rows during transient next-page failures and offer a
+- [x] Preserve visible rows during transient next-page failures and offer a
   localized retry.
-- [ ] Ensure edits that change date or active filters move/remove the row rather
+- [x] Ensure edits that change date or active filters move/remove the row rather
   than leaving the page incorrectly sorted.
-- [ ] Add pagination tests with equal timestamps, deleted rows, filter changes,
+- [x] Add pagination tests with equal timestamps, deleted rows, filter changes,
   inserts between pages, and an exact page-size boundary.
 
 ### 7.3 Patch Realtime changes efficiently
 
-- [ ] Parse owner-visible insert/update events into row-level additions,
+- [x] Parse owner-visible insert/update events into row-level additions,
   replacements, moves, or removals when they intersect the current filter.
-- [ ] Handle label-join changes through targeted transaction invalidation because
+- [x] Handle label-join changes through targeted transaction invalidation because
   the base row event alone may not contain current labels.
-- [ ] Debounce bursts and invalidate only the affected first page, aggregate, or
+- [x] Debounce bursts and invalidate only the affected first page, aggregate, or
   detail query when deterministic patching is unsafe.
-- [ ] Reconnect one channel per owner/session after resume and dispose all
+- [x] Reconnect one channel per owner/session after resume and dispose all
   channels on sign-out.
 - [ ] Remove full-ledger reloads from normal Realtime event handling.
 
 ### 7.4 Add owner-scoped aggregate RPCs
 
-- [ ] Implement `get_briefing_summary(month)` returning the canonical metrics
+- [x] Implement `get_briefing_summary(month)` returning the canonical metrics
   (Income, Total Outflow, Personal Spend, Family Support, Net Cash Surplus,
   savings rate), account balances, unresolved-label counts, and compact
   summaries.
-- [ ] Implement `get_account_balances()` as one batch call rather than one RPC per
+- [x] Implement `get_account_balances()` as one batch call rather than one RPC per
   account.
 - [ ] Implement typed `get_analytics(period, filters)` output covering exactly
   the four approved charts plus the non-chart lists, or narrowly split RPCs if
   payload measurement shows one bundle is too large.
-- [ ] Derive owner from `auth.uid()`, validate date/filter limits, exclude soft-
+- [x] Derive owner from `auth.uid()`, validate date/filter limits, exclude soft-
   deleted rows, and apply primary-label attribution and the
   `exclude_from_personal_spend` flag consistently.
-- [ ] Version the returned JSON shape and map it to typed Dart DTOs rather than
+- [x] Version the returned JSON shape and map it to typed Dart DTOs rather than
   passing dynamic maps into widgets.
 - [ ] Add SQL tests reconciling aggregate output against known fixture rows and
   the invariant `Total Outflow = Personal Spend + Family Support`.
 
 ### 7.5 Complete snapshot strategy
 
-- [ ] Use live transaction rows for the current partial month.
-- [ ] Use immutable monthly snapshots for completed historical months and define
+- [x] Use live transaction rows for the current partial month.
+- [x] Use immutable monthly snapshots for completed historical months and define
   a controlled rebuild path when old transactions are corrected (including the
   Phase 4 account reassignments).
-- [ ] Extend snapshot content (additively) so historical months can report the
+- [x] Extend snapshot content (additively) so historical months can report the
   canonical metrics without recomputation where derivable; never fabricate
   values for months that predate the data.
 - [ ] Add owner-scoped monthly account-balance snapshots recorded at month end or
   first open of the next month.
-- [ ] Store source period, calculated timestamp, and schema/calculation version so
+- [x] Store source period, calculated timestamp, and schema/calculation version so
   stale snapshots can be identified.
-- [ ] Update trend queries to combine historical snapshots with the live current
+- [x] Update trend queries to combine historical snapshots with the live current
   month without overlap or gaps.
 
 ### 7.6 Reduce rendering and startup work
@@ -828,16 +830,16 @@ No ownership or policy migration starts until this phase is complete.
 
 ### Phase 7 exit criteria
 
-- [ ] Ledger memory and initial payload are bounded by a 50-row page.
-- [ ] Filters/search execute server-side and paginate deterministically.
-- [ ] Briefing and charts no longer recalculate the full ledger.
+- [x] Ledger memory and initial payload are bounded by a 50-row page.
+- [x] Filters/search execute server-side and paginate deterministically.
+- [x] Briefing and charts no longer recalculate the full ledger.
 - [ ] Unvisited tabs and inactive analytics sections perform no data fetches.
 
 ---
 
 ## Phase 8: Briefing slim-down and four-chart Analytics tab
 
-> **Status (this branch):** complete. Briefing is numbers-only from
+> **Status (this branch):** partial. Briefing is numbers-only from
 > `get_briefing_summary` (1537 → ~280 lines, removing the last full-ledger read).
 > Analytics is a first-class tab with the four charts on a CVD-validated
 > three-slot palette, each with a table alternative, accessible summary, and
@@ -847,24 +849,24 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 8.1 Slim the Briefing tab
 
-- [ ] Reduce Briefing to: Income, Total Outflow, Personal Spend, Family
+- [x] Reduce Briefing to: Income, Total Outflow, Personal Spend, Family
   Support, Net Cash Surplus, current Net Worth, account balances, upcoming
   obligations (placeholder until Phase 9 provides data), latest transaction
   timestamp, and one concise status message.
-- [ ] Remove the monthly trend line chart, daily bar chart, and label pie chart
+- [x] Remove the monthly trend line chart, daily bar chart, and label pie chart
   from Briefing (their replacements live in Analytics).
-- [ ] Render Briefing from `get_briefing_summary`, not client-side full-ledger
+- [x] Render Briefing from `get_briefing_summary`, not client-side full-ledger
   computation.
-- [ ] Keep metric strips/cards in the existing newsprint style; no large charts
+- [x] Keep metric strips/cards in the existing newsprint style; no large charts
   on Briefing.
 
 ### 8.2 Navigation and typed interfaces
 
-- [ ] Add Analytics as a first-class destination separate from Briefing.
+- [x] Add Analytics as a first-class destination separate from Briefing.
 - [ ] Keep five primary mobile destinations by moving invoice access to an
   app-bar/drawer action; do not squeeze six bottom-nav items.
-- [ ] Add `AnalyticsPeriod` for 1M, 3M, 6M, 12M, YTD, and All with 12M default.
-- [ ] Add typed `AnalyticsQuery`, `AnalyticsFilters`, `AnalyticsBundle`, and
+- [~] Add `AnalyticsPeriod` for 1M, 3M, 6M, 12M, YTD, and All with 12M default.
+- [x] Add typed `AnalyticsQuery`, `AnalyticsFilters`, `AnalyticsBundle`, and
   chart-point DTOs; define currency, timezone boundaries, missing periods, and
   percentage precision in one place.
 - [ ] Persist active period, section, and filters locally for 24 hours using the
@@ -901,40 +903,40 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 8.6 Chart 4 — Net Worth History
 
-- [ ] Line from completed monthly snapshots plus the current live derived
+- [x] Line from completed monthly snapshots plus the current live derived
   value; current value clearly marked.
-- [ ] **Snapshots must capture net worth as of month-end, not at current
+- [x] **Snapshots must capture net worth as of month-end, not at current
   time.** The existing `MonthlySnapshotJob` calls `fn_net_worth()` which is
   unbounded, so post-month transactions leak into the prior month's snapshot.
   Add an as-of-timestamp parameter to `fn_net_worth()` or compute the snapshot
   value from transactions with `transacted_at <= last day of month`.
-- [ ] Repair/invalidate existing `net_worth` snapshot values before treating
+- [x] Repair/invalidate existing `net_worth` snapshot values before treating
   them as historical chart data.
-- [ ] Never fabricate or interpolate historical values that data cannot
+- [x] Never fabricate or interpolate historical values that data cannot
   support; mark unavailable periods.
-- [ ] Point tap shows the relevant month and available account snapshot data.
+- [x] Point tap shows the relevant month and available account snapshot data.
 
 ### 8.7 Non-chart components
 
-- [ ] Account balances as cards or a compact table.
-- [ ] Top merchants as a ranked list with values (normalized names once Phase
+- [x] Account balances as cards or a compact table.
+- [x] Top merchants as a ranked list with values (normalized names once Phase
   10 lands).
-- [ ] Goal progress as progress bars and cards; optional tiny contribution
+- [x] Goal progress as progress bars and cards; optional tiny contribution
   sparkline only where real history exists.
-- [ ] Recurring obligations list (activated by Phase 9).
-- [ ] Family Support KPI with ledger drill-down.
+- [x] Recurring obligations list (activated by Phase 9).
+- [x] Family Support KPI with ledger drill-down.
 
 ### 8.8 Chart usability and accessibility
 
-- [ ] `fl_chart` only; square corners, strong rules, warm paper background,
+- [x] `fl_chart` only; square corners, strong rules, warm paper background,
   readable labels; no gradients, glow, 3D, gauges, or decorative charts; one
   value axis per chart.
 - [ ] Render only the selected analytics section; avoid constructing hidden
   charts.
-- [ ] Touch-friendly hit targets, tooltips with full currency/date values,
+- [x] Touch-friendly hit targets, tooltips with full currency/date values,
   legends, and selected-point feedback.
-- [ ] Accessible text summary and tabular alternative for every chart.
-- [ ] Empty and single-point series without exceptions or misleading lines.
+- [x] Accessible text summary and tabular alternative for every chart.
+- [x] Empty and single-point series without exceptions or misleading lines.
 - [ ] Test text scaling, keyboard focus on web, color contrast,
   color-independent distinctions, and a 360-pixel viewport.
 
@@ -973,47 +975,47 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 9.1 Upcoming obligations
 
-- [ ] Derive the obligations list from existing `recurring_expenses` and
+- [x] Derive the obligations list from existing `recurring_expenses` and
   `recurring_income` rows; add only additive columns if genuinely needed
   (e.g. `account_id`, `is_paused`).
-- [ ] Show name, expected amount, expected date, account if known, days
+- [x] Show name, expected amount, expected date, account if known, days
   remaining, and status: upcoming, expected today, overdue, or confirmed.
-- [ ] Mark an obligation confirmed by linking the matching ledger transaction;
+- [x] Mark an obligation confirmed by linking the matching ledger transaction;
   advance `next_due`/`next_expected` on confirmation.
-- [ ] Surface the list in Analytics (ordered by due date) and the compact
+- [x] Surface the list in Analytics (ordered by due date) and the compact
   version on Briefing.
-- [ ] Do not build a separate subscriptions system; a subscription is a
+- [x] Do not build a separate subscriptions system; a subscription is a
   filtered recurring expense with optional metadata.
 
 ### 9.2 Deterministic cash-flow forecast
 
-- [ ] Compute a 30-day projection from: current liquid balances, known
+- [x] Compute a 30-day projection from: current liquid balances, known
   recurring inflows/outflows, recent average Personal Spend, and explicit
   upcoming obligations.
-- [ ] Output projected liquid balance, obligations due before the next expected
+- [x] Output projected liquid balance, obligations due before the next expected
   inflow, estimated available amount until then, and the assumptions used.
-- [ ] Present as an estimate, never authoritative; no ML.
-- [ ] Exclude investment-account value from spendable cash.
-- [ ] Show earmarked goal totals as context; never subtract them as departed
+- [x] Present as an estimate, never authoritative; no ML.
+- [x] Exclude investment-account value from spendable cash.
+- [x] Show earmarked goal totals as context; never subtract them as departed
   money.
 
 ### 9.3 Phase 9 tests
 
-- [ ] Obligation statuses correct across due-date boundaries and confirmations.
-- [ ] Forecast reproducible by hand from its stated inputs.
-- [ ] Forecast excludes investment balances and does not double-count confirmed
+- [x] Obligation statuses correct across due-date boundaries and confirmations.
+- [x] Forecast reproducible by hand from its stated inputs.
+- [x] Forecast excludes investment balances and does not double-count confirmed
   obligations.
 
 ### Phase 9 exit criteria
 
-- [ ] "What's about to hit and what's safe to spend" is answerable from
+- [x] "What's about to hit and what's safe to spend" is answerable from
   Briefing/Analytics without manual arithmetic.
 
 ---
 
 ## Phase 10: Quick capture and merchant normalization
 
-> **Status (this branch):** complete. Deterministic-first quick-capture parser
+> **Status (this branch):** partial. Deterministic-first quick-capture parser
 > (`lib/core/quick_capture.dart`) fills a reviewable draft, never a silent save;
 > the confirm goes through `save_transaction_with_labels`. `00020` adds read-time
 > merchant aliases (`get_top_merchants`) leaving the raw merchant intact.
@@ -1021,35 +1023,35 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 10.1 Quick capture
 
-- [ ] Add a one-field capture input parsing utterances like `250 biryani cash`
+- [x] Add a one-field capture input parsing utterances like `250 biryani cash`
   and `500 sent to mummy kotak` into a reviewable draft: amount,
   direction/type, account, merchant/note, primary label, date/time.
 - [ ] Deterministic parsing first: amount token, account-name match against the
   owner's accounts, label keyword match, direction keywords. Use Gemini (via
   the Phase 3 Edge Function) only as fallback, still producing only a draft.
-- [ ] Always show the parsed draft for confirmation; the confirmed save goes
+- [x] Always show the parsed draft for confirmation; the confirmed save goes
   through `save_transaction_with_labels` with explicit account and primary
   label validation.
-- [ ] Ambiguous input degrades to a partially-filled draft, never a wrong
+- [x] Ambiguous input degrades to a partially-filled draft, never a wrong
   silent save.
 - [ ] Tests: both example utterances, ambiguous amounts, unknown accounts, and
   fallback behavior.
 
 ### 10.2 Merchant normalization
 
-- [ ] Migration: minimal `merchant_aliases` table (`id`, `match_pattern`,
+- [x] Migration: minimal `merchant_aliases` table (`id`, `match_pattern`,
   `canonical_name`, `user_id`, `created_at`).
-- [ ] Apply normalization at read time in top-merchant analytics and merchant
+- [x] Apply normalization at read time in top-merchant analytics and merchant
   filters; preserve raw merchant/VPA on the transaction for audit.
-- [ ] Simple management UI (list/add/remove aliases) as a section, not a new
+- [x] Simple management UI (list/add/remove aliases) as a section, not a new
   screen/tab.
-- [ ] Tests: aliased variants roll up to one merchant; raw value remains
+- [x] Tests: aliased variants roll up to one merchant; raw value remains
   visible on transaction detail; no alias affects amounts.
 
 ### Phase 10 exit criteria
 
-- [ ] Capturing a routine cash expense takes one field and one confirmation.
-- [ ] Top-merchant analytics show canonical names without losing audit data.
+- [x] Capturing a routine cash expense takes one field and one confirmation.
+- [x] Top-merchant analytics show canonical names without losing audit data.
 
 ---
 
@@ -1072,24 +1074,24 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 11.1 Build a visible web startup surface
 
-- [ ] Add `web/flutter_bootstrap.js` using Flutter's supported loader hooks and
+- [x] Add `web/flutter_bootstrap.js` using Flutter's supported loader hooks and
   release-aware service-worker initialization.
-- [ ] Show lightweight HTML states for loading Flutter, initialization failure,
+- [x] Show lightweight HTML states for loading Flutter, initialization failure,
   recovery in progress, and manual recovery before the Dart app is available.
-- [ ] Include a retry button and privacy-safe diagnostic code in terminal error
+- [x] Include a retry button and privacy-safe diagnostic code in terminal error
   states; never leave a blank page.
-- [ ] Remove the unused Corbado/passkey script and any other blocking third-party
+- [x] Remove the unused Corbado/passkey script and any other blocking third-party
   startup dependency from `web/index.html`.
-- [ ] Keep Flutter's default renderer; add a documented diagnostic query
+- [x] Keep Flutter's default renderer; add a documented diagnostic query
   parameter for renderer comparison rather than forcing a renderer globally.
 
 ### 11.2 Correct install metadata
 
-- [ ] Set the production application name, short name, description, background
+- [x] Set the production application name, short name, description, background
   color, theme color, display mode, and orientation behavior.
-- [ ] Set stable root values for manifest `id`, `start_url`, and `scope`, including
+- [x] Set stable root values for manifest `id`, `start_url`, and `scope`, including
   behavior when a release cache-buster query is present.
-- [ ] Generate and reference standard and maskable icons at required PWA sizes;
+- [x] Generate and reference standard and maskable icons at required PWA sizes;
   verify safe-zone rendering on Android.
 - [ ] Check favicon, Apple/mobile metadata where relevant, and installed shortcut
   naming against the production brand.
@@ -1097,27 +1099,27 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 11.3 Implement the JavaScript/Dart lifecycle handshake
 
-- [ ] Define versioned browser events for Dart-ready, resume-request, and
+- [x] Define versioned browser events for Dart-ready, resume-request, and
   post-frame resume acknowledgement.
-- [ ] Emit Dart-ready only after initialization and the first usable frame.
-- [ ] Listen in JavaScript for `visibilitychange`, `pageshow`, and WebGL context
+- [x] Emit Dart-ready only after initialization and the first usable frame.
+- [x] Listen in JavaScript for `visibilitychange`, `pageshow`, and WebGL context
   loss; ignore duplicate signals for the same resume attempt.
-- [ ] On foregrounding, request a Dart acknowledgement tied to a unique attempt
+- [x] On foregrounding, request a Dart acknowledgement tied to a unique attempt
   ID and wait up to three seconds for a rendered post-frame response.
-- [ ] If the response is missing, reload once with release and attempt cache-
+- [x] If the response is missing, reload once with release and attempt cache-
   busters so a stale service worker cannot serve the same broken shell.
-- [ ] Persist a short-lived recovery marker so a second failure stops the reload
+- [x] Persist a short-lived recovery marker so a second failure stops the reload
   loop and displays the HTML recovery message and reload button.
-- [ ] Clear recovery markers after a healthy acknowledged frame.
-- [ ] Record privacy-safe startup, resume, context-loss, reload, and recovery
+- [x] Clear recovery markers after a healthy acknowledged frame.
+- [x] Record privacy-safe startup, resume, context-loss, reload, and recovery
   timings without recording financial values or message content.
 
 ### 11.4 Recover application state without reload
 
-- [ ] On healthy resume, refresh the auth session before owner-scoped requests.
-- [ ] Detect closed, errored, or stale Realtime channels and recreate only those
+- [x] On healthy resume, refresh the auth session before owner-scoped requests.
+- [x] Detect closed, errored, or stale Realtime channels and recreate only those
   subscriptions instead of duplicating listeners.
-- [ ] Revalidate only providers visible in the active tab; debounce duplicate
+- [x] Revalidate only providers visible in the active tab; debounce duplicate
   lifecycle notifications.
 - [ ] Add an offline/stale indicator that distinguishes no network, expired auth,
   Supabase failure, and locally cached display data.
@@ -1129,9 +1131,9 @@ No ownership or policy migration starts until this phase is complete.
 - [ ] Define versioned local draft DTOs for transaction form fields, selected
   labels and primary label, quick-capture text, active app tab, active
   analytics section, date range, and analytics filters.
-- [ ] Store drafts with owner ID, schema version, saved timestamp, and 24-hour
+- [x] Store drafts with owner ID, schema version, saved timestamp, and 24-hour
   expiry; reject malformed, expired, or wrong-owner records.
-- [ ] Debounce writes and avoid persisting auth tokens or unnecessary financial
+- [x] Debounce writes and avoid persisting auth tokens or unnecessary financial
   context beyond the explicitly entered draft.
 - [ ] Restore form drafts only after authentication and present a clear resumed-
   draft state.
@@ -1154,25 +1156,25 @@ No ownership or policy migration starts until this phase is complete.
 
 ### 11.7 Documentation with implementation
 
-- [ ] Update `docs/ARCHITECTURE.md` for auth gate, owner-scoped RLS, Edge Function,
+- [x] Update `docs/ARCHITECTURE.md` for auth gate, owner-scoped RLS, Edge Function,
   lifecycle recovery, pagination, aggregate RPCs, and lazy Analytics.
-- [ ] Update `docs/DATABASE.md` with ownership columns, composite keys, policies,
+- [x] Update `docs/DATABASE.md` with ownership columns, composite keys, policies,
   primary labels, lifecycle states, the exclusion flag, goal contributions,
   audits, snapshots, aliases, and migration/backfill invariants.
-- [ ] Update `docs/API.md` with authenticated RPC and Edge Function contracts,
+- [x] Update `docs/API.md` with authenticated RPC and Edge Function contracts,
   request limits, typed responses, and error codes.
-- [ ] Update `docs/PRD.md` completion status per phase.
-- [ ] Update `README.md`, `.env.example`, and deployment instructions so Gemini is
+- [x] Update `docs/PRD.md` completion status per phase.
+- [x] Update `README.md`, `.env.example`, and deployment instructions so Gemini is
   a Supabase function secret and only browser-safe Supabase values reach Vercel.
-- [ ] Add an operations runbook for owner provisioning, key rotation, recurring
+- [x] Add an operations runbook for owner provisioning, key rotation, recurring
   backups (the "automated backup" Later item), migration verification, cache
   recovery, snapshot rebuilds, and incident checks.
 
 ### 11.8 Automated release gates
 
 - [ ] `flutter pub get` succeeds from a clean checkout.
-- [ ] `flutter analyze` reports zero issues.
-- [ ] `flutter test` passes all unit, provider, model, and widget tests.
+- [x] `flutter analyze` reports zero issues.
+- [x] `flutter test` passes all unit, provider, model, and widget tests.
 - [ ] Database tests pass against a clean migration and a restored-data fixture.
 - [ ] Release `flutter build web` succeeds without `GEMINI_API_KEY` in the build
   environment.
