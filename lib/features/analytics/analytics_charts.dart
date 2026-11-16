@@ -256,7 +256,7 @@ class CashFlowChart extends StatelessWidget {
             },
           ),
           touchCallback: (event, response) {
-            if (!event.isInterestedForInteractions || response?.spot == null) {
+            if (event is! FlTapUpEvent || response?.spot == null) {
               return;
             }
             final group = response!.spot!.touchedBarGroupIndex;
@@ -612,7 +612,7 @@ class LabelSpendChart extends StatelessWidget {
         centerSpaceRadius: 42,
         pieTouchData: PieTouchData(
           touchCallback: (event, response) {
-            if (!event.isInterestedForInteractions) return;
+            if (event is! FlTapUpEvent) return;
             final i = response?.touchedSection?.touchedSectionIndex;
             if (i == null || i < 0 || i >= shown.length) return;
             final slice = shown[i];
@@ -754,7 +754,7 @@ class DailyCumulativeChart extends StatelessWidget {
                 .toList(),
           ),
           touchCallback: (event, response) {
-            if (!event.isInterestedForInteractions) return;
+            if (event is! FlTapUpEvent) return;
             final spot = response?.lineBarSpots?.firstOrNull;
             if (spot != null) onDayTap?.call(spot.x.toInt());
           },
