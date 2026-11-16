@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:finance_tracker/core/analytics_types.dart';
 import 'package:finance_tracker/features/analytics/analytics_charts.dart';
 
@@ -93,6 +94,36 @@ void main() {
       );
       expect(find.text('Income'), findsOneWidget);
       expect(find.text('Total Outflow'), findsOneWidget);
+    });
+
+    testWidgets('only a tap drills down; hovering a bar does not',
+        (tester) async {
+      const point = CashFlowPoint(
+        year: 2026,
+        month: 7,
+        income: 100,
+        outflow: 60,
+        familySupport: 0,
+        isPartial: false,
+      );
+      CashFlowPoint? drilledPoint;
+      await _pump(
+        tester,
+        CashFlowChart(
+          points: const [point],
+          onMonthTap: (point, _) => drilledPoint = point,
+        ),
+      );
+
+      final bar = tester.getRect(find.byType(BarChart));
+      final incomeBar = bar.center + const Offset(15, 10);
+      await tester.sendMouseMoveTo(incomeBar);
+      await tester.pumpAndSettle();
+      expect(drilledPoint, isNull);
+
+      await tester.tapAt(incomeBar);
+      await tester.pumpAndSettle();
+      expect(drilledPoint, same(point));
     });
   });
 
