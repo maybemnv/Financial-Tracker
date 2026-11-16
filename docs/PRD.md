@@ -286,6 +286,8 @@ Chart rules (all four charts):
 - Always show currency values and clear axis units; tooltips with full values.
 - Accessible text summary and tabular alternative for every chart; empty
   states; render only the active analytics section.
+- Drill-downs fire only after a completed tap. Hover and pan may show chart
+  feedback but must not apply ledger filters or switch tabs.
 
 ---
 

@@ -950,6 +950,8 @@ No ownership or policy migration starts until this phase is complete.
   Family toggle changes only what it claims.
 - [ ] Verify top-seven plus `Other` equals the ungrouped total.
 - [ ] Verify chart drill-down filters reconcile to the selected value.
+- [x] Trigger chart drill-downs only after completed taps; hover and pan leave
+  ledger filters and navigation unchanged.
 - [ ] Golden/widget coverage for each chart and the Briefing in empty,
   populated, error, and 360-pixel layouts.
 
